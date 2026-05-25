@@ -174,7 +174,8 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
         setPendingAsk(res.ask ?? null);
-        await Promise.all([refreshTree(), loadBrainState(id)]);
+        // loadManifest: step_status 변경(D8 done→design 활성)을 ProcessBar에 세션 내 반영.
+        await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
         return { text: res.text, ask: res.ask ?? null };
       } catch (e) {
         const status = (e as { status?: number }).status;
@@ -182,7 +183,7 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
         throw e;
       }
     },
-    [activeStudio, refreshTree, loadBrainState],
+    [activeStudio, refreshTree, loadBrainState, loadManifest],
   );
 
   const answerAsk = useCallback(async (choice: string) => {
@@ -197,12 +198,13 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       });
       if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
       setPendingAsk(res.ask ?? null);
-      await Promise.all([refreshTree(), loadBrainState(id)]);
+      // loadManifest: plan-lock(D8 done)이 ProcessBar/design 활성에 세션 내 반영되도록.
+      await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 402) setUpsellOpen(true);
     }
-  }, [pendingAsk, refreshTree, loadBrainState]);
+  }, [pendingAsk, refreshTree, loadBrainState, loadManifest]);
 
   const closeAsk = useCallback(() => setPendingAsk(null), []);
 
