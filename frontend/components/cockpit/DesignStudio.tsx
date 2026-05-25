@@ -42,7 +42,7 @@ export function DesignStudio() {
             <button
               key={l}
               type="button"
-              onClick={() => c.setDesignLang(l)}
+              onClick={() => void c.switchDesignLang(l)}
               className={
                 "rounded-full px-2.5 py-1 text-caption " +
                 (c.designLang === l ? "bg-primary text-on-primary" : "text-on-surface-variant")

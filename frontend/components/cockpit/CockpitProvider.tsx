@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { api, type AskPayload, type Manifest, type Provider, type VfsNode } from "@/lib/api";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
+import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
 
 export type CockpitView = "workspace" | "history" | "setting";
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
@@ -27,6 +28,7 @@ export type CockpitContextValue = {
   designStep: string;                 // "S0".."done"
   designLang: string;                 // 현재 편집 언어
   setDesignLang: (l: string) => void;
+  switchDesignLang: (lang: string) => Promise<void>;   // 언어 전환 + 해당 언어 scene 재조립/열기(I4)
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
   // ---- actions ----
@@ -121,6 +123,17 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     } catch { setBrainStage(null); setPendingAsk(null); }
   }, []);
 
+  /** design 내부 상태(_state.json)를 서버에서 복원(I3). 없으면(미시작) 무시. */
+  const loadDesignState = useCallback(async (id: string) => {
+    try {
+      const st = await api.vfsGet(id, "design/_state.json");
+      const s = st.content_text ? JSON.parse(st.content_text) : {};
+      if (typeof s.step === "string") setDesignStep(s.step);
+      if (s.bypass && typeof s.bypass === "object") setDesignBypassState(s.bypass);
+      if (Array.isArray(s.languages) && s.languages[0]) setDesignLang(s.languages[0]);
+    } catch { /* design 미시작 — 기본값 유지 */ }
+  }, []);
+
   const openRun = useCallback(
     async (id: string) => {
       setRunId(id);
@@ -128,10 +141,10 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       setViewState("workspace");
       setOpenFile(null);
       syncRunQuery(id);
-      await Promise.all([loadManifest(id), loadBrainState(id),
+      await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id),
         api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
     },
-    [loadManifest, loadBrainState, syncRunQuery],
+    [loadManifest, loadBrainState, loadDesignState, syncRunQuery],
   );
 
   const startRun = useCallback(
@@ -156,6 +169,29 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     const node = await api.vfsGet(id, rest);
     setOpenFile({ path, content: node.content_text ?? "", mime: node.mime, dirty: false });
   }, []);
+
+  /** backend layout.spec → assembleScene → design/final/{lang}/main.scene 저장 후 에디터에 자동 open(C1).
+   *  rough spec이 없으면(파이프라인 미완) no-op. 빈 spec({}) 이어도 빈 scene을 안전 생성. */
+  const assembleAndOpenScene = useCallback(async (lang: string) => {
+    const id = runIdRef.current;
+    if (!id) return;
+    let node;
+    try { node = await api.vfsGet(id, "design/rough/layout.spec.json"); }
+    catch { return; }                 // rough spec 없음 → 조립할 것 없음
+    let spec: LayoutSpec;
+    try { spec = JSON.parse(node.content_text ?? "{}"); }
+    catch { return; }
+    // 배경 슬롯을 S2a 생성 비주얼(고정 경로)에 연결.
+    const VISUAL = "design-system/components/visual/v1.png";
+    if (Array.isArray(spec?.slots)) {
+      const bg = spec.slots.find((s) => s.role === "background");
+      if (bg) bg.asset_ref = VISUAL;
+    }
+    const scene = assembleScene(spec, lang, (ref) => api.assetUrl(id, `design/${ref}`));
+    await api.vfsPut(id, `design/final/${lang}/main.scene`, JSON.stringify(scene), "application/json");
+    await refreshTree();
+    await selectFile(`/${id}/design/final/${lang}/main.scene`);
+  }, [refreshTree, selectFile]);
 
   const setOpenFileContent = useCallback((text: string) => {
     setOpenFile((prev) => (prev ? { ...prev, content: text, dirty: true } : prev));
@@ -209,13 +245,21 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     await refreshTree();
     const st = res.meta?.step;
     if (typeof st === "string") setDesignStep(st);
+    // S3→done: 백엔드 layout.spec 완성 → 현재 언어 scene 조립 + 자동 open(C1).
+    if (st === "done") await assembleAndOpenScene(designLang);
     return { text: res.text };
-  }, [refreshTree, designBypass, designStep]);
+  }, [refreshTree, designBypass, designStep, assembleAndOpenScene, designLang]);
 
   const setDesignBypass = useCallback(
     (id: string, on: boolean) => setDesignBypassState((m) => ({ ...m, [id]: on })),
     [],
   );
+
+  /** 언어 전환(I4): 현재 언어를 바꾸고 해당 언어 scene을 재조립/열기(spec 없으면 no-op). */
+  const switchDesignLang = useCallback(async (lang: string) => {
+    setDesignLang(lang);
+    await assembleAndOpenScene(lang);
+  }, [assembleAndOpenScene]);
 
   /** 캔버스 편집 결과(scene JSON)를 현재 열린 .scene 파일에 in-place 저장. */
   const saveSceneJson = useCallback(async (content: string) => {
@@ -295,6 +339,7 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     designStep,
     designLang,
     setDesignLang,
+    switchDesignLang,
     designBypass,
     setDesignBypass,
     startRun,
