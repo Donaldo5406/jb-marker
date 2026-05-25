@@ -123,7 +123,6 @@ export function EntitlementPanel() {
               type="button"
               role="switch"
               aria-checked={bypass}
-              aria-pressed={bypass}
               aria-label="AskUser 자동 진행(bypass) 토글"
               data-testid="bypass-toggle"
               onClick={toggleBypass}
