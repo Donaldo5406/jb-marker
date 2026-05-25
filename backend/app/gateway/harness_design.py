@@ -123,7 +123,12 @@ class DesignHarness(Harness):
             return json.loads(text)
         except Exception:
             m = re.search(r"\{.*\}", text, re.S)
-            return json.loads(m.group(0)) if m else {}
+            if not m:
+                return {}
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                return {}   # 비-JSON 중괄호 조각(프롬프트 echo 등)은 무시
 
     def _s1_rough(self, req, provider, store, state) -> HarnessResult:
         base = self._base(req.run_id)

@@ -177,3 +177,35 @@ def test_done_step_is_idempotent_no_error(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     assert res.meta.get("step") == "done"   # no exception
+
+
+def test_parse_json_returns_empty_on_non_json_with_braces(tmp_path):
+    # 정규식이 비-JSON 중괄호 조각(예: 프롬프트 echo)을 매칭해도 폴백은 raise하지 않아야 함
+    h = DesignHarness(image_provider=FakeProvider())
+    assert h._parse_json("설명 {role: bbox, not: valid json}") == {}
+    assert h._parse_json("") == {}
+    assert h._parse_json("그냥 텍스트") == {}
+    assert h._parse_json('앞 {"a": 1} 뒤') == {"a": 1}   # 유효 JSON 부분은 추출
+
+
+def test_s1_does_not_crash_with_plain_fake_provider(tmp_path):
+    # FakeProvider는 JSON이 아닌 echo를 반환 — S1이 500나지 않고 파이프라인이 진행돼야 함
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(), provider=FakeProvider(), store=s)            # S0 -> S1
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)  # S1
+    assert res.meta.get("step") == "S1"
+    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
+    assert isinstance(spec, dict)                                     # 비어도 dict
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
+
+
+def test_full_pipeline_with_fake_provider_completes(tmp_path):
+    # 오프라인(fake) 전체 완주: S0~S3 → done + step_status, 크래시 없음
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    for _ in range(7):
+        h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "done"
+    assert s.get_manifest("r1").step_status["design"] == "done"
+    assert s.get("/r1/design/metadata.md") is not None
