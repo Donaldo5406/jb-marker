@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -17,6 +17,7 @@ class ProviderResponse:
     text: str
     model: str
     raw: Any = None
+    citations: list[dict] = field(default_factory=list)   # [{"url","title","snippet"}]
 
 
 class Provider(ABC):
@@ -24,4 +25,5 @@ class Provider(ABC):
 
     @abstractmethod
     def complete(self, messages: list[Message], *, model: str,
-                 system: str | None = None, **kwargs) -> ProviderResponse: ...
+                 system: str | None = None,
+                 tools: list[dict] | None = None, **kwargs) -> ProviderResponse: ...
