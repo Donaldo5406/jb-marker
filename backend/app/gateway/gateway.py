@@ -14,14 +14,16 @@ from .harness import Harness, HarnessRequest, HarnessResult
 
 
 class MarkerGateway:
-    def __init__(self, store: VfsStore, *, entitlement_override: bool,
+    def __init__(self, store: VfsStore, *,
+                 entitlement_override: "bool | Callable[[], bool]",
                  provider_factory: Callable[[str], Provider]) -> None:
         self._store = store
         self._override = entitlement_override
         self._provider_factory = provider_factory
 
     def run(self, req: HarnessRequest, harness: Harness) -> HarnessResult:
-        check_entitlement(is_marker=req.is_marker, override=self._override)
+        override = self._override() if callable(self._override) else self._override
+        check_entitlement(is_marker=req.is_marker, override=override)
         system, messages = harness.build_messages(req)
         system = system or harness.system_prompt()
         provider = self._provider_factory(req.provider)

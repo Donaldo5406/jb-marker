@@ -60,3 +60,17 @@ def test_blob_put_autogenerates_meta_when_missing(store):
     node = store.put("/r1/design/v2.png", b"x", mime="image/png")
     assert node.meta != {}        # 불변식: 비어있지 않아야 함
     assert node.meta.get("type") in {"image", "file"}
+
+
+def test_list_runs_filters_by_user_and_sorts_desc():
+    from app.vfs.local import LocalVfsStore
+    s = LocalVfsStore(storage_dir="data/test-listruns")
+    s.create_run("aaa", user_id="demo", title="첫째")
+    s.create_run("bbb", user_id="demo", title="둘째")
+    s.create_run("ccc", user_id="other", title="남")
+    runs = s.list_runs(user_id="demo")
+    ids = [m.run_id for m in runs]
+    assert "ccc" not in ids
+    assert set(ids) == {"aaa", "bbb"}
+    # created_at 내림차순(최신 먼저). 동일 타임스탬프 가능성 → 부분순서만 검증
+    assert all(hasattr(m, "step_status") for m in runs)

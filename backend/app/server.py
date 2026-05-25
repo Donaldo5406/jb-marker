@@ -30,6 +30,11 @@ class GatewayRun(BaseModel):
 
 class PutText(BaseModel):
     content: str
+    mime: str | None = None
+
+
+class EntitlementPut(BaseModel):
+    marker: bool
 
 
 def _node_dict(n) -> dict[str, Any]:
@@ -54,7 +59,9 @@ def create_app() -> FastAPI:
         def complete(self, messages, *, model=None, system=None, **kw):
             return self._p.complete(messages, model=self._model, system=system, **kw)
 
-    gateway = MarkerGateway(store, entitlement_override=settings.entitlement_override,
+    entitlement_state = {"marker": settings.entitlement_override}
+    gateway = MarkerGateway(store,
+                            entitlement_override=lambda: entitlement_state["marker"],
                             provider_factory=_ModelBoundProvider)
 
     connections: dict[str, set[WebSocket]] = {}
@@ -70,11 +77,27 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
+    @app.get("/entitlement")
+    def get_entitlement() -> dict:
+        return {"marker": entitlement_state["marker"]}
+
+    @app.put("/entitlement")
+    def put_entitlement(body: EntitlementPut) -> dict:
+        entitlement_state["marker"] = body.marker
+        return {"marker": entitlement_state["marker"]}
+
     @app.post("/runs")
     def create_run(body: RunCreate) -> dict:
         run_id = uuid.uuid4().hex[:12]
         m = store.create_run(run_id, title=body.title, languages=body.languages)
         return {"run_id": m.run_id, "title": m.title}
+
+    @app.get("/runs")
+    def list_runs(user_id: str = "demo") -> dict:
+        runs = store.list_runs(user_id=user_id)
+        return {"runs": [{"run_id": m.run_id, "title": m.title,
+                          "created_at": m.created_at,
+                          "step_status": m.step_status} for m in runs]}
 
     @app.post("/gateway/run")
     async def gateway_run(body: GatewayRun) -> dict:
@@ -107,7 +130,8 @@ def create_app() -> FastAPI:
 
     @app.put("/vfs/{run_id}/{rest:path}")
     def vfs_put(run_id: str, rest: str, body: PutText) -> dict:
-        node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime="text/markdown")
+        mime = body.mime or ("application/json" if rest.endswith(".json") else "text/markdown")
+        node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime=mime)
         return _node_dict(node)
 
     @app.websocket("/ws/{run_id}")

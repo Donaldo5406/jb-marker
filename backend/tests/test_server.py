@@ -29,3 +29,46 @@ def test_put_text_via_editor(client):
     r = client.put(f"/vfs/{run_id}/design/notes.md", json={"content": "메모"})
     assert r.status_code == 200
     assert client.get(f"/vfs/{run_id}/design/notes.md").json()["content_text"] == "메모"
+
+
+def test_get_runs_lists_created_runs():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    r1 = client.post("/runs", json={"title": "A"})
+    rid = r1.json()["run_id"]
+    resp = client.get("/runs")
+    assert resp.status_code == 200
+    runs = resp.json()["runs"]
+    assert any(x["run_id"] == rid and x["title"] == "A" for x in runs)
+    assert "step_status" in runs[0] and "created_at" in runs[0]
+
+
+def test_entitlement_toggle_gates_marker():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={"title": "E"}).json()["run_id"]
+    # 기본(무료): Marker 호출 → 402
+    body = {"run_id": rid, "studio": "brainstorming", "prompt": "안녕",
+            "provider": "fake", "is_marker": True}
+    assert client.post("/gateway/run", json=body).status_code == 402
+    # 초기 상태 조회
+    assert client.get("/entitlement").json()["marker"] is False
+    # 토글 ON
+    assert client.put("/entitlement", json={"marker": True}).json()["marker"] is True
+    # 이제 Marker 통과
+    assert client.post("/gateway/run", json=body).status_code == 200
+
+
+def test_put_vfs_infers_json_mime():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={"title": "M"}).json()["run_id"]
+    resp = client.put(f"/vfs/{rid}/brainstorming/data.json", json={"content": "{\"k\":1}"})
+    assert resp.status_code == 200
+    assert resp.json()["mime"] == "application/json"
+    # 명시 mime 우선 (VFS 경로는 /{runId}/{studio}/... 규약을 따른다)
+    resp2 = client.put(f"/vfs/{rid}/brainstorming/note.md", json={"content": "# hi", "mime": "text/markdown"})
+    assert resp2.json()["mime"] == "text/markdown"
