@@ -29,3 +29,16 @@ def test_put_text_via_editor(client):
     r = client.put(f"/vfs/{run_id}/design/notes.md", json={"content": "메모"})
     assert r.status_code == 200
     assert client.get(f"/vfs/{run_id}/design/notes.md").json()["content_text"] == "메모"
+
+
+def test_get_runs_lists_created_runs():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    r1 = client.post("/runs", json={"title": "A"})
+    rid = r1.json()["run_id"]
+    resp = client.get("/runs")
+    assert resp.status_code == 200
+    runs = resp.json()["runs"]
+    assert any(x["run_id"] == rid and x["title"] == "A" for x in runs)
+    assert "step_status" in runs[0] and "created_at" in runs[0]

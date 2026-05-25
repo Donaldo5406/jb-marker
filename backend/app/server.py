@@ -76,6 +76,13 @@ def create_app() -> FastAPI:
         m = store.create_run(run_id, title=body.title, languages=body.languages)
         return {"run_id": m.run_id, "title": m.title}
 
+    @app.get("/runs")
+    def list_runs(user_id: str = "demo") -> dict:
+        runs = store.list_runs(user_id=user_id)
+        return {"runs": [{"run_id": m.run_id, "title": m.title,
+                          "created_at": m.created_at,
+                          "step_status": m.step_status} for m in runs]}
+
     @app.post("/gateway/run")
     async def gateway_run(body: GatewayRun) -> dict:
         if store.get_manifest(body.run_id) is None:
