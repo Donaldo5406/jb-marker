@@ -1,6 +1,7 @@
-"""MarkerGateway — 모든 AI 호출의 경유점.
+"""MarkerGateway — 모든 AI 호출의 경유점(엔타이틀먼트 choke + provider 팩토리).
 
-흐름: 엔타이틀먼트 검사 → 하네스 조립 → provider 호출 → VFS 영속(+meta.grounds) → 결과.
+흐름: 엔타이틀먼트 검사 → provider 해석 → harness.handle_turn 위임.
+하네스 조립·provider 호출·VFS 영속(+meta.grounds)은 하네스(handle_turn) 책임.
 raw 프롬프트 직행 금지: 항상 하네스(최소 Passthrough) + 게이트웨이 경유.
 """
 from __future__ import annotations
