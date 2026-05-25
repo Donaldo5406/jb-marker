@@ -28,7 +28,7 @@ export type CockpitContextValue = {
   setOpenFileContent: (text: string) => void;
   closeFile: () => void;
   saveFile: () => Promise<void>;
-  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean }) => Promise<void>;
+  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean }) => Promise<boolean>;
   setStudio: (s: Studio) => void;
   setView: (v: CockpitView) => void;
   toggleEntitlement: () => Promise<void>;
@@ -137,9 +137,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   }, [openFile, refreshTree]);
 
   const sendChat = useCallback(
-    async (p: { prompt: string; provider: Provider; isMarker: boolean }) => {
+    async (p: { prompt: string; provider: Provider; isMarker: boolean }): Promise<boolean> => {
       const id = runIdRef.current;
-      if (!id) return;
+      if (!id) return false;
       try {
         await api.gatewayRun({
           run_id: id,
@@ -149,11 +149,13 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
           is_marker: p.isMarker,
         });
         await refreshTree();
+        return true;
       } catch (e) {
         const status = (e as { status?: number }).status;
         if (status === 402) {
+          // 게이트(Marker/Advisor + 무료): 업셀 모달만 띄우고 실패 신호(false) 반환 → 챗 성공라인 억제.
           setUpsellOpen(true);
-          return;
+          return false;
         }
         throw e;
       }

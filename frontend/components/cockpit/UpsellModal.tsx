@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Lock, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useCockpit } from "./CockpitProvider";
@@ -8,7 +9,19 @@ import { useCockpit } from "./CockpitProvider";
  *  Provider.upsellOpen이 true일 때만 렌더. Auralis 라이트 오버레이. */
 export function UpsellModal() {
   const c = useCockpit();
-  if (!c.upsellOpen) return null;
+  const { upsellOpen, closeUpsell } = c;
+
+  // a11y: 모달이 열려 있을 때 Esc로 닫기(언마운트/닫힘 시 리스너 정리).
+  useEffect(() => {
+    if (!upsellOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeUpsell();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [upsellOpen, closeUpsell]);
+
+  if (!upsellOpen) return null;
 
   const goSetting = () => {
     c.setView("setting");

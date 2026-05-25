@@ -31,15 +31,21 @@ export function ChatPane() {
     setInput("");
     setLoading(true);
     try {
-      await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
-      // 402(업셀) 케이스에서는 Provider가 upsellOpen만 켜고 정상 반환 → 응답 없음 안내.
+      const ok = await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
+      // 게이트(402) 케이스: Provider가 upsellOpen만 켜고 false 반환 → 성공라인 대신 안내 표시.
       setMessages((prev) => [
         ...prev,
-        {
-          id: ++idRef.current,
-          role: "assistant",
-          text: `완료 — 산출물을 좌측 트리에서 확인하세요. (${model.label})`,
-        },
+        ok
+          ? {
+              id: ++idRef.current,
+              role: "assistant",
+              text: `완료 — 산출물을 좌측 트리에서 확인하세요. (${model.label})`,
+            }
+          : {
+              id: ++idRef.current,
+              role: "assistant",
+              text: "Pro 전용 기능입니다 — Setting에서 엔타이틀먼트를 토글하세요.",
+            },
       ]);
     } catch {
       setMessages((prev) => [
