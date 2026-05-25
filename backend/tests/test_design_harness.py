@@ -234,3 +234,144 @@ def test_bypass_flag_persisted_into_state(tmp_path):
     h.handle_turn(req, provider=FakeProvider(), store=s)   # S0 -> S1, records bypass for S0
     st = json.loads(s.get("/r1/design/_state.json").content_text)
     assert st["bypass"].get("S0") is True
+
+
+# --- Task 19 FIX A (M8): image generation fake fallback ---
+
+
+def test_s2a_falls_back_to_fake_png_when_image_provider_raises(tmp_path):
+    s = _store(tmp_path)
+
+    class BoomImageProvider(FakeProvider):
+        def generate_image(self, prompt, *, aspect="1:1"):
+            raise RuntimeError("no api key")
+
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"visual_concept": "블루 그라디언트", "aspect": "1:1"}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=BoomImageProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)  # no raise
+    png = s.get("/r1/design/design-system/components/visual/v1.png")
+    assert png is not None and png.blob  # valid PNG written
+    assert res.meta.get("image_fallback") is True
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2b"
+
+
+def test_s2a_records_no_fallback_on_success(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"visual_concept": "블루 그라디언트", "aspect": "1:1"}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    assert res.meta.get("image_fallback") is False
+
+
+# --- Task 19 FIX B: S2b writes refined copy back into layout.spec.json ---
+
+
+def test_s2b_merges_copy_into_layout_spec_preserving_rest(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2b", "confirmed": {}, "bypass": {}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "aspect": "1:1", "visual_concept": "블루 그라디언트",
+        "slots": [{"role": "headline", "copy_key": "headline"}],
+        "copy": {"ko": {"headline": "구버전", "body": "old"}}}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+
+    class CopyProvider(FakeProvider):
+        def complete(self, messages, *, model, system=None, tools=None, **kw):
+            from app.providers.base import ProviderResponse
+            return ProviderResponse(text=json.dumps({"copy": {"ko": {
+                "headline": "든든한 적금", "body": "", "cta": "가입"}}}), model=model)
+
+    h.handle_turn(_req(action="advance"), provider=CopyProvider(), store=s)
+    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["copy"]["ko"]["headline"] == "든든한 적금"   # refined copy merged
+    assert spec["visual_concept"] == "블루 그라디언트"       # rest preserved
+    assert spec["slots"][0]["role"] == "headline"
+    # .txt component still written
+    assert s.get("/r1/design/design-system/components/headline/ko.txt") is not None
+
+
+# --- Task 19 FIX C (M7): _s3_final executes critic (advisory, non-blocking) ---
+
+
+def test_s3_runs_and_records_critic_without_blocking(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S3", "confirmed": {}, "bypass": {}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"copy": {"ko": {"headline": "든든한 적금"}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    assert res.meta.get("critic", {}).get("pass") in (True, False)
+    md = s.get("/r1/design/metadata.md").content_text
+    assert "크리틱" in md
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "done"
+
+
+# --- Task 19 FIX D (I5): localized AI-generated notice per language ---
+
+
+def test_s2c_localizes_ai_notice_per_language(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2c", "confirmed": {}, "bypass": {}, "languages": ["ko", "en"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    en = s.get("/r1/design/design-system/components/disclosure/en.txt").content_text
+    ko = s.get("/r1/design/design-system/components/disclosure/ko.txt").content_text
+    assert "AI" in en and "generated by AI" in en
+    assert "AI로 생성되었습니다" in ko
+
+
+# --- Task 19 FIX E (I2): regenerate re-runs the previous completed step ---
+
+
+def test_regenerate_reruns_previous_step(tmp_path):
+    s = _store(tmp_path)
+    # state at S2a → predecessor S1 was the last completed step
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({"visual_concept": "old"}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+
+    class SpecProvider(FakeProvider):
+        def complete(self, messages, *, model, system=None, tools=None, **kw):
+            from app.providers.base import ProviderResponse
+            doc = {"reply": "재생성", "layout_spec": {"visual_concept": "재생성된 컨셉"},
+                   "ready": True}
+            return ProviderResponse(text=json.dumps(doc, ensure_ascii=False), model=model)
+
+    h.handle_turn(_req(action="regenerate"), provider=SpecProvider(), store=s)
+    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["visual_concept"] == "재생성된 컨셉"   # S1 re-ran
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
+
+
+def test_regenerate_is_noop_at_s0(tmp_path):
+    s = _store(tmp_path)  # state defaults to S0
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="regenerate"), provider=FakeProvider(), store=s)
+    st = json.loads(s.get("/r1/design/_state.json").content_text) \
+        if s.get("/r1/design/_state.json") else {"step": "S0"}
+    assert st["step"] == "S0"
+    assert res.meta.get("step") == "S0"
