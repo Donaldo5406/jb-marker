@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { Settings } from "lucide-react";
 import { useCockpit } from "./CockpitProvider";
 import { EditorPane } from "./EditorPane";
 import { ChatPane } from "./ChatPane";
 import { PipelineRail } from "./PipelineRail";
+import { DesignSettings } from "./DesignSettings";
 
 const LANGS = ["ko", "vi", "en"];
 
@@ -12,6 +14,7 @@ const LANGS = ["ko", "vi", "en"];
 export function DesignStudio() {
   const c = useCockpit();
   const [busy, setBusy] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
   const act = async (action: string) => {
     setBusy(true);
     try {
@@ -48,9 +51,26 @@ export function DesignStudio() {
               {l}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setShowSettings((v) => !v)}
+            aria-label="디자인 설정"
+            aria-pressed={showSettings}
+            title="자동 진행(confirm 게이트) 설정"
+            className={
+              "ml-auto inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors " +
+              (showSettings ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high")
+            }
+          >
+            <Settings className="h-4 w-4" aria-hidden />
+          </button>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
-          <ChatPane />
+          {showSettings ? (
+            <DesignSettings bypass={c.designBypass} onToggle={c.setDesignBypass} />
+          ) : (
+            <ChatPane />
+          )}
         </div>
       </div>
     </>

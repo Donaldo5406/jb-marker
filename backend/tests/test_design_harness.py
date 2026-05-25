@@ -17,9 +17,9 @@ def _store(tmp_path):
     return s
 
 
-def _req(action="advance", prompt=""):
+def _req(action="advance", prompt="", bypass=False):
     return HarnessRequest(run_id="r1", studio="design", user_prompt=prompt,
-                          provider="fake", is_marker=True, action=action)
+                          provider="fake", is_marker=True, action=action, bypass=bypass)
 
 
 def test_s0_parses_plan_into_tokens_and_state(tmp_path):
@@ -209,3 +209,28 @@ def test_full_pipeline_with_fake_provider_completes(tmp_path):
     assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "done"
     assert s.get_manifest("r1").step_status["design"] == "done"
     assert s.get("/r1/design/metadata.md") is not None
+
+
+# --- Task 17: confirm 게이트 bypass(자동 진행) 토글 ---
+
+
+def test_s3_bypass_auto_passes_on_weak_critic(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step":"S3","confirmed":{},"bypass":{"S3":True},"languages":["ko"],
+         "pending_ask":None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({"copy":{"ko":{}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    assert s.get_manifest("r1").step_status["design"] == "done"
+
+
+def test_bypass_flag_persisted_into_state(tmp_path):
+    s = _store(tmp_path)  # state starts at S0
+    h = DesignHarness(image_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                         provider="fake", is_marker=True, action="advance", bypass=True)
+    h.handle_turn(req, provider=FakeProvider(), store=s)   # S0 -> S1, records bypass for S0
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["bypass"].get("S0") is True

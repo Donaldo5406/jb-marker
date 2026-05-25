@@ -85,6 +85,10 @@ class DesignHarness(Harness):
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)
         step = state["step"]
+        # confirm 게이트 bypass(자동 진행) 선호를 현재 step에 영속화.
+        # M4 범위: 영속화만(게이트 의미론은 spec §13으로 유보).
+        if getattr(req, "bypass", False):
+            state.setdefault("bypass", {})[step] = True
         if step == "S0":
             return self._s0_setup(req, store, state)
         if step == "done":

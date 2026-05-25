@@ -27,6 +27,8 @@ export type CockpitContextValue = {
   designStep: string;                 // "S0".."done"
   designLang: string;                 // 현재 편집 언어
   setDesignLang: (l: string) => void;
+  designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
+  setDesignBypass: (id: string, on: boolean) => void;
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -68,6 +70,7 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   const [brainStage, setBrainStage] = useState<string | null>(null);
   const [designStep, setDesignStep] = useState("S0");
   const [designLang, setDesignLang] = useState("ko");
+  const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -201,12 +204,18 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     const res = await api.gatewayRun({
       run_id: id, studio: "design", prompt,
       provider: "anthropic", is_marker: true, action,
+      bypass: !!designBypass[designStep],   // 현재 step의 bypass 선호를 백엔드로 전달.
     });
     await refreshTree();
     const st = res.meta?.step;
     if (typeof st === "string") setDesignStep(st);
     return { text: res.text };
-  }, [refreshTree]);
+  }, [refreshTree, designBypass, designStep]);
+
+  const setDesignBypass = useCallback(
+    (id: string, on: boolean) => setDesignBypassState((m) => ({ ...m, [id]: on })),
+    [],
+  );
 
   /** 캔버스 편집 결과(scene JSON)를 현재 열린 .scene 파일에 in-place 저장. */
   const saveSceneJson = useCallback(async (content: string) => {
@@ -286,6 +295,8 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     designStep,
     designLang,
     setDesignLang,
+    designBypass,
+    setDesignBypass,
     startRun,
     openRun,
     refreshTree,
