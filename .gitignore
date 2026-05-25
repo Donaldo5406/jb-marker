@@ -9,3 +9,4 @@ data/runs/
 *.tsbuildinfo
 .DS_Store
 .omc/
+*.log
