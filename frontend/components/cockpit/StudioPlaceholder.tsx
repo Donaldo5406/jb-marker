@@ -4,13 +4,11 @@ import { Hammer } from "lucide-react";
 
 /** 스튜디오별 도입 마일스톤(Deferral D1). */
 const MILESTONE: Record<string, string> = {
-  design: "M4",
   review: "M5",
   deploy: "M6",
 };
 
 const LABEL: Record<string, string> = {
-  design: "디자인",
   review: "검토",
   deploy: "발송",
 };

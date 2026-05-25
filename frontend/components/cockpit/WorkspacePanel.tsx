@@ -7,6 +7,7 @@ import { useCockpit } from "./CockpitProvider";
 import { FileTree } from "./FileTree";
 import { EditorPane } from "./EditorPane";
 import { ChatPane } from "./ChatPane";
+import { DesignStudio } from "./DesignStudio";
 import { StudioPlaceholder } from "./StudioPlaceholder";
 
 /** Workspace 본문. runId/activeStudio로 분기:
@@ -47,6 +48,7 @@ export function WorkspacePanel() {
   }
 
   const isBrain = c.activeStudio === "brainstorming";
+  const isDesign = c.activeStudio === "design";
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr_360px] overflow-hidden">
@@ -54,14 +56,28 @@ export function WorkspacePanel() {
       <div className="min-h-0 overflow-hidden border-r border-outline-variant">
         <FileTree />
       </div>
-      {/* 중: brain=EditorPane / 그외=Placeholder */}
-      <div className="min-h-0 overflow-hidden border-r border-outline-variant">
-        {isBrain ? <EditorPane /> : <StudioPlaceholder studio={c.activeStudio} />}
-      </div>
-      {/* 우: brain=ChatPane / 그외=Placeholder */}
-      <div className="min-h-0 overflow-hidden">
-        {isBrain ? <ChatPane /> : <StudioPlaceholder studio={c.activeStudio} />}
-      </div>
+      {/* 중·우: brain=Editor+Chat / design=DesignStudio(2분할 직접 방출) / 그외=Placeholder */}
+      {isBrain ? (
+        <>
+          <div className="min-h-0 overflow-hidden border-r border-outline-variant">
+            <EditorPane />
+          </div>
+          <div className="min-h-0 overflow-hidden">
+            <ChatPane />
+          </div>
+        </>
+      ) : isDesign ? (
+        <DesignStudio />
+      ) : (
+        <>
+          <div className="min-h-0 overflow-hidden border-r border-outline-variant">
+            <StudioPlaceholder studio={c.activeStudio} />
+          </div>
+          <div className="min-h-0 overflow-hidden">
+            <StudioPlaceholder studio={c.activeStudio} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
