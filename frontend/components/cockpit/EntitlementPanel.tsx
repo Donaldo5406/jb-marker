@@ -12,6 +12,20 @@ export function EntitlementPanel() {
   const isPro = c.entitlement.marker;
   const [busy, setBusy] = React.useState(false);
 
+  // AskUser bypass: 키 부재 시 기본 ON(true). localStorage "1"/"0"로 영속.
+  const [bypass, setBypass] = React.useState(true);
+  React.useEffect(() => {
+    const v = typeof window !== "undefined" ? window.localStorage.getItem("brain_askuser_bypass") : null;
+    if (v !== null) setBypass(v === "1");
+  }, []);
+  const toggleBypass = () => {
+    setBypass((b) => {
+      const nv = !b;
+      if (typeof window !== "undefined") window.localStorage.setItem("brain_askuser_bypass", nv ? "1" : "0");
+      return nv;
+    });
+  };
+
   const toggle = async () => {
     setBusy(true);
     try {
@@ -93,6 +107,39 @@ export function EntitlementPanel() {
               ? "Marker/Advisor 모델로 산출물을 생성할 수 있습니다."
               : "Marker/Advisor 선택 시 업셀 안내가 표시됩니다."}
           </p>
+        </Card>
+
+        <Card className="p-7">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0 flex-1 space-y-1">
+              <h2 className="text-body-lg font-medium text-on-surface">AskUser 자동 진행(bypass)</h2>
+              <p className="text-body-sm text-on-surface-variant">
+                ON이면 스테이지 전환 확인을 자동으로 통과합니다(기본 ON). 끄면 매 분기마다 토스트로 묻습니다.
+              </p>
+            </div>
+
+            {/* 토글 스위치 */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={bypass}
+              aria-pressed={bypass}
+              aria-label="AskUser 자동 진행(bypass) 토글"
+              data-testid="bypass-toggle"
+              onClick={toggleBypass}
+              className={cn(
+                "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors",
+                bypass ? "bg-primary" : "bg-outline-variant",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-5 w-5 transform rounded-full bg-surface-container-lowest shadow-ambient transition-transform",
+                  bypass ? "translate-x-6" : "translate-x-1",
+                )}
+              />
+            </button>
+          </div>
         </Card>
       </div>
     </div>

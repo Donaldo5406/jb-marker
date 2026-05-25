@@ -26,7 +26,9 @@ export function ChatPane() {
     setInput("");
     setLoading(true);
     try {
-      await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
+      // bypass: 키 "0"일 때만 OFF, 그 외(부재 포함)는 기본 ON.
+      const bypass = typeof window !== "undefined" && window.localStorage.getItem("brain_askuser_bypass") !== "0";
+      await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker, bypass });
     } catch (err) {
       // 402(업셀)는 Provider가 처리. 그 외(네트워크/500)는 unhandled rejection 방지용 로깅.
       console.error("sendChat failed", err);
