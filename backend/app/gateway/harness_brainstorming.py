@@ -39,6 +39,7 @@ def _parse_json(text: str) -> dict:
     try:
         return json.loads(text)
     except Exception:
+        # greedy: 최외곽 중괄호 구간을 잡음(단일 JSON 객체 출력 가정). 다객체 텍스트엔 부적합.
         m = re.search(r"\{.*\}", text, re.S)
         if m:
             try:
@@ -66,6 +67,11 @@ class BrainstormingHarness(Harness):
         return PERSONA
 
     def critic(self, plan_md: str) -> list[str]:
+        """⓪계약 검증: 누락된 REQUIRED_PLAN_FIELDS를 정렬해 반환.
+
+        주의: 베이스 Harness.critic(draft)->str(텍스트 패스스루)을 의도적으로 재정의.
+        여기선 plan.md의 frontmatter 키를 검사해 '부족한 필드 목록'을 돌려준다.
+        """
         return sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
 
     # --- 상태 I/O (stateless 재개의 단일 소스) ---
