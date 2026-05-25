@@ -17,6 +17,11 @@ def test_find_ungrounded_returns_tokens_absent_from_corpus():
     assert find_ungrounded("연 3.5% 적금", corpus) == []
 
 
+def test_find_ungrounded_uses_token_set_not_substring():
+    # 부분문자열 false-negative 회귀: "2%"는 "3.2%"의 부분문자열이지만 별개 토큰 → 플래그돼야 함
+    assert find_ungrounded("최대 2% 금리", build_corpus({"rate": "연 3.2%"})) == ["2%"]
+
+
 def test_check_asset_raises_on_ungrounded_headline():
     import pytest
     product = {"rate": "연 3.5%"}

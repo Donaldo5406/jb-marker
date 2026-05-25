@@ -30,9 +30,12 @@ def numeric_tokens(text: str) -> list[str]:
 
 
 def find_ungrounded(text: str, corpus: str) -> list[str]:
-    """corpus에 없는 수치 토큰 목록(비-raise)."""
-    cc = re.sub(r"\s+", "", corpus or "")
-    return [t for t in numeric_tokens(text) if t not in cc]
+    """corpus에 없는 수치 토큰 목록(비-raise).
+
+    부분문자열이 아닌 토큰-집합 멤버십으로 비교한다("2%"가 "3.2%"에 묻히지 않도록).
+    """
+    corpus_tokens = set(numeric_tokens(corpus))
+    return [t for t in numeric_tokens(text) if t not in corpus_tokens]
 
 
 def check_asset(asset: dict, product: dict) -> None:
