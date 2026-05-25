@@ -186,7 +186,14 @@ class BrainstormingHarness(Harness):
                              meta={"source": "marker", "stage": "A"}, ask=ask_obj, events=events)
 
     def _is_yes(self, answer: str | None) -> bool:
-        return bool(answer) and ("예" in answer or "plan" in answer.lower() or answer.strip().lower() in {"y", "yes"})
+        if not answer:
+            return False
+        a = answer.strip().lower()
+        # 부정 우선 가드: '아니오/아니요/no...'로 시작하면 즉시 False
+        if a.startswith("아니") or a.startswith("no"):
+            return False
+        # 긍정: 통제된 옵션('예, ...'/'예') 접두, 또는 명시적 yes, 또는 확정/ plan으로 표지
+        return a.startswith("예") or a in {"y", "yes"} or "plan으로" in a or "확정" in a
 
     def _stage_b(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict],
                  first: bool = False) -> HarnessResult:

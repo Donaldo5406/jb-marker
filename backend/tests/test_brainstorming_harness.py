@@ -141,3 +141,32 @@ def test_a_ready_bypass_runs_through_to_done():
     assert s.get("/rb/brainstorming/plan.md") is not None
     assert h._load_state(s, "rb")["stage"] == "done"
     assert s.get_manifest("rb").step_status["brainstorming"] == "done"
+
+
+def test_spec_lock_decline_continues_exploring():
+    # pending(b) + '아니오' → Stage B로 전환하지 않고 계속 탐색
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    st = h._load_state(s, "rb")
+    st["pending_ask"] = {"trigger": "b", "question": "?", "options": ["예, plan으로", "아니오, 더 다듬기"]}
+    h._save_state(s, "rb", st)
+    s.put("/rb/brainstorming/spec.md", "---\ngoal: x\n---\n본문", source="marker", mime="text/markdown")
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "더 다듬어요. 톤은 어떻게?", "document": "---\ngoal: x\ntone: 친근\n---\n본문",
+         "ask": None, "ready": False})}])
+    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="아니오, 더 다듬기",
+                         provider="fake", is_marker=True, answer="아니오, 더 다듬기")
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert h._load_state(s, "rb")["stage"] == "A"           # 전환 안 함
+    assert h._load_state(s, "rb")["pending_ask"] is None     # (b) 소거
+    assert len(stub.calls) == 1                              # 계속 탐색(LLM 1회 호출)
+
+
+def test_is_yes_rejects_freetext_negatives():
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    h = BrainstormingHarness()
+    assert h._is_yes("예") and h._is_yes("예, plan으로") and h._is_yes("예, 확정") and h._is_yes("yes")
+    assert not h._is_yes("아니오, 더 다듬기")
+    assert not h._is_yes("plan 말고 더 보자")   # 부분문자열 오탐 방지
+    assert not h._is_yes(None) and not h._is_yes("")
