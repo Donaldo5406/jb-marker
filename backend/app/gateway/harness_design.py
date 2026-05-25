@@ -16,6 +16,7 @@ import re
 
 import yaml
 
+from ..core.grounding import build_corpus, find_ungrounded
 from ..providers.base import Message
 from .harness import Harness, HarnessRequest, HarnessResult
 
@@ -82,6 +83,8 @@ class DesignHarness(Harness):
             return self._s1_rough(req, provider, store, state)
         if step == "S2a":
             return self._s2a_visual(req, provider, store, state)
+        if step == "S2b":
+            return self._s2b_copy(req, provider, store, state)
         raise NotImplementedError(f"{step} 미구현 (Task 8~11)")
 
     def _load_references(self) -> list[dict]:
@@ -144,6 +147,35 @@ class DesignHarness(Harness):
         return HarnessResult(text="비주얼을 생성했습니다.", output_path=path,
             meta={"source": "gemini", "step": "S2a"},
             events=[{"type": "artifact", "path": path}])
+
+    def _s2b_copy(self, req, provider, store, state) -> HarnessResult:
+        base = self._base(req.run_id)
+        plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan.content_text if plan else "")
+        corpus = build_corpus(fm.get("factsheet") or {})
+        sys = self.system_prompt() + (
+            "\n\n[S2b 카피·타이포] 헤드라인/바디/CTA를 언어별로 확정하세요. "
+            f"factsheet 외 수치 금지. JSON: {{\"copy\":{{lang:{{headline,body,cta}}}}}}"
+            f"\n[factsheet]\n{json.dumps(fm.get('factsheet') or {}, ensure_ascii=False)}")
+        resp = provider.complete([Message("user", req.user_prompt or "카피 확정")],
+                                 model=req.provider, system=sys)
+        copy = (self._parse_json(resp.text).get("copy")) or {}
+        ungrounded = []
+        for lang, fields in copy.items():
+            for role in ("headline", "body", "cta"):
+                val = (fields or {}).get(role, "")
+                ungrounded += find_ungrounded(val, corpus)
+                folder = {"headline": "headline", "body": "body", "cta": "cta"}[role]
+                store.put(f"{base}/design-system/components/{folder}/{lang}.txt",
+                          val, source="marker", mime="text/plain",
+                          meta={"lang": lang, "role": role})
+        state["confirmed"]["S2b"] = True
+        state["step"] = "S2c"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(text="카피를 확정했습니다.",
+            output_path=f"{base}/design-system/components/headline",
+            meta={"source": "marker", "step": "S2b", "ungrounded": sorted(set(ungrounded))},
+            events=[{"type": "artifact", "path": f"{base}/design-system/components/headline"}])
 
     def _s0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
         base = self._base(req.run_id)

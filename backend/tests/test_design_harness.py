@@ -11,6 +11,7 @@ def _store(tmp_path):
     s.create_run("r1", languages=["ko"])
     s.put("/r1/brainstorming/plan.md",
           "---\ncreative_direction:\n  palette: [\"#0A84FF\"]\n  font: Inter\n  aspect: \"1:1\"\n"
+          "factsheet:\n  rate: \"연 3.5%\"\n"
           "material_matrix: [{channel: instagram, lang: ko}]\nlanguages: [ko]\n---\n본문",
           source="marker", mime="text/markdown")
     return s
@@ -101,3 +102,26 @@ def test_s2a_generates_visual_blob_via_image_provider(tmp_path):
     nodes = s.list("/r1/design/design-system/components/visual")
     assert any(n.path.endswith(".png") for n in nodes)
     assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2b"
+
+
+# --- Task 8: S2b 카피·타이포 + grounding 검증 ---
+
+
+def test_s2b_writes_copy_and_flags_ungrounded(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step":"S2b","confirmed":{},"bypass":{},"languages":["ko"],"pending_ask":None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"copy":{"ko":{"headline":"연 9.9% 특별적금","cta":"가입"}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    class CopyProvider(FakeProvider):
+        def complete(self, messages, *, model, system=None, tools=None, **kw):
+            from app.providers.base import ProviderResponse
+            return ProviderResponse(text=json.dumps({"copy":{"ko":{
+                "headline":"연 9.9% 특별적금","body":"","cta":"가입"}}}), model=model)
+    res = h.handle_turn(_req(action="advance"), provider=CopyProvider(), store=s)
+    hl = s.get("/r1/design/design-system/components/headline/ko.txt")
+    assert hl is not None
+    assert "9.9%" in (res.meta.get("ungrounded") or [])
