@@ -43,4 +43,19 @@ describe("api client", () => {
     const n = await api.vfsGet("r", "brainstorming/_state.json");
     expect(n.content_text).toContain("stage");
   });
+
+  it("gatewayRun이 action을 body에 포함한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ output_path: "/p", text: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await api.gatewayRun({ run_id: "r1", studio: "design", prompt: "",
+      provider: "fake", is_marker: true, action: "advance" });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.action).toBe("advance");
+  });
+
+  it("assetUrl이 BASE 기준 vfs 경로를 만든다", () => {
+    expect(api.assetUrl("r1", "design/x.png")).toContain("/vfs/r1/design/x.png");
+  });
 });

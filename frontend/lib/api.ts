@@ -32,10 +32,12 @@ export const api = {
     return j(await fetch(`${BASE}/runs`));
   },
   async gatewayRun(p: { run_id: string; studio: string; prompt: string;
-    provider: Provider; is_marker: boolean; answer?: string | null; bypass?: boolean }): Promise<GatewayResult> {
+    provider: Provider; is_marker: boolean; answer?: string | null; bypass?: boolean;
+    action?: string | null }): Promise<GatewayResult> {
     return j(await fetch(`${BASE}/gateway/run`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...p, answer: p.answer ?? null, bypass: p.bypass ?? false }),
+      body: JSON.stringify({ ...p, answer: p.answer ?? null, bypass: p.bypass ?? false,
+        action: p.action ?? null }),
     }));
   },
   async vfsList(runId: string): Promise<{ nodes: VfsNode[] }> {
@@ -58,6 +60,9 @@ export const api = {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ marker }),
     }));
+  },
+  assetUrl(runId: string, rest: string): string {
+    return `${BASE}/vfs/${runId}/${rest}`;
   },
   wsUrl(runId: string): string {
     return `${BASE.replace(/^http/, "ws")}/ws/${runId}`;
