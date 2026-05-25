@@ -27,3 +27,7 @@ class Provider(ABC):
     def complete(self, messages: list[Message], *, model: str,
                  system: str | None = None,
                  tools: list[dict] | None = None, **kwargs) -> ProviderResponse: ...
+
+    def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
+        """텍스트-free 비주얼 PNG 생성(이미지 액터). 미지원 provider는 NotImplementedError."""
+        raise NotImplementedError(f"{self.name} provider는 이미지 생성을 지원하지 않습니다")

@@ -16,3 +16,10 @@ class FakeProvider(Provider):
                           "title": "참고자료(더미)", "snippet": f"'{last}' 관련 더미 검색 결과"}]
         return ProviderResponse(text=f"{prefix}echo: {last}", model=model, raw=None,
                                 citations=citations)
+
+    def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
+        # 의존 없는 최소 1x1 PNG(결정론적 더미 — 오프라인/테스트)
+        import base64
+        return base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+        )
