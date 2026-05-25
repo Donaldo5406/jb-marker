@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .base import VfsStore
 from .paths import parse_path, validate_path
-from .types import Manifest, VfsNode
+from .types import Manifest, VfsNode, STUDIOS
 
 
 def _now() -> str:
@@ -37,11 +37,25 @@ class LocalVfsStore(VfsStore):
     def get_manifest(self, run_id) -> Manifest | None:
         return self._manifests.get(run_id)
 
-    def patch_manifest(self, run_id, patch) -> Manifest:  # Task 9에서 확장
-        raise NotImplementedError
+    def patch_manifest(self, run_id, patch) -> Manifest:
+        m = self._manifests.get(run_id)
+        if m is None:
+            raise KeyError(run_id)
+        for k, v in patch.items():
+            setattr(m, k, v)
+        m.updated_at = _now()
+        return m
 
-    def set_step_status(self, run_id, step, status) -> Manifest:  # Task 9에서 확장
-        raise NotImplementedError
+    def set_step_status(self, run_id, step, status) -> Manifest:
+        if step not in STUDIOS:
+            raise ValueError(f"알 수 없는 step {step!r} (허용: {STUDIOS})")
+        m = self._manifests.get(run_id)
+        if m is None:
+            raise KeyError(run_id)
+        m.step_status[step] = status
+        m.current_step = step          # 불변식: 스텝전환 → current_step 동기
+        m.updated_at = _now()
+        return m
 
     # --- 노드 CRUD ---
     def put(self, path, content, *, meta=None, source=None, mime=None) -> VfsNode:
