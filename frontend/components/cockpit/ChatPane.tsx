@@ -6,52 +6,27 @@ import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 import { ModelSelector, MODELS, type ModelChoice } from "./ModelSelector";
 
-type ChatMessage = { id: number; role: "user" | "assistant"; text: string };
-
 /** 우측 패널: 챗 메시지 목록 + 입력 도크.
- *  전송 → sendChat({prompt, provider, isMarker}); studio는 Provider가 activeStudio로 주입. */
+ *  대화는 Provider(c.messages)가 소유·복원. 전송 → sendChat({prompt, provider, isMarker}).
+ *  402/업셀은 Provider가 처리(null 반환 + upsell). Stage 배지는 c.brainStage로 표시. */
 export function ChatPane() {
   const c = useCockpit();
-  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [model, setModel] = React.useState<ModelChoice>(MODELS[1]); // 기본 Claude(무료)
   const [loading, setLoading] = React.useState(false);
-  const idRef = React.useRef(0);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading]);
+  }, [c.messages, loading]);
 
   const send = async () => {
     const prompt = input.trim();
     if (!prompt || loading) return;
-    const userMsg: ChatMessage = { id: ++idRef.current, role: "user", text: prompt };
-    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
     try {
-      const ok = await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
-      // 게이트(402) 케이스: Provider가 upsellOpen만 켜고 false 반환 → 성공라인 대신 안내 표시.
-      setMessages((prev) => [
-        ...prev,
-        ok
-          ? {
-              id: ++idRef.current,
-              role: "assistant",
-              text: `완료 — 산출물을 좌측 트리에서 확인하세요. (${model.label})`,
-            }
-          : {
-              id: ++idRef.current,
-              role: "assistant",
-              text: "Pro 전용 기능입니다 — Setting에서 엔타이틀먼트를 토글하세요.",
-            },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { id: ++idRef.current, role: "assistant", text: "전송에 실패했습니다. 잠시 후 다시 시도하세요." },
-      ]);
+      await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
     } finally {
       setLoading(false);
     }
@@ -69,11 +44,16 @@ export function ChatPane() {
       <div className="flex items-center gap-2 border-b border-outline-variant px-4 py-2.5">
         <Sparkles className="h-4 w-4 text-primary" aria-hidden />
         <span className="text-body-sm font-medium text-on-surface">AI 챗</span>
+        {c.brainStage && (
+          <span className="ml-auto rounded-full bg-surface-container-high px-2 py-0.5 text-caption text-on-surface-variant">
+            {c.brainStage === "A" ? "Stage A · 탐색" : c.brainStage === "B" ? "Stage B · 계획" : "완료"}
+          </span>
+        )}
       </div>
 
       {/* 메시지 목록 */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.length === 0 && !loading ? (
+        {c.messages.length === 0 && !loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-container-high">
               <Sparkles className="h-5 w-5 text-primary" aria-hidden />
@@ -84,9 +64,9 @@ export function ChatPane() {
             </p>
           </div>
         ) : (
-          messages.map((m) => (
+          c.messages.map((m, i) => (
             <div
-              key={m.id}
+              key={i}
               className={cn("flex animate-fade-in-up", m.role === "user" ? "justify-end" : "justify-start")}
             >
               <div
@@ -97,7 +77,7 @@ export function ChatPane() {
                     : "rounded-bl-sm border border-outline-variant bg-surface-container-lowest text-on-surface",
                 )}
               >
-                {m.text}
+                {m.content}
               </div>
             </div>
           ))
