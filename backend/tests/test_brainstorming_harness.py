@@ -1,3 +1,5 @@
+import json
+
 from app.providers.base import ProviderResponse
 
 
@@ -38,3 +40,37 @@ def test_state_roundtrip_default_stage_a():
     assert st["stage"] == "A" and st["spec_locked"] is False
     st["stage"] = "B"; h._save_state(s, "rb", st)
     assert h._load_state(s, "rb")["stage"] == "B"
+
+
+def test_stage_a_writes_spec_and_research_and_returns_reply():
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    stub = StubProvider([{
+        "text": json.dumps({"reply": "주력 채널은 무엇인가요?",
+                            "document": "---\ngoal: 적금 캠페인\n---\n# 기획",
+                            "ask": {"trigger": "a", "question": "주력 채널?", "options": ["카톡", "이메일"]},
+                            "ready": False}),
+        "citations": [{"url": "https://x.com", "title": "금리표", "snippet": "연 3.5%"}],
+    }])
+    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="30대 적금 캠페인", provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert res.text == "주력 채널은 무엇인가요?"
+    assert res.ask is not None and res.ask.trigger == "a"
+    assert s.get("/rb/brainstorming/spec.md").content_text.startswith("---")
+    research = s.list("/rb/brainstorming/assets/research")
+    assert len(research) >= 1 and research[0].meta.get("source_url") == "https://x.com"
+    assert len(h._load_messages(s, "rb")) == 2  # user + assistant
+    assert stub.calls[0]["tools"] is not None
+
+
+def test_stage_a_ready_proposes_b_when_not_bypass():
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "정리했습니다.", "document": "---\ngoal: x\n---\n본문", "ask": None, "ready": True})}])
+    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="좋아 정리해줘", provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert res.ask is not None and res.ask.trigger == "b"
+    assert h._load_state(s, "rb")["stage"] == "A"  # 아직 전환 전(사용자 확정 대기)

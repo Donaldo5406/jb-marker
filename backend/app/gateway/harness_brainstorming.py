@@ -99,5 +99,69 @@ class BrainstormingHarness(Harness):
                   source="marker", mime="application/json")
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
-        # Task 6/7에서 stage A/B 구현. 골격에서는 NotImplemented 방지용 최소 분기.
-        raise NotImplementedError("Task 6/7에서 구현")
+        state = self._load_state(store, req.run_id)
+        msgs = self._load_messages(store, req.run_id)
+        msgs.append({"role": "user", "content": req.user_prompt})
+        if state["stage"] == "A":
+            return self._stage_a(req, provider, store, state, msgs)
+        if state["stage"] == "B":
+            return self._stage_b(req, provider, store, state, msgs)
+        return self._stage_done(req, provider, store, state, msgs)
+
+    def _conversation(self, msgs: list[dict], extra: str) -> list[Message]:
+        conv = [Message(m["role"], m["content"]) for m in msgs]
+        conv.append(Message("system", extra))
+        return conv
+
+    def _save_research(self, store, run_id: str, citations: list[dict]) -> int:
+        base = self._base(run_id)
+        existing = len(store.list(f"{base}/assets/research"))
+        for i, c in enumerate(citations or []):
+            p = f"{base}/assets/research/article/src_{existing + i}.md"
+            store.put(p, c.get("snippet") or "", source="research",
+                      meta={"source_url": c.get("url"), "title": c.get("title")}, mime="text/markdown")
+        return len(citations or [])
+
+    def _stage_a(self, req, provider, store, state, msgs) -> HarnessResult:
+        base = self._base(req.run_id)
+        spec_node = store.get(f"{base}/spec.md")
+        cur = spec_node.content_text if spec_node else ""
+        sys = self.system_prompt() + (
+            "\n\n[Stage A] 사용자와 대화하며 캠페인 기획을 탐색하고 spec.md를 점증 구축합니다. "
+            "document에는 goal/target_segments/key_messages/channels/languages/multinational/tone/"
+            "factsheet/disclosures/research_refs를 YAML frontmatter로 담으세요. "
+            "필요하면 웹서치로 근거를 찾으세요." + _PROTOCOL)
+        resp = provider.complete(self._conversation(msgs, f"현재 spec.md:\n{cur}"),
+                                 model=req.provider, system=sys, tools=[{"type": "web_search"}])
+        data = _parse_json(resp.text)
+        reply = data.get("reply", "")
+        document = data.get("document") or cur
+        ask = data.get("ask")
+        ready = bool(data.get("ready"))
+
+        events = []
+        if self._save_research(store, req.run_id, resp.citations):
+            pass
+        store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown")
+        events.append({"type": "artifact", "path": f"{base}/spec.md"})
+
+        # ready → spec lock 제안(b). bypass면 즉시 Stage B 진입.
+        if ready and not ask:
+            if req.bypass:
+                state["spec_locked"] = True; state["stage"] = "B"; state["pending_ask"] = None
+                msgs.append({"role": "assistant", "content": reply})
+                self._save_messages(store, req.run_id, msgs)
+                self._save_state(store, req.run_id, state)
+                return self._stage_b(req, provider, store, state, msgs, first=True)
+            ask = {"trigger": "b", "question": "spec을 확정하고 계획(plan) 단계로 넘어갈까요?",
+                   "options": ["예, plan으로", "아니오, 더 다듬기"]}
+
+        msgs.append({"role": "assistant", "content": reply})
+        self._save_messages(store, req.run_id, msgs)
+        state["pending_ask"] = ask
+        self._save_state(store, req.run_id, state)
+        ask_obj = AskPayload(**ask) if ask else None
+        if ask_obj:
+            events.append({"type": "askuser", "ask": ask})
+        return HarnessResult(text=reply, output_path=f"{base}/spec.md",
+                             meta={"source": "marker", "stage": "A"}, ask=ask_obj, events=events)
