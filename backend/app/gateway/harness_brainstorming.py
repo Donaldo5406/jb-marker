@@ -130,6 +130,17 @@ class BrainstormingHarness(Harness):
 
     def _stage_a(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict]) -> HarnessResult:
         base = self._base(req.run_id)
+
+        # 사용자가 직전 (b) spec-lock 질문에 '예'로 답함 → Stage B 진입
+        pending = state.get("pending_ask") or {}
+        if pending.get("trigger") == "b" and (req.bypass or self._is_yes(req.answer)):
+            state["spec_locked"] = True; state["stage"] = "B"; state["pending_ask"] = None
+            self._save_state(store, req.run_id, state)
+            self._save_messages(store, req.run_id, msgs)
+            return self._stage_b(req, provider, store, state, msgs, first=True)
+        if pending.get("trigger") == "b":   # '아니오' → 계속 탐색
+            state["pending_ask"] = None
+
         spec_node = store.get(f"{base}/spec.md")
         cur = spec_node.content_text if spec_node else ""
         sys = self.system_prompt() + (
@@ -173,3 +184,79 @@ class BrainstormingHarness(Harness):
                                                        "options": ask_obj.options}})
         return HarnessResult(text=reply, output_path=f"{base}/spec.md",
                              meta={"source": "marker", "stage": "A"}, ask=ask_obj, events=events)
+
+    def _is_yes(self, answer: str | None) -> bool:
+        return bool(answer) and ("예" in answer or "plan" in answer.lower() or answer.strip().lower() in {"y", "yes"})
+
+    def _stage_b(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict],
+                 first: bool = False) -> HarnessResult:
+        base = self._base(req.run_id)
+
+        # 1) pending(b) = plan lock 확정 처리(LLM 불필요)
+        pending = state.get("pending_ask") or {}
+        if not first and pending.get("trigger") == "b":
+            if req.bypass or self._is_yes(req.answer):
+                state["plan_locked"] = True; state["stage"] = "done"; state["pending_ask"] = None
+                store.set_step_status(req.run_id, "brainstorming", "done")   # D8
+                self._save_state(store, req.run_id, state)
+                done_msg = "계획을 확정했습니다. design 단계로 진행할 수 있습니다."
+                msgs.append({"role": "assistant", "content": done_msg})
+                self._save_messages(store, req.run_id, msgs)
+                return HarnessResult(text=done_msg, output_path=f"{base}/plan.md",
+                                     meta={"source": "marker", "stage": "done"},
+                                     events=[{"type": "artifact", "path": f"{base}/plan.md"}])
+            # '아니오' → 계속 다듬기(아래 LLM 호출로 진행)
+            state["pending_ask"] = None
+
+        # 2) plan 생성/갱신 (LLM). 컨텍스트는 system=로(프로바이더 무관 전달).
+        spec = store.get(f"{base}/spec.md")
+        plan_node = store.get(f"{base}/plan.md")
+        cur_plan = plan_node.content_text if plan_node else ""
+        sys = self.system_prompt() + (
+            "\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. plan.md의 YAML frontmatter에 반드시 "
+            f"다음 키를 포함하세요: {sorted(REQUIRED_PLAN_FIELDS)}. " + _PROTOCOL +
+            f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}\n\n[현재 plan.md]\n{cur_plan}")
+        resp = provider.complete(self._conversation(msgs), model=req.provider, system=sys)
+        data = _parse_json(resp.text)
+        reply = data.get("reply", "")
+        document = data.get("document") or cur_plan
+        store.put(f"{base}/plan.md", document, source="marker", mime="text/markdown")
+        events = [{"type": "artifact", "path": f"{base}/plan.md"}]
+
+        # 3) ⓪계약 검증
+        missing = self.critic(document)
+        if missing:
+            ask = {"trigger": "c", "question": f"계획에 다음 필수 요소가 빠졌습니다: {', '.join(missing)}. 보충할까요?",
+                   "options": ["보충하기", "수동 편집"]}
+        elif bool(data.get("ready")):
+            if req.bypass:
+                state["plan_locked"] = True; state["stage"] = "done"; state["pending_ask"] = None
+                store.set_step_status(req.run_id, "brainstorming", "done")
+                self._save_state(store, req.run_id, state)
+                msgs.append({"role": "assistant", "content": reply})
+                self._save_messages(store, req.run_id, msgs)
+                return HarnessResult(text=reply, output_path=f"{base}/plan.md",
+                                     meta={"source": "marker", "stage": "done"}, events=events)
+            ask = {"trigger": "b", "question": "계획(plan)을 확정할까요? (design 단계가 열립니다)",
+                   "options": ["예, 확정", "아니오, 더 다듬기"]}
+        else:
+            ask = data.get("ask")
+
+        msgs.append({"role": "assistant", "content": reply})
+        self._save_messages(store, req.run_id, msgs)
+        state["pending_ask"] = ask
+        self._save_state(store, req.run_id, state)
+        ask_obj = _to_ask(ask)
+        if ask_obj:
+            events.append({"type": "askuser", "ask": {"trigger": ask_obj.trigger,
+                          "question": ask_obj.question, "options": ask_obj.options}})
+        return HarnessResult(text=reply, output_path=f"{base}/plan.md",
+                             meta={"source": "marker", "stage": "B"}, ask=ask_obj, events=events)
+
+    def _stage_done(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict]) -> HarnessResult:
+        base = self._base(req.run_id)
+        text = "이 캠페인의 기획·계획은 확정되었습니다. design 단계에서 이어서 작업하세요."
+        msgs.append({"role": "assistant", "content": text})
+        self._save_messages(store, req.run_id, msgs)
+        return HarnessResult(text=text, output_path=f"{base}/plan.md",
+                             meta={"source": "marker", "stage": "done"}, events=[])
