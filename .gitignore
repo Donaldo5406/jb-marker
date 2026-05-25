@@ -1,0 +1,11 @@
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.venv/
+data/runs/
+.env
+.env.local
+*.tsbuildinfo
+.DS_Store
+.omc/
