@@ -140,3 +140,40 @@ def test_s2c_writes_logo_disclosure_and_ai_notice(tmp_path):
     disc = s.get("/r1/design/design-system/components/disclosure/ko.txt")
     assert disc is not None and "AI" in disc.content_text
     assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S3"
+
+
+# --- Task 10: S3 크리틱 루브릭 + metadata.md + step_status(done) ---
+
+
+def test_critic_returns_7_scores_and_threshold(tmp_path):
+    h = DesignHarness(image_provider=FakeProvider())
+    scores = h.critic({"hierarchy":4,"grid":4,"whitespace":4,"cta":4,
+                       "compliance":4,"copy_visual":4,"brand":4})
+    assert scores["pass"] is True
+    bad = h.critic({"hierarchy":1,"grid":4,"whitespace":4,"cta":4,
+                    "compliance":4,"copy_visual":4,"brand":4})
+    assert bad["pass"] is False
+
+
+def test_s3_writes_metadata_and_marks_done(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step":"S3","confirmed":{},"bypass":{"S3":True},"languages":["ko"],
+         "pending_ask":None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"copy":{"ko":{"headline":"든든한 적금"}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="confirm"), provider=FakeProvider(), store=s)
+    assert s.get("/r1/design/metadata.md") is not None
+    assert s.get_manifest("r1").step_status["design"] == "done"
+
+
+def test_done_step_is_idempotent_no_error(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step":"done","confirmed":{},"bypass":{},"languages":["ko"],"pending_ask":None}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    assert res.meta.get("step") == "done"   # no exception

@@ -50,11 +50,22 @@ def _frontmatter(md: str) -> dict:
 
 
 class DesignHarness(Harness):
+    RUBRIC = ("hierarchy", "grid", "whitespace", "cta",
+              "compliance", "copy_visual", "brand")
+
     def __init__(self, *, image_provider) -> None:
         self._image_provider = image_provider
 
     def system_prompt(self) -> str:
         return PERSONA
+
+    def critic(self, scores: dict) -> dict:
+        """7항목 1~5 채점 → pass 판정(평균≥3.5 그리고 단일≥2)."""
+        vals = [float(scores.get(k, 0)) for k in self.RUBRIC]
+        avg = sum(vals) / len(vals) if vals else 0.0
+        ok = avg >= 3.5 and min(vals) >= 2
+        return {"scores": {k: scores.get(k) for k in self.RUBRIC},
+                "avg": round(avg, 2), "pass": ok}
 
     def _base(self, run_id: str) -> str:
         return f"/{run_id}/design"
@@ -76,6 +87,10 @@ class DesignHarness(Harness):
         step = state["step"]
         if step == "S0":
             return self._s0_setup(req, store, state)
+        if step == "done":
+            return HarnessResult(text="이미 디자인이 확정되었습니다.",
+                output_path=f"{self._base(req.run_id)}/metadata.md",
+                meta={"source": "marker", "step": "done"}, events=[])
         return self._dispatch(step, req, provider, store, state)
 
     def _dispatch(self, step, req, provider, store, state) -> HarnessResult:
@@ -87,7 +102,9 @@ class DesignHarness(Harness):
             return self._s2b_copy(req, provider, store, state)
         if step == "S2c":
             return self._s2c_brand(req, provider, store, state)
-        raise NotImplementedError(f"{step} 미구현 (Task 8~11)")
+        if step == "S3":
+            return self._s3_final(req, provider, store, state)
+        raise NotImplementedError(f"{step} 미구현 (알 수 없는 step)")
 
     def _load_references(self) -> list[dict]:
         d = os.path.join(os.path.dirname(__file__), "..", "references", "design")
@@ -199,6 +216,30 @@ class DesignHarness(Harness):
             meta={"source": "marker", "step": "S2c"},
             events=[{"type": "artifact",
                      "path": f"{base}/design-system/components/disclosure"}])
+
+    def _s3_final(self, req, provider, store, state) -> HarnessResult:
+        base = self._base(req.run_id)
+        spec = self._parse_json(
+            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        copy = spec.get("copy", {})
+        langs = state.get("languages", ["ko"])
+        lines = ["---", f"languages: {langs}", "---", "# 디자인 메타데이터", ""]
+        for lang in langs:
+            c = copy.get(lang, {})
+            lines.append(f"## {lang}")
+            for k in ("headline", "sub", "cta"):
+                if c.get(k):
+                    lines.append(f"- {k}: {c[k]}")
+        store.put(f"{base}/metadata.md", "\n".join(lines),
+                  source="marker", mime="text/markdown")
+        state["confirmed"]["S3"] = True
+        state["step"] = "done"
+        self._save_state(store, req.run_id, state)
+        store.set_step_status(req.run_id, "design", "done")
+        return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
+            output_path=f"{base}/metadata.md",
+            meta={"source": "marker", "step": "done"},
+            events=[{"type": "artifact", "path": f"{base}/metadata.md"}])
 
     def _s0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
         base = self._base(req.run_id)
