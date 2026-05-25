@@ -9,4 +9,4 @@ class SupabaseVfsStore(VfsStore):
         raise NotImplementedError("SupabaseVfsStore는 후속 마일스톤에서 구현 (로컬-우선)")
 
     create_run = get_manifest = patch_manifest = set_step_status = _todo
-    put = get = read_meta = list = update = delete = _todo
+    put = get = read_meta = list = update = delete = list_runs = _todo

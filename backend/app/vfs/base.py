@@ -21,6 +21,9 @@ class VfsStore(ABC):
     @abstractmethod
     def set_step_status(self, run_id: str, step: str, status: str) -> Manifest: ...
 
+    @abstractmethod
+    def list_runs(self, *, user_id: str = "demo") -> list[Manifest]: ...
+
     # --- 노드 CRUD ---
     @abstractmethod
     def put(self, path: str, content: str | bytes, *, meta: dict | None = None,

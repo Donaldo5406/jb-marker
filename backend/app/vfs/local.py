@@ -57,6 +57,10 @@ class LocalVfsStore(VfsStore):
         m.updated_at = _now()
         return m
 
+    def list_runs(self, *, user_id="demo") -> list[Manifest]:
+        ms = [m for m in self._manifests.values() if m.user_id == user_id]
+        return sorted(ms, key=lambda m: m.created_at or "", reverse=True)
+
     # --- 노드 CRUD ---
     def put(self, path, content, *, meta=None, source=None, mime=None) -> VfsNode:
         validate_path(path)
