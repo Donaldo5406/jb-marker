@@ -72,3 +72,30 @@ def test_put_vfs_infers_json_mime():
     # 명시 mime 우선 (VFS 경로는 /{runId}/{studio}/... 규약을 따른다)
     resp2 = client.put(f"/vfs/{rid}/brainstorming/note.md", json={"content": "# hi", "mime": "text/markdown"})
     assert resp2.json()["mime"] == "text/markdown"
+
+
+def test_brain_marker_uses_brainstorming_harness_and_writes_spec():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    client.put("/entitlement", json={"marker": True})  # Marker 허용
+    rid = client.post("/runs", json={"title": "B"}).json()["run_id"]
+    body = {"run_id": rid, "studio": "brainstorming", "prompt": "적금 캠페인",
+            "provider": "fake", "is_marker": True}
+    r = client.post("/gateway/run", json=body)
+    assert r.status_code == 200
+    nodes = client.get(f"/vfs/{rid}").json()["nodes"]
+    paths = [n["path"] for n in nodes]
+    assert f"/{rid}/brainstorming/spec.md" in paths
+    assert "ask" in r.json()
+
+
+def test_free_brain_uses_passthrough():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={"title": "P"}).json()["run_id"]
+    body = {"run_id": rid, "studio": "brainstorming", "prompt": "hi", "provider": "fake", "is_marker": False}
+    r = client.post("/gateway/run", json=body)
+    assert r.status_code == 200
+    assert r.json()["output_path"].endswith("/passthrough.md")

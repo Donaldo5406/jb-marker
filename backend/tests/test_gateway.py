@@ -46,3 +46,16 @@ def test_gateway_allows_marker_with_override(store):
                          provider="anthropic", is_marker=True)
     result = gw.run(req, PassthroughHarness())
     assert store.get(result.output_path).source == "marker"
+
+
+def test_gateway_delegates_to_handle_turn_and_publishes_events():
+    from app.gateway.gateway import MarkerGateway
+    from app.gateway.harness import PassthroughHarness, HarnessRequest
+    from app.providers.fake import FakeProvider
+    from app.vfs.local import LocalVfsStore
+    s = LocalVfsStore(); s.create_run("rg")
+    gw = MarkerGateway(s, entitlement_override=True, provider_factory=lambda name: FakeProvider())
+    req = HarnessRequest(run_id="rg", studio="brainstorming", user_prompt="hi", provider="fake")
+    res = gw.run(req, PassthroughHarness())
+    assert res.output_path == "/rg/brainstorming/passthrough.md"
+    assert any(e["type"] == "artifact" for e in res.events)

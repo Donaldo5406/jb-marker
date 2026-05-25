@@ -8,7 +8,8 @@ export type VfsNode = {
   path: string; mime: string | null; source: string | null;
   content_text: string | null; meta: Record<string, unknown>;
 };
-export type GatewayResult = { output_path: string; text: string };
+export type AskPayload = { trigger: "a" | "b" | "c"; question: string; options: string[] };
+export type GatewayResult = { output_path: string; text: string; ask?: AskPayload | null };
 export type Provider = "anthropic" | "openai" | "google" | "fake";
 
 async function j<T>(res: Response): Promise<T> {
@@ -31,10 +32,10 @@ export const api = {
     return j(await fetch(`${BASE}/runs`));
   },
   async gatewayRun(p: { run_id: string; studio: string; prompt: string;
-    provider: Provider; is_marker: boolean }): Promise<GatewayResult> {
+    provider: Provider; is_marker: boolean; answer?: string | null; bypass?: boolean }): Promise<GatewayResult> {
     return j(await fetch(`${BASE}/gateway/run`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(p),
+      body: JSON.stringify({ ...p, answer: p.answer ?? null, bypass: p.bypass ?? false }),
     }));
   },
   async vfsList(runId: string): Promise<{ nodes: VfsNode[] }> {

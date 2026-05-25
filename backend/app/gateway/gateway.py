@@ -1,6 +1,7 @@
-"""MarkerGateway — 모든 AI 호출의 경유점.
+"""MarkerGateway — 모든 AI 호출의 경유점(엔타이틀먼트 choke + provider 팩토리).
 
-흐름: 엔타이틀먼트 검사 → 하네스 조립 → provider 호출 → VFS 영속(+meta.grounds) → 결과.
+흐름: 엔타이틀먼트 검사 → provider 해석 → harness.handle_turn 위임.
+하네스 조립·provider 호출·VFS 영속(+meta.grounds)은 하네스(handle_turn) 책임.
 raw 프롬프트 직행 금지: 항상 하네스(최소 Passthrough) + 게이트웨이 경유.
 """
 from __future__ import annotations
@@ -24,13 +25,5 @@ class MarkerGateway:
     def run(self, req: HarnessRequest, harness: Harness) -> HarnessResult:
         override = self._override() if callable(self._override) else self._override
         check_entitlement(is_marker=req.is_marker, override=override)
-        system, messages = harness.build_messages(req)
-        system = system or harness.system_prompt()
         provider = self._provider_factory(req.provider)
-        resp = provider.complete(messages, model=req.provider, system=system)
-        text = harness.critic(resp.text)
-        source = "marker" if req.is_marker else "raw"
-        meta = {"source": source, "provider": req.provider, "grounds": []}
-        path = harness.output_path(req)
-        self._store.put(path, text, meta=meta, source=source, mime="text/markdown")
-        return HarnessResult(text=text, output_path=path, meta=meta)
+        return harness.handle_turn(req, provider=provider, store=self._store)

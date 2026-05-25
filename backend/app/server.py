@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from .config import load_settings
 from .gateway.gateway import MarkerGateway
 from .gateway.harness import HarnessRequest, PassthroughHarness
+from .gateway.harness_brainstorming import BrainstormingHarness
 from .providers.registry import get_provider
 from .vfs.factory import get_vfs_store
 
@@ -26,6 +27,8 @@ class GatewayRun(BaseModel):
     prompt: str
     provider: str = "fake"
     is_marker: bool = False
+    answer: str | None = None
+    bypass: bool = False
 
 
 class PutText(BaseModel):
@@ -105,13 +108,20 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "run 없음")
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=body.provider,
-                             is_marker=body.is_marker)
+                             is_marker=body.is_marker, answer=body.answer, bypass=body.bypass)
+        harness = (BrainstormingHarness()
+                   if (body.studio == "brainstorming" and body.is_marker)
+                   else PassthroughHarness())
         try:
-            result = gateway.run(req, PassthroughHarness())
+            result = gateway.run(req, harness)
         except PermissionError as e:
             raise HTTPException(402, str(e))
-        await _publish(body.run_id, {"type": "artifact", "path": result.output_path})
-        return {"output_path": result.output_path, "text": result.text}
+        for ev in result.events:
+            await _publish(body.run_id, ev)
+        ask = None
+        if result.ask is not None:
+            ask = {"trigger": result.ask.trigger, "question": result.ask.question, "options": result.ask.options}
+        return {"output_path": result.output_path, "text": result.text, "ask": ask}
 
     @app.get("/vfs/{run_id}")
     def vfs_list(run_id: str, prefix: str | None = None) -> dict:

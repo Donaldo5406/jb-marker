@@ -118,9 +118,14 @@ function DirRow({ node, depth }: { node: TreeNode; depth: number }) {
 /** 좌측 패널: VFS 트리. 빈 상태/스크롤 처리. */
 export function FileTree() {
   const c = useCockpit();
+  // 내부 상태 노드(_state.json/_messages.json 등) 숨김: path에 `_` 접두 세그먼트가 있으면 제외.
+  const visible = React.useMemo(
+    () => c.nodes.filter((n) => !n.path.split("/").some((seg) => seg.startsWith("_"))),
+    [c.nodes],
+  );
   const tree = React.useMemo(
-    () => (c.runId ? buildTree(c.nodes, c.runId) : newNode("", true)),
-    [c.nodes, c.runId],
+    () => (c.runId ? buildTree(visible, c.runId) : newNode("", true)),
+    [visible, c.runId],
   );
   const roots = sortedChildren(tree);
 
@@ -128,7 +133,7 @@ export function FileTree() {
     <div className="flex h-full flex-col overflow-hidden bg-surface-container-low">
       <div className="flex items-center justify-between border-b border-outline-variant px-3 py-2">
         <span className="text-caption uppercase tracking-wide text-on-surface-variant">탐색기</span>
-        <span className="text-caption text-outline">{c.nodes.length}</span>
+        <span className="text-caption text-outline">{visible.length}</span>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {roots.length === 0 ? (

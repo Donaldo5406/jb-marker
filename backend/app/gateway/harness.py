@@ -19,6 +19,15 @@ class HarnessRequest:
     provider: str          # anthropic|openai|google|fake
     is_marker: bool = False
     history: list[Message] = field(default_factory=list)
+    answer: str | None = None      # AskUser 응답(다음 턴 재개)
+    bypass: bool = False           # AskUser bypass(자동 기본값)
+
+
+@dataclass
+class AskPayload:
+    trigger: str          # "a" | "b" | "c"
+    question: str
+    options: list[str]
 
 
 @dataclass
@@ -26,6 +35,8 @@ class HarnessResult:
     text: str
     output_path: str
     meta: dict
+    ask: AskPayload | None = None
+    events: list[dict] = field(default_factory=list)
 
 
 class Harness(ABC):
@@ -53,14 +64,26 @@ class Harness(ABC):
         return f"/{req.run_id}/{req.studio}/output.md"
 
     @abstractmethod
-    def build_messages(self, req: HarnessRequest) -> tuple[str | None, list[Message]]: ...
+    def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult: ...
+
+    def build_messages(self, req: HarnessRequest) -> tuple[str | None, list[Message]]:
+        return None, [*req.history, Message("user", req.user_prompt)]
 
 
 class PassthroughHarness(Harness):
     """요소 미적용 raw 경로 (무료 티어 / M1 증명용)."""
 
-    def build_messages(self, req: HarnessRequest):
-        return None, [*req.history, Message("user", req.user_prompt)]
+    def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
+        system, messages = self.build_messages(req)
+        system = system or self.system_prompt()
+        resp = provider.complete(messages, model=req.provider, system=system)
+        text = self.critic(resp.text)
+        source = "marker" if req.is_marker else "raw"
+        meta = {"source": source, "provider": req.provider, "grounds": []}
+        path = self.output_path(req)
+        store.put(path, text, meta=meta, source=source, mime="text/markdown")
+        return HarnessResult(text=text, output_path=path, meta=meta,
+                             events=[{"type": "artifact", "path": path}])
 
     def output_path(self, req: HarnessRequest) -> str:
         return f"/{req.run_id}/{req.studio}/passthrough.md"
