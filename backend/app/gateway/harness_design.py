@@ -28,6 +28,14 @@ PERSONA = (
 )
 
 
+class _Empty:
+    content_text = "{}"
+
+
+def _empty():
+    return _Empty()
+
+
 def _frontmatter(md: str) -> dict:
     md = (md or "").lstrip()
     if not md.startswith("---"):
@@ -72,7 +80,9 @@ class DesignHarness(Harness):
     def _dispatch(self, step, req, provider, store, state) -> HarnessResult:
         if step == "S1":
             return self._s1_rough(req, provider, store, state)
-        raise NotImplementedError(f"{step} 미구현 (Task 7~11)")
+        if step == "S2a":
+            return self._s2a_visual(req, provider, store, state)
+        raise NotImplementedError(f"{step} 미구현 (Task 8~11)")
 
     def _load_references(self) -> list[dict]:
         d = os.path.join(os.path.dirname(__file__), "..", "references", "design")
@@ -117,6 +127,23 @@ class DesignHarness(Harness):
             output_path=f"{base}/rough/layout.spec.json",
             meta={"source": "marker", "step": "S1"},
             events=[{"type": "artifact", "path": f"{base}/rough/layout.spec.json"}])
+
+    def _s2a_visual(self, req, provider, store, state) -> HarnessResult:
+        base = self._base(req.run_id)
+        spec = self._parse_json(
+            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
+        aspect = spec.get("aspect", "1:1")
+        png = self._image_provider.generate_image(concept, aspect=aspect)
+        path = f"{base}/design-system/components/visual/v1.png"
+        store.put(path, png, source="gemini", mime="image/png",
+                  meta={"concept": concept, "aspect": aspect})
+        state["confirmed"]["S2a"] = True
+        state["step"] = "S2b"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(text="비주얼을 생성했습니다.", output_path=path,
+            meta={"source": "gemini", "step": "S2a"},
+            events=[{"type": "artifact", "path": path}])
 
     def _s0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
         base = self._base(req.run_id)

@@ -82,3 +82,22 @@ def test_s1_writes_layout_spec_from_llm(tmp_path):
     spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
     assert spec["visual_concept"] == "블루 그라디언트"
     assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
+
+
+# --- Task 7: S2a 비주얼(Nano Banana → components/visual) ---
+
+
+def test_s2a_generates_visual_blob_via_image_provider(tmp_path):
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"visual_concept": "블루 그라디언트", "aspect": "1:1"}),
+          source="marker", mime="application/json")
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    nodes = s.list("/r1/design/design-system/components/visual")
+    assert any(n.path.endswith(".png") for n in nodes)
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2b"
