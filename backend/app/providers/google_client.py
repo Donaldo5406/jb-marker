@@ -28,3 +28,18 @@ class GoogleProvider(Provider):
         except Exception:
             pass
         return ProviderResponse(text=text, model=model, raw=resp, citations=citations)
+
+    def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
+        from google import genai
+        client = genai.Client(api_key=self._api_key)
+        full = (f"{prompt}\n\n"
+                "CRITICAL: 이미지에 어떤 글자/숫자/로고/워터마크도 렌더하지 마세요. "
+                "텍스트는 별도 레이어로 처리됩니다. 배경/키비주얼만 생성. "
+                f"종횡비 {aspect}.")
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash-image", contents=full)
+        for part in resp.candidates[0].content.parts:
+            inline = getattr(part, "inline_data", None)
+            if inline and getattr(inline, "data", None):
+                return inline.data   # bytes (PNG)
+        raise RuntimeError("Nano Banana 응답에 이미지 파트가 없습니다")
