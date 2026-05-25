@@ -1,0 +1,81 @@
+"""LocalVfsStore — 인메모리 인덱스 + 디스크 블롭 (오프라인·테스트·데모).
+
+storage.py env-스왑 패턴 계승: JBM_STORAGE_DIR로 블롭 루트 지정.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .base import VfsStore
+from .paths import parse_path, validate_path
+from .types import Manifest, VfsNode
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class LocalVfsStore(VfsStore):
+    def __init__(self, storage_dir: str | None = None) -> None:
+        self._nodes: dict[str, VfsNode] = {}
+        self._manifests: dict[str, Manifest] = {}
+        self._storage_dir = storage_dir
+
+    def _blob_root(self) -> Path:
+        return Path(self._storage_dir or os.environ.get("JBM_STORAGE_DIR") or "data/runs")
+
+    # --- run 메타 (Task 9에서 본격 구현; 텍스트 테스트용 최소) ---
+    def create_run(self, run_id, *, user_id="demo", title=None, languages=None) -> Manifest:
+        m = Manifest(run_id=run_id, user_id=user_id, title=title,
+                     languages=list(languages or []), created_at=_now(), updated_at=_now())
+        self._manifests[run_id] = m
+        return m
+
+    def get_manifest(self, run_id) -> Manifest | None:
+        return self._manifests.get(run_id)
+
+    def patch_manifest(self, run_id, patch) -> Manifest:  # Task 9에서 확장
+        raise NotImplementedError
+
+    def set_step_status(self, run_id, step, status) -> Manifest:  # Task 9에서 확장
+        raise NotImplementedError
+
+    # --- 노드 CRUD ---
+    def put(self, path, content, *, meta=None, source=None, mime=None) -> VfsNode:
+        validate_path(path)
+        run_id, _, _ = parse_path(path)
+        is_blob = isinstance(content, bytes)
+        node = VfsNode(run_id=run_id, path=path, mime=mime, source=source,
+                       meta=dict(meta or {}), created_at=_now())
+        if is_blob:
+            # Task 8에서 블롭 디스크 기록 + meta 불변식 구현
+            raise NotImplementedError("blob put은 Task 8에서 구현")
+        node.content_text = content
+        node.hash = hashlib.sha256(content.encode()).hexdigest()
+        self._nodes[path] = node
+        return node
+
+    def get(self, path) -> VfsNode | None:
+        return self._nodes.get(path)
+
+    def read_meta(self, path) -> dict | None:
+        n = self._nodes.get(path)
+        return n.meta if n else None
+
+    def list(self, prefix) -> list[VfsNode]:
+        p = prefix.rstrip("/")
+        return [n for path, n in self._nodes.items() if path == p or path.startswith(p + "/")]
+
+    def update(self, path, patch) -> VfsNode:
+        n = self._nodes.get(path)
+        if n is None:
+            raise KeyError(path)
+        for k, v in patch.items():
+            setattr(n, k, v)
+        return n
+
+    def delete(self, path) -> None:
+        self._nodes.pop(path, None)
