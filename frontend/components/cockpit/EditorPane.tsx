@@ -1,14 +1,31 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { ImageIcon, Save, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
+
+/** FabricEditor는 client-only(브라우저 canvas 의존) — SSR 비활성 lazy-load. */
+const FabricEditor = dynamic(
+  () => import("./FabricEditor").then((m) => m.FabricEditor),
+  { ssr: false },
+);
 
 /** 파일명에서 마지막 세그먼트만(상단 바 표시용). */
 function baseName(path: string): string {
   const segs = path.split("/").filter(Boolean);
   return segs[segs.length - 1] ?? path;
+}
+
+/** scene 파일 내용을 안전 파싱 — 잘못된 JSON이어도 렌더 크래시 없이 null 반환. */
+function parseScene(content: string): { objects: any[] } | null {
+  if (!content) return null;
+  try {
+    return JSON.parse(content) as { objects: any[] };
+  } catch {
+    return null;
+  }
 }
 
 /** 중앙 패널: 파일 뷰어/에디터. 확장자별 렌더러 분기(C3 이중성).
@@ -89,16 +106,10 @@ export function EditorPane() {
 
       {/* 본문 */}
       {isScene ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-lowest">
-            <ImageIcon className="h-5 w-5 text-outline" aria-hidden />
-          </div>
-          <p className="text-body-lg font-medium text-on-surface">IMG.LY 디자인 에디터</p>
-          <p className="max-w-sm text-body-sm text-on-surface-variant">
-            <code className="rounded bg-surface-container px-1.5 py-0.5 text-caption">.scene</code>{" "}
-            파일을 여는 시각 에디터는 M4에서 제공됩니다.
-          </p>
-        </div>
+        <FabricEditor
+          scene={parseScene(file.content)}
+          onSave={(json) => c.saveSceneJson(JSON.stringify(json))}
+        />
       ) : (
         <textarea
           value={file.content}
