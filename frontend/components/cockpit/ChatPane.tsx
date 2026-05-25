@@ -27,6 +27,9 @@ export function ChatPane() {
     setLoading(true);
     try {
       await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
+    } catch (err) {
+      // 402(업셀)는 Provider가 처리. 그 외(네트워크/500)는 unhandled rejection 방지용 로깅.
+      console.error("sendChat failed", err);
     } finally {
       setLoading(false);
     }
