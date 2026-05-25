@@ -24,6 +24,9 @@ export type CockpitContextValue = {
   messages: ChatMessage[];
   pendingAsk: AskPayload | null;
   brainStage: string | null;          // _state.json.stage
+  designStep: string;                 // "S0".."done"
+  designLang: string;                 // 현재 편집 언어
+  setDesignLang: (l: string) => void;
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -34,6 +37,8 @@ export type CockpitContextValue = {
   saveFile: () => Promise<void>;
   sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean })
     => Promise<{ text?: string; ask?: AskPayload | null } | null>;
+  runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
+  saveSceneJson: (content: string) => Promise<void>;
   answerAsk: (choice: string) => Promise<void>;
   closeAsk: () => void;
   setStudio: (s: Studio) => void;
@@ -61,6 +66,8 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingAsk, setPendingAsk] = useState<AskPayload | null>(null);
   const [brainStage, setBrainStage] = useState<string | null>(null);
+  const [designStep, setDesignStep] = useState("S0");
+  const [designLang, setDesignLang] = useState("ko");
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -186,6 +193,29 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     [activeStudio, refreshTree, loadBrainState, loadManifest],
   );
 
+  /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
+   *  트리 갱신 + 응답 meta.step으로 designStep 추적. provider는 brain과 동일하게 anthropic 기본. */
+  const runDesign = useCallback(async (action: string, prompt = "") => {
+    const id = runIdRef.current;
+    if (!id) return { text: "" };
+    const res = await api.gatewayRun({
+      run_id: id, studio: "design", prompt,
+      provider: "anthropic", is_marker: true, action,
+    });
+    await refreshTree();
+    const st = res.meta?.step;
+    if (typeof st === "string") setDesignStep(st);
+    return { text: res.text };
+  }, [refreshTree]);
+
+  /** 캔버스 편집 결과(scene JSON)를 현재 열린 .scene 파일에 in-place 저장. */
+  const saveSceneJson = useCallback(async (content: string) => {
+    const id = runIdRef.current;
+    if (!id || !openFile) return;
+    const rest = restOf(id, openFile.path);
+    await api.vfsPut(id, rest, content, "application/json");
+  }, [openFile]);
+
   const answerAsk = useCallback(async (choice: string) => {
     const id = runIdRef.current;
     if (!id || !pendingAsk) return;
@@ -253,6 +283,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     messages,
     pendingAsk,
     brainStage,
+    designStep,
+    designLang,
+    setDesignLang,
     startRun,
     openRun,
     refreshTree,
@@ -261,6 +294,8 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     closeFile,
     saveFile,
     sendChat,
+    runDesign,
+    saveSceneJson,
     answerAsk,
     closeAsk,
     setStudio,

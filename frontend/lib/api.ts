@@ -9,7 +9,10 @@ export type VfsNode = {
   content_text: string | null; meta: Record<string, unknown>;
 };
 export type AskPayload = { trigger: "a" | "b" | "c"; question: string; options: string[] };
-export type GatewayResult = { output_path: string; text: string; ask?: AskPayload | null };
+export type GatewayResult = {
+  output_path: string; text: string; ask?: AskPayload | null;
+  meta?: Record<string, unknown>;
+};
 export type Provider = "anthropic" | "openai" | "google" | "fake";
 
 async function j<T>(res: Response): Promise<T> {

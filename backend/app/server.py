@@ -130,7 +130,8 @@ def create_app() -> FastAPI:
         ask = None
         if result.ask is not None:
             ask = {"trigger": result.ask.trigger, "question": result.ask.question, "options": result.ask.options}
-        return {"output_path": result.output_path, "text": result.text, "ask": ask}
+        return {"output_path": result.output_path, "text": result.text,
+                "ask": ask, "meta": result.meta}
 
     @app.get("/vfs/{run_id}")
     def vfs_list(run_id: str, prefix: str | None = None) -> dict:
