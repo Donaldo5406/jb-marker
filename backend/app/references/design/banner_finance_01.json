@@ -1,0 +1,8 @@
+{ "kind": "banner", "aspect": "16:9",
+  "slots": [
+    {"role":"background","bbox":{"x":0,"y":0,"w":1920,"h":1080},"z":0},
+    {"role":"headline","bbox":{"x":120,"y":380,"w":1100,"h":200},"z":2},
+    {"role":"cta","bbox":{"x":120,"y":640,"w":360,"h":88},"z":3},
+    {"role":"logo","bbox":{"x":1600,"y":80,"w":200,"h":64},"z":3},
+    {"role":"disclosure","bbox":{"x":120,"y":980,"w":1680,"h":60},"z":2}],
+  "notes": "좌측 텍스트 정렬, 우상단 로고" }

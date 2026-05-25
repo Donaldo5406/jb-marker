@@ -11,9 +11,12 @@ BrainstormingHarness의 상태 I/O 패턴을 미러:
 from __future__ import annotations
 
 import json
+import os
+import re
 
 import yaml
 
+from ..providers.base import Message
 from .harness import Harness, HarnessRequest, HarnessResult
 
 STEPS = ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
@@ -67,7 +70,53 @@ class DesignHarness(Harness):
         return self._dispatch(step, req, provider, store, state)
 
     def _dispatch(self, step, req, provider, store, state) -> HarnessResult:
-        raise NotImplementedError(f"{step} 미구현 (Task 6~11)")
+        if step == "S1":
+            return self._s1_rough(req, provider, store, state)
+        raise NotImplementedError(f"{step} 미구현 (Task 7~11)")
+
+    def _load_references(self) -> list[dict]:
+        d = os.path.join(os.path.dirname(__file__), "..", "references", "design")
+        out = []
+        for fn in sorted(os.listdir(d)):
+            if fn.endswith(".json"):
+                with open(os.path.join(d, fn), encoding="utf-8") as f:
+                    out.append(json.load(f))
+        return out
+
+    def _parse_json(self, text: str) -> dict:
+        text = (text or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+        try:
+            return json.loads(text)
+        except Exception:
+            m = re.search(r"\{.*\}", text, re.S)
+            return json.loads(m.group(0)) if m else {}
+
+    def _s1_rough(self, req, provider, store, state) -> HarnessResult:
+        base = self._base(req.run_id)
+        tokens = store.get(f"{base}/design-system/tokens.json")
+        refs = self._load_references()
+        sys = self.system_prompt() + (
+            "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
+            "텍스트는 copy[lang][key]에, 슬롯은 role/bbox/z/copy_key로. "
+            'JSON 한 개만: {"reply":"...","layout_spec":{...},"ready":true/false}'
+            f"\n[tokens]\n{tokens.content_text if tokens else '{}'}"
+            f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}")
+        resp = provider.complete([Message("user", req.user_prompt or "러프 시작")],
+                                 model=req.provider, system=sys)
+        data = self._parse_json(resp.text)
+        spec = data.get("layout_spec") or {}
+        store.put(f"{base}/rough/layout.spec.json",
+                  json.dumps(spec, ensure_ascii=False), source="marker",
+                  mime="application/json")
+        state["confirmed"]["S1"] = True
+        state["step"] = "S2a"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(text=data.get("reply", "러프 완성"),
+            output_path=f"{base}/rough/layout.spec.json",
+            meta={"source": "marker", "step": "S1"},
+            events=[{"type": "artifact", "path": f"{base}/rough/layout.spec.json"}])
 
     def _s0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
         base = self._base(req.run_id)

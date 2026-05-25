@@ -46,3 +46,39 @@ def test_s0_persists_material_matrix(tmp_path):
     h.handle_turn(_req(), provider=FakeProvider(), store=s)
     mm = json.loads(s.get("/r1/design/_material_matrix.json").content_text)
     assert mm and mm[0]["channel"] == "instagram"
+
+
+# --- Task 6: few-shot 번들 + S1 Rough ---
+
+
+def _advance_to(store, h, step):
+    st = json.loads(store.get("/r1/design/_state.json").content_text) \
+         if store.get("/r1/design/_state.json") else None
+    return st
+
+
+def test_load_references_returns_bundled_specs(tmp_path):
+    h = DesignHarness(image_provider=FakeProvider())
+    refs = h._load_references()
+    assert len(refs) >= 2
+    assert any(r["kind"] == "poster" for r in refs)
+
+
+def test_s1_writes_layout_spec_from_llm(tmp_path):
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(), provider=FakeProvider(), store=s)  # S0
+
+    class SpecProvider(FakeProvider):
+        def complete(self, messages, *, model, system=None, tools=None, **kw):
+            from app.providers.base import ProviderResponse
+            doc = {"reply": "러프 완성", "layout_spec": {"aspect": "1:1", "grid": {"cols": 12},
+                   "visual_concept": "블루 그라디언트", "slots": [{"role": "headline",
+                   "bbox": {"x": 80, "y": 120, "w": 920, "h": 200}, "z": 2, "copy_key": "headline"}],
+                   "copy": {"ko": {"headline": "든든한 적금"}}}, "ready": True}
+            return ProviderResponse(text=json.dumps(doc, ensure_ascii=False), model=model)
+
+    res = h.handle_turn(_req(action="advance"), provider=SpecProvider(), store=s)
+    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["visual_concept"] == "블루 그라디언트"
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
