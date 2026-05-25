@@ -42,3 +42,20 @@ def test_get_runs_lists_created_runs():
     runs = resp.json()["runs"]
     assert any(x["run_id"] == rid and x["title"] == "A" for x in runs)
     assert "step_status" in runs[0] and "created_at" in runs[0]
+
+
+def test_entitlement_toggle_gates_marker():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={"title": "E"}).json()["run_id"]
+    # 기본(무료): Marker 호출 → 402
+    body = {"run_id": rid, "studio": "brainstorming", "prompt": "안녕",
+            "provider": "fake", "is_marker": True}
+    assert client.post("/gateway/run", json=body).status_code == 402
+    # 초기 상태 조회
+    assert client.get("/entitlement").json()["marker"] is False
+    # 토글 ON
+    assert client.put("/entitlement", json={"marker": True}).json()["marker"] is True
+    # 이제 Marker 통과
+    assert client.post("/gateway/run", json=body).status_code == 200

@@ -32,6 +32,10 @@ class PutText(BaseModel):
     content: str
 
 
+class EntitlementPut(BaseModel):
+    marker: bool
+
+
 def _node_dict(n) -> dict[str, Any]:
     return {"path": n.path, "mime": n.mime, "source": n.source,
             "content_text": n.content_text, "meta": n.meta}
@@ -54,7 +58,9 @@ def create_app() -> FastAPI:
         def complete(self, messages, *, model=None, system=None, **kw):
             return self._p.complete(messages, model=self._model, system=system, **kw)
 
-    gateway = MarkerGateway(store, entitlement_override=settings.entitlement_override,
+    entitlement_state = {"marker": settings.entitlement_override}
+    gateway = MarkerGateway(store,
+                            entitlement_override=lambda: entitlement_state["marker"],
                             provider_factory=_ModelBoundProvider)
 
     connections: dict[str, set[WebSocket]] = {}
@@ -69,6 +75,15 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/entitlement")
+    def get_entitlement() -> dict:
+        return {"marker": entitlement_state["marker"]}
+
+    @app.put("/entitlement")
+    def put_entitlement(body: EntitlementPut) -> dict:
+        entitlement_state["marker"] = body.marker
+        return {"marker": entitlement_state["marker"]}
 
     @app.post("/runs")
     def create_run(body: RunCreate) -> dict:
