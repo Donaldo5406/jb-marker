@@ -40,3 +40,23 @@ def test_put_rejects_invalid_path(store):
     store.create_run("r1")
     with pytest.raises(ValueError):
         store.put("/r1/notastudio/x.md", "x")
+
+
+def test_blob_put_persists_bytes_and_meta(store):
+    store.create_run("r1")
+    data = b"\x89PNG fake"
+    node = store.put("/r1/design/visual.png", data, mime="image/png", source="gemini")
+    # 블롭은 디스크에 기록되고 blob_path가 채워진다
+    assert node.blob_path is not None
+    # 불변식: 미디어 put 시 meta 동시기록(비어있지 않음)
+    assert node.meta and node.meta.get("source") == "gemini"
+    # get()은 바이트를 로드해 서빙 가능
+    got = store.get("/r1/design/visual.png")
+    assert got is not None and got.blob == data
+
+
+def test_blob_put_autogenerates_meta_when_missing(store):
+    store.create_run("r1")
+    node = store.put("/r1/design/v2.png", b"x", mime="image/png")
+    assert node.meta != {}        # 불변식: 비어있지 않아야 함
+    assert node.meta.get("type") in {"image", "file"}

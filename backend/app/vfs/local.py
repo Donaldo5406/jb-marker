@@ -51,15 +51,35 @@ class LocalVfsStore(VfsStore):
         node = VfsNode(run_id=run_id, path=path, mime=mime, source=source,
                        meta=dict(meta or {}), created_at=_now())
         if is_blob:
-            # Task 8에서 블롭 디스크 기록 + meta 불변식 구현
-            raise NotImplementedError("blob put은 Task 8에서 구현")
+            digest = hashlib.sha256(content).hexdigest()
+            root = self._blob_root() / run_id
+            root.mkdir(parents=True, exist_ok=True)
+            blob_file = root / f"{digest}.bin"
+            blob_file.write_bytes(content)
+            node.blob_path = str(blob_file)
+            node.hash = digest
+            # 불변식: 미디어 put → meta 동시기록 (없으면 자동생성)
+            if not node.meta:
+                kind = "image" if (mime or "").startswith("image/") else (
+                    "video" if (mime or "").startswith("video/") else "file")
+                node.meta = {"type": kind, "source": source, "mime": mime}
+            else:
+                node.meta.setdefault("source", source)
+                node.meta.setdefault("mime", mime)
+            self._nodes[path] = node
+            return node
         node.content_text = content
         node.hash = hashlib.sha256(content.encode()).hexdigest()
         self._nodes[path] = node
         return node
 
     def get(self, path) -> VfsNode | None:
-        return self._nodes.get(path)
+        n = self._nodes.get(path)
+        if n and n.blob_path and n.blob is None:
+            p = Path(n.blob_path)
+            if p.exists():
+                n.blob = p.read_bytes()
+        return n
 
     def read_meta(self, path) -> dict | None:
         n = self._nodes.get(path)
