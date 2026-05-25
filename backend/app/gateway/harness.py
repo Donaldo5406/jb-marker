@@ -21,6 +21,7 @@ class HarnessRequest:
     history: list[Message] = field(default_factory=list)
     answer: str | None = None      # AskUser 응답(다음 턴 재개)
     bypass: bool = False           # AskUser bypass(자동 기본값)
+    action: str | None = None      # design step 액션: advance|confirm|regenerate|chat|answer
 
 
 @dataclass

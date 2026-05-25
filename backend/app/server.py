@@ -12,6 +12,7 @@ from .config import load_settings
 from .gateway.gateway import MarkerGateway
 from .gateway.harness import HarnessRequest, PassthroughHarness
 from .gateway.harness_brainstorming import BrainstormingHarness
+from .gateway.harness_design import DesignHarness
 from .providers.registry import get_provider
 from .vfs.factory import get_vfs_store
 
@@ -29,6 +30,7 @@ class GatewayRun(BaseModel):
     is_marker: bool = False
     answer: str | None = None
     bypass: bool = False
+    action: str | None = None
 
 
 class PutText(BaseModel):
@@ -61,6 +63,9 @@ def create_app() -> FastAPI:
 
         def complete(self, messages, *, model=None, system=None, **kw):
             return self._p.complete(messages, model=self._model, system=system, **kw)
+
+        def generate_image(self, prompt, *, aspect="1:1"):
+            return self._p.generate_image(prompt, aspect=aspect)
 
     entitlement_state = {"marker": settings.entitlement_override}
     gateway = MarkerGateway(store,
@@ -108,10 +113,14 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "run 없음")
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=body.provider,
-                             is_marker=body.is_marker, answer=body.answer, bypass=body.bypass)
-        harness = (BrainstormingHarness()
-                   if (body.studio == "brainstorming" and body.is_marker)
-                   else PassthroughHarness())
+                             is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
+                             action=body.action)
+        if body.studio == "brainstorming" and body.is_marker:
+            harness = BrainstormingHarness()
+        elif body.studio == "design" and body.is_marker:
+            harness = DesignHarness(image_provider=_ModelBoundProvider("google"))
+        else:
+            harness = PassthroughHarness()
         try:
             result = gateway.run(req, harness)
         except PermissionError as e:
