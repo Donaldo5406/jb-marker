@@ -85,6 +85,8 @@ class DesignHarness(Harness):
             return self._s2a_visual(req, provider, store, state)
         if step == "S2b":
             return self._s2b_copy(req, provider, store, state)
+        if step == "S2c":
+            return self._s2c_brand(req, provider, store, state)
         raise NotImplementedError(f"{step} 미구현 (Task 8~11)")
 
     def _load_references(self) -> list[dict]:
@@ -176,6 +178,27 @@ class DesignHarness(Harness):
             output_path=f"{base}/design-system/components/headline",
             meta={"source": "marker", "step": "S2b", "ungrounded": sorted(set(ungrounded))},
             events=[{"type": "artifact", "path": f"{base}/design-system/components/headline"}])
+
+    def _s2c_brand(self, req, provider, store, state) -> HarnessResult:
+        base = self._base(req.run_id)
+        plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan.content_text if plan else "")
+        disclosures = fm.get("disclosures") or []
+        notice = "본 이미지는 AI로 생성되었습니다."
+        for lang in state.get("languages", ["ko"]):
+            text = notice + (" " + " ".join(disclosures) if disclosures else "")
+            store.put(f"{base}/design-system/components/disclosure/{lang}.txt",
+                      text, source="marker", mime="text/plain", meta={"lang": lang})
+            store.put(f"{base}/design-system/components/logo/{lang}.txt",
+                      "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
+        state["confirmed"]["S2c"] = True
+        state["step"] = "S3"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(text="브랜드·고지 요소를 배치했습니다.",
+            output_path=f"{base}/design-system/components/disclosure",
+            meta={"source": "marker", "step": "S2c"},
+            events=[{"type": "artifact",
+                     "path": f"{base}/design-system/components/disclosure"}])
 
     def _s0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
         base = self._base(req.run_id)

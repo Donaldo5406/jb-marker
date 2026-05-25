@@ -125,3 +125,18 @@ def test_s2b_writes_copy_and_flags_ungrounded(tmp_path):
     hl = s.get("/r1/design/design-system/components/headline/ko.txt")
     assert hl is not None
     assert "9.9%" in (res.meta.get("ungrounded") or [])
+
+
+# --- Task 9: S2c 브랜드·컴플라이언스 컴포넌트 ---
+
+
+def test_s2c_writes_logo_disclosure_and_ai_notice(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step":"S2c","confirmed":{},"bypass":{},"languages":["ko"],"pending_ask":None}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    disc = s.get("/r1/design/design-system/components/disclosure/ko.txt")
+    assert disc is not None and "AI" in disc.content_text
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S3"
