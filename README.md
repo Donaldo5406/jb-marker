@@ -29,9 +29,9 @@ mvp/03-marketing의 리팩토링 후속 — 새 독립 레포로 재출발한다
 | M0 | 레포 스캐폴드 & 디자인 시스템 | 완료 |
 | M1 | VfsStore + Marker API 게이트웨이 | 완료 |
 | M2 | 프론트 셸: 랜딩 + 콕핏 + 네비게이션 (E2E) | 완료 (PR #1) |
-| M3 | BrainStormingStudio | 대기 (다음) |
-| M4 | DesignStudio | 대기 |
-| M5 | ReviewStudio | 대기 |
+| M3 | BrainStormingStudio | 완료 (PR #2) |
+| M4 | DesignStudio (S0~S3 파이프라인 · 3액터 · Fabric.js 에디터) | 완료 |
+| M5 | ReviewStudio | 대기 (다음) |
 | M6 | DeployStudio | 대기 |
 | M7 | History + 통합·배포 | 대기 |
 
