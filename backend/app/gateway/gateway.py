@@ -24,13 +24,5 @@ class MarkerGateway:
     def run(self, req: HarnessRequest, harness: Harness) -> HarnessResult:
         override = self._override() if callable(self._override) else self._override
         check_entitlement(is_marker=req.is_marker, override=override)
-        system, messages = harness.build_messages(req)
-        system = system or harness.system_prompt()
         provider = self._provider_factory(req.provider)
-        resp = provider.complete(messages, model=req.provider, system=system)
-        text = harness.critic(resp.text)
-        source = "marker" if req.is_marker else "raw"
-        meta = {"source": source, "provider": req.provider, "grounds": []}
-        path = harness.output_path(req)
-        self._store.put(path, text, meta=meta, source=source, mime="text/markdown")
-        return HarnessResult(text=text, output_path=path, meta=meta)
+        return harness.handle_turn(req, provider=provider, store=self._store)
