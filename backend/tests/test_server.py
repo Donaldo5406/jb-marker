@@ -59,3 +59,16 @@ def test_entitlement_toggle_gates_marker():
     assert client.put("/entitlement", json={"marker": True}).json()["marker"] is True
     # 이제 Marker 통과
     assert client.post("/gateway/run", json=body).status_code == 200
+
+
+def test_put_vfs_infers_json_mime():
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={"title": "M"}).json()["run_id"]
+    resp = client.put(f"/vfs/{rid}/brainstorming/data.json", json={"content": "{\"k\":1}"})
+    assert resp.status_code == 200
+    assert resp.json()["mime"] == "application/json"
+    # 명시 mime 우선 (VFS 경로는 /{runId}/{studio}/... 규약을 따른다)
+    resp2 = client.put(f"/vfs/{rid}/brainstorming/note.md", json={"content": "# hi", "mime": "text/markdown"})
+    assert resp2.json()["mime"] == "text/markdown"

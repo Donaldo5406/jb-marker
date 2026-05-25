@@ -30,6 +30,7 @@ class GatewayRun(BaseModel):
 
 class PutText(BaseModel):
     content: str
+    mime: str | None = None
 
 
 class EntitlementPut(BaseModel):
@@ -129,7 +130,8 @@ def create_app() -> FastAPI:
 
     @app.put("/vfs/{run_id}/{rest:path}")
     def vfs_put(run_id: str, rest: str, body: PutText) -> dict:
-        node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime="text/markdown")
+        mime = body.mime or ("application/json" if rest.endswith(".json") else "text/markdown")
+        node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime=mime)
         return _node_dict(node)
 
     @app.websocket("/ws/{run_id}")
