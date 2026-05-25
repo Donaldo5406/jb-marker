@@ -49,6 +49,14 @@ def _parse_json(text: str) -> dict:
         return {}
 
 
+def _to_ask(ask: dict | None) -> "AskPayload | None":
+    if not ask:
+        return None
+    return AskPayload(trigger=str(ask.get("trigger", "")),
+                      question=str(ask.get("question", "")),
+                      options=list(ask.get("options") or []))
+
+
 def _frontmatter_keys(md: str) -> set[str]:
     md = (md or "").lstrip()
     if not md.startswith("---"):
@@ -108,10 +116,8 @@ class BrainstormingHarness(Harness):
             return self._stage_b(req, provider, store, state, msgs)
         return self._stage_done(req, provider, store, state, msgs)
 
-    def _conversation(self, msgs: list[dict], extra: str) -> list[Message]:
-        conv = [Message(m["role"], m["content"]) for m in msgs]
-        conv.append(Message("system", extra))
-        return conv
+    def _conversation(self, msgs: list[dict]) -> list[Message]:
+        return [Message(m["role"], m["content"]) for m in msgs]
 
     def _save_research(self, store, run_id: str, citations: list[dict]) -> int:
         base = self._base(run_id)
@@ -122,7 +128,7 @@ class BrainstormingHarness(Harness):
                       meta={"source_url": c.get("url"), "title": c.get("title")}, mime="text/markdown")
         return len(citations or [])
 
-    def _stage_a(self, req, provider, store, state, msgs) -> HarnessResult:
+    def _stage_a(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict]) -> HarnessResult:
         base = self._base(req.run_id)
         spec_node = store.get(f"{base}/spec.md")
         cur = spec_node.content_text if spec_node else ""
@@ -130,8 +136,9 @@ class BrainstormingHarness(Harness):
             "\n\n[Stage A] 사용자와 대화하며 캠페인 기획을 탐색하고 spec.md를 점증 구축합니다. "
             "document에는 goal/target_segments/key_messages/channels/languages/multinational/tone/"
             "factsheet/disclosures/research_refs를 YAML frontmatter로 담으세요. "
-            "필요하면 웹서치로 근거를 찾으세요." + _PROTOCOL)
-        resp = provider.complete(self._conversation(msgs, f"현재 spec.md:\n{cur}"),
+            "필요하면 웹서치로 근거를 찾으세요." + _PROTOCOL +
+            f"\n\n[현재 spec.md]\n{cur}")
+        resp = provider.complete(self._conversation(msgs),
                                  model=req.provider, system=sys, tools=[{"type": "web_search"}])
         data = _parse_json(resp.text)
         reply = data.get("reply", "")
@@ -140,8 +147,7 @@ class BrainstormingHarness(Harness):
         ready = bool(data.get("ready"))
 
         events = []
-        if self._save_research(store, req.run_id, resp.citations):
-            pass
+        self._save_research(store, req.run_id, resp.citations)
         store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown")
         events.append({"type": "artifact", "path": f"{base}/spec.md"})
 
@@ -160,8 +166,10 @@ class BrainstormingHarness(Harness):
         self._save_messages(store, req.run_id, msgs)
         state["pending_ask"] = ask
         self._save_state(store, req.run_id, state)
-        ask_obj = AskPayload(**ask) if ask else None
+        ask_obj = _to_ask(ask)
         if ask_obj:
-            events.append({"type": "askuser", "ask": ask})
+            events.append({"type": "askuser", "ask": {"trigger": ask_obj.trigger,
+                                                       "question": ask_obj.question,
+                                                       "options": ask_obj.options}})
         return HarnessResult(text=reply, output_path=f"{base}/spec.md",
                              meta={"source": "marker", "stage": "A"}, ask=ask_obj, events=events)
