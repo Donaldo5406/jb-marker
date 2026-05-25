@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, type Manifest, type Provider, type VfsNode } from "@/lib/api";
+import { api, type AskPayload, type Manifest, type Provider, type VfsNode } from "@/lib/api";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
 
 export type CockpitView = "workspace" | "history" | "setting";
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
 export type Entitlement = { marker: boolean };
+export type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export type CockpitContextValue = {
   // ---- state (spec §2.2) ----
@@ -20,6 +21,9 @@ export type CockpitContextValue = {
   openFile: OpenFile | null;
   entitlement: Entitlement;
   upsellOpen: boolean;
+  messages: ChatMessage[];
+  pendingAsk: AskPayload | null;
+  brainStage: string | null;          // _state.json.stage
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -28,7 +32,10 @@ export type CockpitContextValue = {
   setOpenFileContent: (text: string) => void;
   closeFile: () => void;
   saveFile: () => Promise<void>;
-  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean }) => Promise<boolean>;
+  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean })
+    => Promise<{ text?: string; ask?: AskPayload | null } | null>;
+  answerAsk: (choice: string) => Promise<void>;
+  closeAsk: () => void;
   setStudio: (s: Studio) => void;
   setView: (v: CockpitView) => void;
   toggleEntitlement: () => Promise<void>;
@@ -51,6 +58,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   const [openFile, setOpenFile] = useState<OpenFile | null>(null);
   const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false });
   const [upsellOpen, setUpsellOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [pendingAsk, setPendingAsk] = useState<AskPayload | null>(null);
+  const [brainStage, setBrainStage] = useState<string | null>(null);
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -87,6 +97,20 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /** brain 내부 상태(_messages/_state)를 서버에서 복원. 없으면 무시. */
+  const loadBrainState = useCallback(async (id: string) => {
+    try {
+      const m = await api.vfsGet(id, "brainstorming/_messages.json");
+      setMessages(m.content_text ? JSON.parse(m.content_text) : []);
+    } catch { setMessages([]); }
+    try {
+      const st = await api.vfsGet(id, "brainstorming/_state.json");
+      const parsed = st.content_text ? JSON.parse(st.content_text) : null;
+      setBrainStage(parsed?.stage ?? null);
+      setPendingAsk(parsed?.pending_ask ?? null);
+    } catch { setBrainStage(null); setPendingAsk(null); }
+  }, []);
+
   const openRun = useCallback(
     async (id: string) => {
       setRunId(id);
@@ -94,9 +118,10 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       setViewState("workspace");
       setOpenFile(null);
       syncRunQuery(id);
-      await Promise.all([loadManifest(id), api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
+      await Promise.all([loadManifest(id), loadBrainState(id),
+        api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
     },
-    [loadManifest, syncRunQuery],
+    [loadManifest, loadBrainState, syncRunQuery],
   );
 
   const startRun = useCallback(
@@ -108,6 +133,7 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       setManifest({ run_id, title: title ?? null, created_at: null, step_status: {} });
       setNodes([]);
       setOpenFile(null);
+      setMessages([]); setPendingAsk(null); setBrainStage("A");
       syncRunQuery(run_id);
     },
     [syncRunQuery],
@@ -137,31 +163,48 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   }, [openFile, refreshTree]);
 
   const sendChat = useCallback(
-    async (p: { prompt: string; provider: Provider; isMarker: boolean }): Promise<boolean> => {
+    async (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean }) => {
       const id = runIdRef.current;
-      if (!id) return false;
+      if (!id) return null;
+      setMessages((m) => [...m, { role: "user", content: p.prompt }]);
       try {
-        await api.gatewayRun({
-          run_id: id,
-          studio: activeStudio,
-          prompt: p.prompt,
-          provider: p.provider,
-          is_marker: p.isMarker,
+        const res = await api.gatewayRun({
+          run_id: id, studio: activeStudio, prompt: p.prompt,
+          provider: p.provider, is_marker: p.isMarker, bypass: p.bypass ?? false,
         });
-        await refreshTree();
-        return true;
+        if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+        setPendingAsk(res.ask ?? null);
+        await Promise.all([refreshTree(), loadBrainState(id)]);
+        return { text: res.text, ask: res.ask ?? null };
       } catch (e) {
         const status = (e as { status?: number }).status;
-        if (status === 402) {
-          // 게이트(Marker/Advisor + 무료): 업셀 모달만 띄우고 실패 신호(false) 반환 → 챗 성공라인 억제.
-          setUpsellOpen(true);
-          return false;
-        }
+        if (status === 402) { setUpsellOpen(true); return null; }
         throw e;
       }
     },
-    [activeStudio, refreshTree],
+    [activeStudio, refreshTree, loadBrainState],
   );
+
+  const answerAsk = useCallback(async (choice: string) => {
+    const id = runIdRef.current;
+    if (!id || !pendingAsk) return;
+    setMessages((m) => [...m, { role: "user", content: choice }]);
+    setPendingAsk(null);
+    try {
+      const res = await api.gatewayRun({
+        run_id: id, studio: "brainstorming", prompt: choice,
+        provider: "anthropic", is_marker: true, answer: choice,
+      });
+      if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+      setPendingAsk(res.ask ?? null);
+      await Promise.all([refreshTree(), loadBrainState(id)]);
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      if (status === 402) setUpsellOpen(true);
+    }
+  }, [pendingAsk, refreshTree, loadBrainState]);
+
+  const closeAsk = useCallback(() => setPendingAsk(null), []);
 
   const setStudio = useCallback((s: Studio) => setActiveStudio(s), []);
   const setView = useCallback((v: CockpitView) => setViewState(v), []);
@@ -190,14 +233,11 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- WS: artifact/poll 수신 시 트리 재조회 ----
-  useRunSocket(
-    runId,
-    (e) => {
-      if (e.type === "artifact" || e.type === "poll") void refreshTree();
-    },
-    { pollMs: 4000 },
-  );
+  // ---- WS: askuser → pendingAsk, artifact/poll → 트리 재조회 ----
+  useRunSocket(runId, (e) => {
+    if (e.type === "askuser" && e.ask) setPendingAsk(e.ask);
+    else if (e.type === "artifact" || e.type === "poll") void refreshTree();
+  }, { pollMs: 4000 });
 
   const value: CockpitContextValue = {
     runId,
@@ -208,6 +248,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     openFile,
     entitlement,
     upsellOpen,
+    messages,
+    pendingAsk,
+    brainStage,
     startRun,
     openRun,
     refreshTree,
@@ -216,6 +259,8 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     closeFile,
     saveFile,
     sendChat,
+    answerAsk,
+    closeAsk,
     setStudio,
     setView,
     toggleEntitlement,
