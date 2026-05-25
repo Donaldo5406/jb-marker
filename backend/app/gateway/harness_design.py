@@ -244,13 +244,26 @@ class DesignHarness(Harness):
         plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
         fm = _frontmatter(plan.content_text if plan else "")
         disclosures = fm.get("disclosures") or []
+        notices = {}
         for lang in state.get("languages", ["ko"]):
             notice = self.NOTICES.get(lang, self.NOTICES["ko"])
             text = notice + (" " + " ".join(disclosures) if disclosures else "")
+            notices[lang] = text
             store.put(f"{base}/design-system/components/disclosure/{lang}.txt",
                       text, source="marker", mime="text/plain", meta={"lang": lang})
             store.put(f"{base}/design-system/components/logo/{lang}.txt",
                       "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
+        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합
+        # (slots/visual_concept/aspect/기존 copy 등 나머지는 보존). _s2b_copy와 동일 idiom.
+        spec = self._parse_json(
+            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        spec.setdefault("copy", {})
+        for lang, text in notices.items():
+            spec["copy"].setdefault(lang, {})
+            spec["copy"][lang]["disclosure"] = text
+        store.put(f"{base}/rough/layout.spec.json",
+                  json.dumps(spec, ensure_ascii=False), source="marker",
+                  mime="application/json")
         state["confirmed"]["S2c"] = True
         state["step"] = "S3"
         self._save_state(store, req.run_id, state)

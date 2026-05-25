@@ -33,7 +33,10 @@ export function FabricEditor({ scene, onSave, width = 1080, height = 1080 }: Fab
     canvas.clear();
     (async () => {
       for (const o of scene.objects ?? []) {
-        if (o.type === "image" && o.src) {
+        // fabric v6 toObject()는 type을 대문자("Image"/"Textbox")로 직렬화하지만
+        // assembleScene 첫-조립은 소문자다 → 라운드트립 둘 다 받도록 정규화.
+        const t = String(o.type ?? "").toLowerCase();
+        if (t === "image" && o.src) {
           try {
             const img = await FabricImage.fromURL(o.src, { crossOrigin: "anonymous" });
             img.set({ left: o.left, top: o.top });
@@ -43,7 +46,7 @@ export function FabricEditor({ scene, onSave, width = 1080, height = 1080 }: Fab
           } catch {
             /* CORS/누락 시 스킵 */
           }
-        } else if (o.type === "textbox") {
+        } else if (t === "textbox") {
           const tb = new Textbox(o.text ?? "", {
             left: o.left,
             top: o.top,

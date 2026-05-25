@@ -22,6 +22,20 @@ describe("assembleScene", () => {
     expect(hl.lang).toBe("ko");
   });
 
+  it("copy_key 없는 슬롯은 role을 키로 사용(disclosure 고지 렌더)", () => {
+    const spec = {
+      aspect: "1:1",
+      slots: [
+        { role: "disclosure", bbox: { x: 80, y: 980, w: 920, h: 60 }, z: 3 },
+      ],
+      copy: { ko: { disclosure: "본 이미지는 AI로 생성되었습니다." } },
+    };
+    const scene = assembleScene(spec as any, "ko", (r) => r);
+    const disc = scene.objects.find((o: any) => o.role === "disclosure");
+    expect(disc.type).toBe("textbox");
+    expect(disc.text).toBe("본 이미지는 AI로 생성되었습니다.");
+  });
+
   it("swapLanguage는 텍스트 객체 콘텐츠만 교체, 레이아웃 보존", () => {
     const ko = assembleScene(SPEC as any, "ko", (r) => r);
     const en = swapLanguage(ko, SPEC as any, "en");

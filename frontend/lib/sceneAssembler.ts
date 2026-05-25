@@ -32,8 +32,9 @@ export function assembleScene(
         return { ...common, type: "image",
           src: s.asset_ref ? assetUrl(s.asset_ref) : "" };
       }
+      const key = s.copy_key ?? s.role;
       return { ...common, type: "textbox", lang,
-        text: (s.copy_key && copy[s.copy_key]) || "",
+        text: (key && copy[key]) || "",
         fontSize: 48, fill: "#0b1324" };
     });
   return { version: "6.0.0", objects };
@@ -50,7 +51,7 @@ export function swapLanguage(
     objects: scene.objects.map((o) => {
       if (o.type !== "textbox") return o;
       const slot = slotByRole.get(o.role);
-      const key = slot?.copy_key;
+      const key = slot?.copy_key ?? slot?.role;
       return { ...o, lang, text: (key && copy[key]) || o.text };
     }),
   };

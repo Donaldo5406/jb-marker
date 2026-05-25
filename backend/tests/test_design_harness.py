@@ -340,6 +340,29 @@ def test_s2c_localizes_ai_notice_per_language(tmp_path):
     assert "AI로 생성되었습니다" in ko
 
 
+# --- Task 21 FIX 3: S2c merges AI/disclosure notice into layout.spec.json copy ---
+
+
+def test_s2c_merges_disclosure_into_layout_spec_preserving_rest(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2c", "confirmed": {}, "bypass": {}, "languages": ["ko", "en"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "aspect": "1:1", "visual_concept": "블루 그라디언트",
+        "slots": [{"role": "headline", "copy_key": "headline"}],
+        "copy": {"ko": {"headline": "든든한 적금"}}}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
+    assert "AI" in spec["copy"]["ko"]["disclosure"]   # Korean AI notice merged
+    assert "AI" in spec["copy"]["en"]["disclosure"]   # English AI notice merged
+    assert spec["copy"]["ko"]["headline"] == "든든한 적금"   # pre-existing copy preserved
+    assert spec["visual_concept"] == "블루 그라디언트"       # rest preserved
+    assert spec["slots"][0]["role"] == "headline"
+
+
 # --- Task 19 FIX E (I2): regenerate re-runs the previous completed step ---
 
 
