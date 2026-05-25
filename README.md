@@ -10,7 +10,7 @@ mvp/03-marketing의 리팩토링 후속 — 새 독립 레포로 재출발한다
 - `docs/` — 자체완결 SSOT
   - `Refactor.md` — 기획 SSOT (배경·핵심 아키텍처·운영 결정 C1~C4·DoD·Non-goals)
   - `design/` — 백엔드/프론트 설계 문서 10종
-  - `specs/` — 마일스톤별 spec/plan (brainstorming → writing-plans 산출물)
+  - `specs/` — 마일스톤별 설계(spec), `plans/` — 구현계획(plan) (brainstorming → writing-plans 산출물)
 
 ## 파이프라인
 
@@ -26,11 +26,29 @@ mvp/03-marketing의 리팩토링 후속 — 새 독립 레포로 재출발한다
 
 | # | 마일스톤 | 상태 |
 |---|---|---|
-| M0 | 레포 스캐폴드 & 디자인 시스템 | 진행 |
-| M1 | VfsStore + Marker API 게이트웨이 | 진행 |
+| M0 | 레포 스캐폴드 & 디자인 시스템 | 완료 |
+| M1 | VfsStore + Marker API 게이트웨이 | 완료 |
 | M2 | 프론트 셸: 랜딩 + 콕핏 + 네비게이션 | 대기 |
 | M3 | BrainStormingStudio | 대기 |
 | M4 | DesignStudio | 대기 |
 | M5 | ReviewStudio | 대기 |
 | M6 | DeployStudio | 대기 |
 | M7 | History + 통합·배포 | 대기 |
+
+## 로컬 실행
+
+백엔드:
+
+```
+cd backend && pip install -e ".[dev]" && uvicorn app.server:app --reload
+```
+
+프론트:
+
+```
+cd frontend && npm install && npm run dev
+```
+
+테스트: `cd backend && pytest` · `cd frontend && npm run test && npm run build`
+
+환경변수는 각 디렉터리의 `.env.example`를 복사해 사용한다(로컬-우선 — 키 없어도 부팅).
