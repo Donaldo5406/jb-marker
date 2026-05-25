@@ -7,6 +7,7 @@ import { WorkspacePanel } from "@/components/cockpit/WorkspacePanel";
 import { RunList } from "@/components/cockpit/RunList";
 import { EntitlementPanel } from "@/components/cockpit/EntitlementPanel";
 import { UpsellModal } from "@/components/cockpit/UpsellModal";
+import { AskUserToast } from "@/components/cockpit/AskUserToast";
 
 function CockpitInner() {
   const c = useCockpit();
@@ -29,6 +30,7 @@ function CockpitInner() {
         {c.view === "setting" && <EntitlementPanel />}
       </div>
       <UpsellModal />
+      <AskUserToast />
     </div>
   );
 }
