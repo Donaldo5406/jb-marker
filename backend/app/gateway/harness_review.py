@@ -304,7 +304,43 @@ class ReviewHarness(Harness):
                 state["vision_failed"] = True
                 state["vision_skipped"].append("visual/v1.png")
 
-        # 호출 3은 Task 9에서 추가
+        # 호출 3: 언어별 합성 비전 (_render/{lang}.png — 고지 가독성·전체 메시지)
+        for lang in languages:
+            render = store.get(f"{base}/_render/{lang}.png")
+            if render is None:
+                state["vision_skipped"].append(f"composite/{lang}")
+                continue
+            composite_prompt = (
+                f"이 이미지는 {lang} 언어 금융 마케팅 캠페인의 합성 렌더(텍스트+비주얼)입니다. "
+                "다음을 평가하세요: ① 필수고지의 가독성·배치 ② 이미지+텍스트 결합이 만드는 "
+                "전체 메시지의 위법성(수익 보장 단정·오인 유발). "
+                "공식 법령 출처(law.go.kr 등)만 인용. "
+                'JSON: {"findings":[{"location":{"slot":"composite","lang":"' + lang + '"},'
+                '"clause":"...","official_source_url":"https://law.go.kr/...",'
+                '"severity":"critical|warning","evidence":"..."}, ...]}'
+            )
+            try:
+                render_bytes = render.blob if render.blob else (render.content_text or "").encode("utf-8")
+                cresp = self._vision_provider.review_image(
+                    render_bytes, composite_prompt, mime="image/png")
+                cdata = _parse_json(cresp.text)
+                cfindings = cdata.get("findings") or []
+                ckept, cdropped = apply_whitelist(cfindings, whitelist)
+                state["dropped_findings_count"] += cdropped
+                for f in ckept:
+                    self._persist_verdict(
+                        store, req.run_id, node="legal",
+                        asset_id=f"review/_render/{lang}.png",
+                        lang=lang,
+                        severity=f.get("severity", "warning"),
+                        location={"slot": "composite", "lang": lang},
+                        evidence=f.get("evidence", ""),
+                        clause=f.get("clause"),
+                        official_source_url=f.get("official_source_url"))
+            except Exception:
+                state["vision_failed"] = True
+                state["vision_skipped"].append(f"composite/{lang}")
+
         state["step"] = "R2"
         self._save_state(store, req.run_id, state)
         return HarnessResult(

@@ -201,3 +201,57 @@ def test_r1_component_vision_skipped_when_v1_missing(tmp_path):
     h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert "visual/v1.png" in state["vision_skipped"]
+
+
+def test_r1_composite_vision_per_lang_persists(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    # 두 언어 모두 render 업로드
+    store.put("/r1/review/_render/ko.png", b"\x89PNG-ko", source="frontend", mime="image/png")
+    store.put("/r1/review/_render/en.png", b"\x89PNG-en", source="frontend", mime="image/png")
+    h = ReviewHarness(vision_provider=make_scripted(review_image_responses=[
+        # ko 컴포넌트 비전(v1.png 호출): 빈
+        ProviderResponse(text='{"findings":[]}', model="g"),
+        # ko composite
+        ProviderResponse(text=('{"findings":[{"location":{"slot":"composite","lang":"ko"},'
+                                '"clause":"금융광고규정","official_source_url":"https://fss.or.kr/x",'
+                                '"severity":"warning","evidence":"고지 가독성 저하"}]}'), model="g"),
+        # en composite
+        ProviderResponse(text=('{"findings":[{"location":{"slot":"composite","lang":"en"},'
+                                '"clause":"§Y","official_source_url":"https://law.go.kr/y",'
+                                '"severity":"warning","evidence":"x"}]}'), model="g"),
+    ]))
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    composite = []
+    for n in store.list("/r1/review/legal/"):
+        if n.path.endswith("verdict.json"):
+            v = json.loads(n.content_text)
+            if v["location"]["slot"] == "composite":
+                composite.append(v)
+    assert len(composite) == 2
+    langs = {v["lang"] for v in composite}
+    assert langs == {"ko", "en"}
+
+
+def test_r1_composite_vision_skipped_per_lang(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    store.put("/r1/review/_render/ko.png", b"\x89PNG", source="frontend", mime="image/png")
+    # en render 부재
+    h = ReviewHarness(vision_provider=make_scripted(review_image_responses=[
+        ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
+        ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
+        # en composite은 부재라 호출 안 됨
+    ]))
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert "composite/en" in state["vision_skipped"]
+    assert "composite/ko" not in state["vision_skipped"]
