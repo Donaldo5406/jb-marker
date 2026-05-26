@@ -298,3 +298,68 @@ def test_r1_graceful_vision_failed(tmp_path, make_scripted):
     h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert state["vision_failed"] is True
+
+
+def test_r2_i18n_persists_findings(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1 (FakeProvider → 빈)
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text=('{"findings":[{"lang":"en","kind":"missing_disclosure",'
+              '"severity":"critical","evidence":"...",'
+              '"disclosure":"미래 수익 보장 아님"}]}'), model="x")])
+    h.handle_turn(req, provider=text_provider, store=store)  # R2
+    nodes = store.list("/r1/review/i18n/")
+    verdicts = [json.loads(n.content_text) for n in nodes
+                if n.path.endswith("verdict.json")]
+    assert len(verdicts) == 1
+    assert verdicts[0]["node"] == "i18n"
+    assert verdicts[0]["kind"] == "missing_disclosure"
+    assert verdicts[0]["severity"] == "critical"
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "R3"
+
+
+def test_r2_keyword_safety_net_adds_missing(tmp_path, make_scripted):
+    """LLM이 missing_disclosure를 누락해도 키워드 매핑 안전망이 잡음."""
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    # en 자산이 필수고지 키워드를 포함하지 않게 셋업
+    store.create_run("r1", languages=["ko", "en"])
+    plan_md = (
+        "---\n"
+        "languages: [ko, en]\n"
+        "disclosures:\n  - 미래 수익 보장 아님\n"
+        "---\n"
+    )
+    store.put("/r1/brainstorming/plan.md", plan_md, source="marker", mime="text/markdown")
+    store.put("/r1/design/final/ko/main.scene", json.dumps({"copy": {"ko": {
+        "headline": "쉽고 빠르게", "disclosure": "미래 수익 보장 아님"}}}),
+        source="marker", mime="application/json")
+    store.put("/r1/design/final/en/main.scene", json.dumps({"copy": {"en": {
+        "headline": "Fast and easy", "disclosure": "Terms apply"}}}),
+        source="marker", mime="application/json")
+    store.put("/r1/design/metadata.md", "", source="marker", mime="text/markdown")
+    store.put("/r1/design/design-system/components/visual/v1.png",
+              b"\x89PNG", source="gemini", mime="image/png")
+
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    # LLM은 findings=[] 반환(누락)
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text='{"findings":[]}', model="x")])
+    h.handle_turn(req, provider=text_provider, store=store)  # R2
+    # 안전망이 missing_disclosure를 추가했어야
+    nodes = store.list("/r1/review/i18n/")
+    verdicts = [json.loads(n.content_text) for n in nodes if n.path.endswith("verdict.json")]
+    safety_net = [v for v in verdicts if v.get("kind") == "missing_disclosure"]
+    assert len(safety_net) >= 1
+    assert safety_net[0]["severity"] == "critical"

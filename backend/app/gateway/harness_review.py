@@ -350,8 +350,98 @@ class ReviewHarness(Harness):
                   "findings_text": len(kept), "dropped": dropped},
             events=[{"type": "artifact", "path": f"{base}/legal/"}])
 
-    def _r2_i18n(self, req, provider, store, state):
-        raise NotImplementedError("Task 11~12에서 구현")
+    def _r2_i18n(self, req: HarnessRequest, provider, store, state: dict) -> HarnessResult:
+        base = self._base(req.run_id)
+        languages = state["languages"]
+
+        # mono-lingual 스킵
+        if len(languages) <= 1 or "ko" not in languages:
+            state["r2_skipped"] = "mono-lingual"
+            state["step"] = "R3"
+            self._save_state(store, req.run_id, state)
+            return HarnessResult(
+                text="R2 스킵(모노링구얼).",
+                output_path=f"{base}/i18n/",
+                meta={"source": "marker", "step": "R2", "skipped": "mono-lingual"},
+                events=[])
+
+        scene_copy = self._collect_scene_copy(store, req.run_id, languages)
+        ko_copy = scene_copy.get("ko", {})
+        plan_node = store.get(f"/{req.run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan_node.content_text if plan_node else "")
+        required_disclosures: list[str] = fm.get("disclosures") or []
+
+        # LLM 호출
+        user_payload = {
+            "ko_copy": ko_copy,
+            "translations": {l: scene_copy.get(l, {}) for l in languages if l != "ko"},
+            "required_disclosures": required_disclosures,
+        }
+        messages = [Message("user", json.dumps(user_payload, ensure_ascii=False))]
+        try:
+            resp = provider.complete(messages, model=provider.name, system=PERSONA_B)
+        except Exception:
+            state["live_unavailable"] = True
+            state["step"] = "R3"
+            self._save_state(store, req.run_id, state)
+            return HarnessResult(
+                text="R2 LLM 실패(graceful).",
+                output_path=f"{base}/i18n/",
+                meta={"source": "marker", "step": "R2", "live_unavailable": True},
+                events=[])
+
+        data = _parse_json(resp.text)
+        if not data:
+            state["parse_failed"] = True
+            llm_findings: list = []
+        else:
+            llm_findings = data.get("findings") or []
+
+        # LLM finding 영속
+        seen_missing: set[tuple[str, str]] = set()  # (lang, disclosure)
+        for f in llm_findings:
+            kind = f.get("kind", "")
+            severity = f.get("severity", "warning")
+            # missing_disclosure는 강제 critical
+            if kind == "missing_disclosure":
+                severity = "critical"
+                seen_missing.add((f.get("lang", ""), f.get("disclosure", "")))
+            self._persist_verdict(
+                store, req.run_id, node="i18n",
+                asset_id=f"design/final/{f.get('lang','')}/main.scene",
+                lang=f.get("lang"),
+                severity=severity,
+                location={"slot": "disclosure", "lang": f.get("lang")},
+                evidence=f.get("evidence", ""),
+                kind=kind,
+                disclosure=f.get("disclosure"))
+
+        # 안전망: 키워드 매핑으로 missing_disclosure 추가 검출
+        for lang in languages:
+            if lang == "ko":
+                continue
+            body = " ".join(str(v) for v in scene_copy.get(lang, {}).values())
+            missing = find_missing_disclosures(body, lang, required_disclosures)
+            for disc in missing:
+                if (lang, disc) in seen_missing:
+                    continue
+                self._persist_verdict(
+                    store, req.run_id, node="i18n",
+                    asset_id=f"design/final/{lang}/main.scene",
+                    lang=lang,
+                    severity="critical",
+                    location={"slot": "disclosure", "lang": lang},
+                    evidence=f"안전망: 키워드 매핑이 '{disc}' 보존 미검출",
+                    kind="missing_disclosure",
+                    disclosure=disc)
+
+        state["step"] = "R3"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(
+            text=f"R2 동등성 검토 완료 (LLM {len(llm_findings)}건 + 안전망).",
+            output_path=f"{base}/i18n/",
+            meta={"source": "marker", "step": "R2"},
+            events=[{"type": "artifact", "path": f"{base}/i18n/"}])
 
     def _r3_reconcile(self, req, provider, store, state):
         raise NotImplementedError("Task 13~14에서 구현")
