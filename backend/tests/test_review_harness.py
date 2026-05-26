@@ -363,3 +363,20 @@ def test_r2_keyword_safety_net_adds_missing(tmp_path, make_scripted):
     safety_net = [v for v in verdicts if v.get("kind") == "missing_disclosure"]
     assert len(safety_net) >= 1
     assert safety_net[0]["severity"] == "critical"
+
+
+def test_r2_skipped_mono_lingual(tmp_path):
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 → 스킵
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["r2_skipped"] == "mono-lingual"
+    assert state["step"] == "R3"
+    # i18n/ 비어 있음
+    nodes = store.list("/r1/review/i18n/")
+    assert [n for n in nodes if n.path.endswith("verdict.json")] == []
