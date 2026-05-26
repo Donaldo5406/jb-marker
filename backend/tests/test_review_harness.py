@@ -56,3 +56,56 @@ def test_review_harness_initial_state(tmp_path):
     state = h._load_state(store, "r1")
     assert state["step"] == "R0"
     assert state["acknowledged"] is False
+
+
+def test_r0_setup_creates_matrix_and_sets_in_progress(tmp_path):
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="검토 시작",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "R1"
+    assert state["languages"] == ["ko", "en"]
+    assert "ko" in state["matrix"] and "en" in state["matrix"]
+    assert "visual/v1.png" in state["matrix"]["components"]
+    m = store.get_manifest("r1")
+    assert m.step_status.get("review") == "in_progress"
+
+
+def test_r0_idempotent_cleanup(tmp_path):
+    """R0 진입 시 legal/, i18n/, revise/, report.md 전부 삭제."""
+    store = make_local_store(tmp_path)
+    _setup_run(store)
+    # stale 산출 미리 박아둠
+    store.put("/r1/review/legal/law_stale/verdict.json", '{"x":1}',
+              source="marker", mime="application/json")
+    store.put("/r1/review/i18n/reason_stale/verdict.json", '{"x":1}',
+              source="marker", mime="application/json")
+    store.put("/r1/review/revise/text/rec_stale.md", "stale",
+              source="marker", mime="text/markdown")
+    store.put("/r1/review/report.md", "stale", source="marker", mime="text/markdown")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    # 전부 삭제됨
+    assert store.get("/r1/review/legal/law_stale/verdict.json") is None
+    assert store.get("/r1/review/i18n/reason_stale/verdict.json") is None
+    assert store.get("/r1/review/revise/text/rec_stale.md") is None
+    assert store.get("/r1/review/report.md") is None
+
+
+def test_r0_render_matrix_detects_uploaded(tmp_path):
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    store.put("/r1/review/_render/ko.png", b"\x89PNG", source="frontend", mime="image/png")
+    # en은 미업로드
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["matrix"]["ko"]["render"] is True
+    assert state["matrix"]["en"]["render"] is False

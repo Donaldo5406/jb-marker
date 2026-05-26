@@ -109,9 +109,61 @@ class ReviewHarness(Harness):
             return self._r3_reconcile(req, provider, store, state)
         raise NotImplementedError(f"{step} 미구현 (알 수 없는 step)")
 
-    # ----- 후속 task에서 채워질 step 핸들러들 -----
-    def _r0_setup(self, req, store, state):
-        raise NotImplementedError("Task 6에서 구현")
+    # ----- step 핸들러 -----
+    def _cleanup_review_tree(self, store, run_id: str) -> None:
+        """R0 진입 시 stale 산출 전부 삭제(spec §3.7 멱등 재구축).
+
+        legal/·i18n/·revise/·report.md 삭제. _render/·_state.json 보존.
+        """
+        base = self._base(run_id)
+        for prefix in (f"{base}/legal/", f"{base}/i18n/", f"{base}/revise/"):
+            nodes = store.list(prefix)
+            for n in nodes:
+                store.delete(n.path)
+        if store.get(f"{base}/report.md"):
+            store.delete(f"{base}/report.md")
+
+    def _r0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
+        base = self._base(req.run_id)
+        run_id = req.run_id
+
+        # plan.md frontmatter → languages·disclosures
+        plan_node = store.get(f"/{run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan_node.content_text if plan_node else "")
+        languages = fm.get("languages") or ["ko"]
+
+        # 멱등 cleanup (stale 제거)
+        self._cleanup_review_tree(store, run_id)
+
+        # matrix: 언어별 scene/render, 컴포넌트 자산
+        matrix: dict = {}
+        for lang in languages:
+            scene = store.get(f"/{run_id}/design/final/{lang}/main.scene")
+            render = store.get(f"{base}/_render/{lang}.png")
+            matrix[lang] = {"scene": scene is not None,
+                            "render": render is not None}
+        components: list[str] = []
+        if store.get(f"/{run_id}/design/design-system/components/visual/v1.png"):
+            components.append("visual/v1.png")
+        matrix["components"] = components
+
+        # state 영속 — 5트리거 flags 모두 초기화
+        state.update({
+            "step": "R1", "languages": languages, "matrix": matrix,
+            "acknowledged": False,
+            "live_unavailable": False, "parse_failed": False,
+            "vision_failed": False, "step_failed": "",
+            "vision_skipped": [], "dropped_findings_count": 0,
+            "r2_skipped": "",
+        })
+        self._save_state(store, run_id, state)
+        store.set_step_status(run_id, "review", "in_progress")
+
+        return HarnessResult(
+            text=f"검토 매트릭스를 준비했습니다 ({len(languages)}개 언어).",
+            output_path=f"{base}/_state.json",
+            meta={"source": "marker", "step": "R0", "languages": languages},
+            events=[{"type": "artifact", "path": f"{base}/_state.json"}])
 
     def _r1_legal(self, req, provider, store, state):
         raise NotImplementedError("Task 7~10에서 구현")
