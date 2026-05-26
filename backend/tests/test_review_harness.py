@@ -635,3 +635,122 @@ def test_server_factory_review_marker_selects_review_harness(tmp_path, monkeypat
     runs = client.get("/runs").json()["runs"]
     run = next(x for x in runs if x["run_id"] == run_id)
     assert run["step_status"].get("review") == "in_progress"
+
+
+# ===== Task 22: 통합 골든 패스 — BLOCKED/WARN/PASS 3 시나리오 =====
+
+
+def _full_pipeline(store, h, req, text_responses, vision_responses=None):
+    """공통 헬퍼 — R0 → R1 → R2 → R3 한 번에 흘림.
+
+    R0는 FakeProvider로 1턴 진행해 matrix·state를 초기화.
+    이후 단계는 ScriptedProvider(text)와 주입된 vision_provider(scripted)를 사용.
+    """
+    from conftest import ScriptedProvider
+    # R0: FakeProvider만 사용 (matrix·state 초기화)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    # 이후 단계: scripted text/vision providers
+    text_sp = ScriptedProvider(complete_responses=list(text_responses))
+    vis_sp = ScriptedProvider(review_image_responses=list(vision_responses or []))
+    h._vision_provider = vis_sp
+    while True:
+        state = json.loads(store.get(f"/{req.run_id}/review/_state.json").content_text)
+        if state["step"] == "done":
+            break
+        h.handle_turn(req, provider=text_sp, store=store)
+
+
+def test_golden_path_blocked(tmp_path, make_scripted):
+    """critical finding 1건 → BLOCKED."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    store.put("/r1/review/_render/ko.png", b"\x89PNG-ko",
+              source="frontend", mime="image/png")
+    store.put("/r1/review/_render/en.png", b"\x89PNG-en",
+              source="frontend", mime="image/png")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    _full_pipeline(store, h, req,
+        text_responses=[
+            ProviderResponse(text=(  # R1 text: critical finding 1건
+                '{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+                '"clause":"§3","official_source_url":"https://law.go.kr/x",'
+                '"severity":"critical","evidence":"x"}]}'), model="x"),
+            ProviderResponse(text='{"findings":[]}', model="x"),  # R2 i18n
+            ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
+                              model="x"),  # R3 reconciler
+        ],
+        vision_responses=[
+            ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
+            ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # en composite
+        ])
+    m = store.get_manifest("r1")
+    assert m.step_status["review"] == "BLOCKED"
+
+
+def test_golden_path_warn(tmp_path, make_scripted):
+    """warning finding 1건 + 트리거 0 → WARN."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    # plan.md.disclosures를 비워 R2 키워드 안전망이 critical을 만들지 않게 한다.
+    # (안전망이 발화하면 critical>0이 되어 BLOCKED으로 강등됨)
+    store.put("/r1/brainstorming/plan.md",
+              "---\nlanguages: [ko, en]\ndisclosures: []\n---\n",
+              source="marker", mime="text/markdown")
+    store.put("/r1/review/_render/ko.png", b"\x89PNG-ko",
+              source="frontend", mime="image/png")
+    store.put("/r1/review/_render/en.png", b"\x89PNG-en",
+              source="frontend", mime="image/png")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    _full_pipeline(store, h, req,
+        text_responses=[
+            ProviderResponse(text=(  # R1 text: warning 1건
+                '{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+                '"clause":"§X","official_source_url":"https://law.go.kr/x",'
+                '"severity":"warning","evidence":"x"}]}'), model="x"),
+            ProviderResponse(text='{"findings":[]}', model="x"),  # R2 i18n
+            ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
+                              model="x"),  # R3 reconciler
+        ],
+        vision_responses=[
+            ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
+            ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # en composite
+        ])
+    m = store.get_manifest("r1")
+    assert m.step_status["review"] == "WARN"
+
+
+def test_golden_path_pass(tmp_path, make_scripted):
+    """위반 0건 + 모든 렌더 존재 + 라이브 OK → PASS."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    store.put("/r1/review/_render/ko.png", b"\x89PNG-ko",
+              source="frontend", mime="image/png")
+    store.put("/r1/review/_render/en.png", b"\x89PNG-en",
+              source="frontend", mime="image/png")
+    # plan.md.disclosures 비워서 안전망이 발화하지 않게
+    store.put("/r1/brainstorming/plan.md",
+              "---\nlanguages: [ko, en]\ndisclosures: []\n---\n",
+              source="marker", mime="text/markdown")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    _full_pipeline(store, h, req,
+        text_responses=[
+            ProviderResponse(text='{"findings":[]}', model="x"),  # R1 text
+            ProviderResponse(text='{"findings":[]}', model="x"),  # R2 i18n
+            ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
+                              model="x"),  # R3 reconciler
+        ],
+        vision_responses=[
+            ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
+            ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # en composite
+        ])
+    m = store.get_manifest("r1")
+    assert m.step_status["review"] == "PASS"
