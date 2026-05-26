@@ -443,8 +443,120 @@ class ReviewHarness(Harness):
             meta={"source": "marker", "step": "R2"},
             events=[{"type": "artifact", "path": f"{base}/i18n/"}])
 
-    def _r3_reconcile(self, req, provider, store, state):
-        raise NotImplementedError("Task 13~14에서 구현")
+    def _load_all_verdicts(self, store, run_id: str) -> list[dict]:
+        """legal/·i18n/ 하위의 모든 verdict.json을 로드해서 dict 리스트 반환."""
+        out: list[dict] = []
+        for prefix in (f"{self._base(run_id)}/legal/", f"{self._base(run_id)}/i18n/"):
+            for n in store.list(prefix):
+                if n.path.endswith("verdict.json"):
+                    try:
+                        out.append(json.loads(n.content_text))
+                    except Exception:
+                        continue
+        return out
+
+    def _r3_reconcile(self, req: HarnessRequest, provider, store, state: dict
+                       ) -> HarnessResult:
+        base = self._base(req.run_id)
+        verdicts = self._load_all_verdicts(store, req.run_id)
+
+        # LLM reconciler 호출
+        user_payload = {"verdicts": verdicts}
+        messages = [Message("user", json.dumps(user_payload, ensure_ascii=False))]
+        try:
+            resp = provider.complete(messages, model=provider.name, system=PERSONA_C)
+            data = _parse_json(resp.text)
+        except Exception:
+            state["step_failed"] = "R3"
+            data = {}
+        if not data:
+            state["parse_failed"] = True
+            data = {}
+        recommendations = data.get("recommendations") or []
+        conflicts = data.get("conflicts_resolved") or []
+
+        # 권장 영속 — rec_id = sha1(rec JSON)[:8] (결정론)
+        for rec in recommendations:
+            rec_id = "rec_" + hashlib.sha1(
+                json.dumps(rec, sort_keys=True, ensure_ascii=False).encode()
+            ).hexdigest()[:8]
+            target = rec.get("target", "text")
+            if target not in ("image", "text", "video"):
+                target = "text"
+            body = (
+                f"# {rec.get('instruction','(no instruction)')}\n\n"
+                f"- asset_id: `{rec.get('asset_id','')}`\n"
+                f"- lang: `{rec.get('lang','')}`\n"
+                f"- priority: {rec.get('priority','-')}\n"
+                f"- related_verdict_ids: {rec.get('related_verdict_ids', [])}\n"
+            )
+            store.put(f"{base}/revise/{target}/{rec_id}.md", body,
+                      source="marker", mime="text/markdown")
+
+        # 게이트 산정 (5트리거 flags 반영)
+        gate = compute_gate(verdicts, flags={
+            "live_unavailable": state.get("live_unavailable", False),
+            "parse_failed": state.get("parse_failed", False),
+            "vision_failed": state.get("vision_failed", False),
+            "step_failed": state.get("step_failed", ""),
+            "vision_skipped": state.get("vision_skipped", []),
+        })
+
+        # report.md 골격 (frontmatter + 본문)
+        report_lines = [
+            "---",
+            f"languages: {state.get('languages', [])}",
+            "gate:",
+            f"  status: {gate['status']}",
+            f"  critical_count: {gate['critical_count']}",
+            f"  warning_count: {gate['warning_count']}",
+            "flags:",
+            f"  live_unavailable: {state.get('live_unavailable', False)}",
+            f"  vision_skipped: {state.get('vision_skipped', [])}",
+            f"  parse_failed: {state.get('parse_failed', False)}",
+            f"generated_at: {_now_iso()}",
+            "---",
+            "",
+            "# 검토 보고서",
+            "",
+            "## 게이트 결과",
+            f"{gate['status']} — critical {gate['critical_count']} / "
+            f"warning {gate['warning_count']}.",
+            "",
+            "## R1 법률 검토 (요약)",
+        ]
+        for v in [x for x in verdicts if x.get("node") == "legal"]:
+            report_lines.append(
+                f"- [{v.get('severity')}] {v.get('location',{}).get('slot')} · "
+                f"{v.get('lang') or '-'} · {v.get('clause','-')} — "
+                f"{v.get('evidence','')[:80]}")
+        report_lines += ["", "## R2 동등성 검토 (요약)"]
+        for v in [x for x in verdicts if x.get("node") == "i18n"]:
+            report_lines.append(
+                f"- [{v.get('severity')}] {v.get('lang','-')} · "
+                f"{v.get('kind','-')} — {v.get('evidence','')[:80]}")
+        report_lines += ["", "## 권장 수정 (우선순위 순)"]
+        for rec in sorted(recommendations, key=lambda r: r.get("priority", 99)):
+            report_lines.append(
+                f"- ({rec.get('target','text')}) {rec.get('lang','-')} — "
+                f"{rec.get('instruction','')[:120]}")
+        report_lines += ["", "## Conflicts Resolved"]
+        for c in conflicts:
+            report_lines.append(f"- {c.get('summary','-')}")
+
+        store.put(f"{base}/report.md", "\n".join(report_lines),
+                  source="marker", mime="text/markdown")
+
+        # 게이트·step_status 쓰기는 Task 14에서 가산. 여기서는 step=done만.
+        state["step"] = "done"
+        state["last_run_at"] = _now_iso()
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(
+            text=f"검토 완료 — {gate['status']} "
+                 f"(critical {gate['critical_count']}, warning {gate['warning_count']}).",
+            output_path=f"{base}/report.md",
+            meta={"source": "marker", "step": "R3", "gate": gate},
+            events=[{"type": "artifact", "path": f"{base}/report.md"}])
 
     def _restart(self, req, store, state):
         raise NotImplementedError("Task 15에서 구현")

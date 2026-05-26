@@ -380,3 +380,56 @@ def test_r2_skipped_mono_lingual(tmp_path):
     # i18n/ 비어 있음
     nodes = store.list("/r1/review/i18n/")
     assert [n for n in nodes if n.path.endswith("verdict.json")] == []
+
+
+def test_r3_persists_recommendations_and_report(tmp_path, make_scripted):
+    store = make_local_store(tmp_path)
+    # R1/R2가 이미 끝난 상태로 verdict 미리 박아둠
+    store.create_run("r1", languages=["ko", "en"])
+    store.put("/r1/brainstorming/plan.md",
+              "---\nlanguages: [ko, en]\ndisclosures: []\n---\n",
+              source="marker", mime="text/markdown")
+    store.put("/r1/review/legal/law_abc/verdict.json",
+              json.dumps({"verdict_id": "legal_abc", "node": "legal",
+                          "severity": "warning",
+                          "location": {"slot": "headline", "lang": "ko"},
+                          "lang": "ko",
+                          "clause": "§X", "evidence": "x"}),
+              source="marker", mime="application/json")
+    store.put("/r1/review/i18n/reason_def/verdict.json",
+              json.dumps({"verdict_id": "i18n_def", "node": "i18n",
+                          "severity": "warning",
+                          "location": {"slot": "disclosure", "lang": "en"},
+                          "lang": "en",
+                          "kind": "mistranslation", "evidence": "x"}),
+              source="marker", mime="application/json")
+    # state=R3
+    state = {
+        "step": "R3", "languages": ["ko", "en"], "matrix": {},
+        "acknowledged": False, "live_unavailable": False, "parse_failed": False,
+        "vision_failed": False, "step_failed": "",
+        "vision_skipped": [], "dropped_findings_count": 0, "r2_skipped": "",
+    }
+    store.put("/r1/review/_state.json", json.dumps(state),
+              source="marker", mime="application/json")
+
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text=('{"recommendations":[{"asset_id":"design/final/ko/main.scene",'
+              '"lang":"ko","target":"text","instruction":"헤드라인 교체",'
+              '"priority":1,"related_verdict_ids":["legal_abc"]}],'
+              '"conflicts_resolved":[]}'),
+        model="x")])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=text_provider, store=store)
+    # revise/text/rec_*.md 존재
+    rec_nodes = [n for n in store.list("/r1/review/revise/text/")
+                  if n.path.endswith(".md")]
+    assert len(rec_nodes) == 1
+    # report.md 존재 + frontmatter 포함
+    report = store.get("/r1/review/report.md")
+    assert report is not None
+    assert "gate:" in report.content_text
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "done"
