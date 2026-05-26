@@ -154,6 +154,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       setActiveStudio(STUDIOS[0]);
       setViewState("workspace");
       setOpenFile(null);
+      // M5 spec §7.4: run 전환 시 review state 3 필드 리셋 — 이전 run의 stale ack가
+      // T18 isDeployUnlocked를 거짓 해제하지 않도록.
+      setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       syncRunQuery(id);
       await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id),
         api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);

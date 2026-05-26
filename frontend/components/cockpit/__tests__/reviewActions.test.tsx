@@ -122,6 +122,24 @@ describe("CockpitProvider review actions (M5 §8.3)", () => {
     expect(captured!.reviewAcknowledged).toBe(true);
   });
 
+  it("openRun: run 전환 시 이전 run의 ack 플래그 리셋 (§7.4)", async () => {
+    installFetch();
+    render(
+      <CockpitProvider>
+        <Capture />
+      </CockpitProvider>,
+    );
+    // run-A 진입 후 ack 시뮬
+    await act(async () => { await captured!.openRun("run-A"); });
+    await act(async () => { await captured!.ackReview(); });
+    expect(captured!.reviewAcknowledged).toBe(true);
+    // run-B로 전환 → stale ack 플래그 리셋되어야 함(거짓 deploy unlock 방지)
+    await act(async () => { await captured!.openRun("run-B"); });
+    expect(captured!.reviewAcknowledged).toBe(false);
+    expect(captured!.reviewStage).toBeNull();
+    expect(captured!.reviewGate).toBeNull();
+  });
+
   it("restartReview: gateway action=restart + state 리셋", async () => {
     const { gatewayCalls } = installFetch();
     render(
