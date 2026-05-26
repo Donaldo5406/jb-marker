@@ -62,7 +62,7 @@ export function LandingNav() {
   const [openMenu, setOpenMenu] = React.useState<number | null>(null);
 
   return (
-    <header className="sticky top-0 z-50 w-full">
+    <header className="sticky top-0 z-[60] w-full">
       <div className="mx-auto flex h-header max-w-container items-center justify-between gap-6 border-b border-outline-variant/50 bg-surface/70 px-margin-x backdrop-blur-glass">
         {/* 로고 */}
         <Link href="/" className="group flex items-center gap-2.5">
