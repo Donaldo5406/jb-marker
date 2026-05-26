@@ -7,12 +7,33 @@ spec: jb-marker/docs/specs/2026-05-26-m5-review-studio-design.md
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import uuid
+from datetime import datetime, timezone
 
 import yaml
 
+from ..core.legal_search import load_whitelist, search_and_filter
+from ..core.severity import (  # T7: import-only, 사용은 T11/T14
+    DISCLOSURE_I18N,
+    EXAGGERATION_TOKENS,
+    compute_gate,
+    detect_exaggeration,
+    find_missing_disclosures,
+)
 from ..providers.base import Message, Provider
 from .harness import Harness, HarnessRequest, HarnessResult
+
+
+def _verdict_id(node: str, clause_or_kind: str, slot: str, lang: str | None) -> str:
+    """안정 ID — 동일 finding은 재검토 시 동일 verdict_id (spec §5.3)."""
+    key = f"{clause_or_kind}|{slot}|{lang}"
+    return f"{node[:5]}_{hashlib.sha1(key.encode()).hexdigest()[:8]}"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 STEPS = ("R0", "R1", "R2", "R3", "done")
 
@@ -165,8 +186,97 @@ class ReviewHarness(Harness):
             meta={"source": "marker", "step": "R0", "languages": languages},
             events=[{"type": "artifact", "path": f"{base}/_state.json"}])
 
-    def _r1_legal(self, req, provider, store, state):
-        raise NotImplementedError("Task 7~10에서 구현")
+    def _persist_verdict(self, store, run_id: str, *, node: str, asset_id: str,
+                          lang: str | None, severity: str, location: dict,
+                          evidence: str, clause: str | None = None,
+                          official_source_url: str | None = None,
+                          kind: str | None = None,
+                          disclosure: str | None = None) -> str:
+        """verdict 봉투 영속 → verdict_id 반환.
+
+        R1(legal)·R2(i18n) 공용. envelope 필수 필드: verdict_id·node·asset_id·
+        lang·severity·location·evidence·audit_trace_id·created_at.
+        선택: clause·official_source_url·kind·disclosure.
+        """
+        key = clause if clause else (kind or "")
+        slot = location.get("slot", "")
+        vid = _verdict_id(node, key, slot, lang or "")
+        envelope = {
+            "verdict_id": vid, "node": node, "asset_id": asset_id, "lang": lang,
+            "severity": severity, "location": location,
+            "evidence": evidence,
+            "audit_trace_id": str(uuid.uuid4()),
+            "created_at": _now_iso(),
+        }
+        if clause is not None:
+            envelope["clause"] = clause
+        if official_source_url is not None:
+            envelope["official_source_url"] = official_source_url
+        if kind is not None:
+            envelope["kind"] = kind
+        if disclosure is not None:
+            envelope["disclosure"] = disclosure
+        folder = "legal" if node == "legal" else "i18n"
+        prefix = "law_" if node == "legal" else "reason_"
+        path = f"{self._base(run_id)}/{folder}/{prefix}{vid.split('_', 1)[1]}/verdict.json"
+        store.put(path, json.dumps(envelope, ensure_ascii=False),
+                  source="marker", mime="application/json")
+        return vid
+
+    def _collect_scene_copy(self, store, run_id: str, languages: list[str]) -> dict:
+        """모든 언어 scene의 copy 슬롯 모음."""
+        out: dict = {}
+        for lang in languages:
+            n = store.get(f"/{run_id}/design/final/{lang}/main.scene")
+            if not n:
+                continue
+            try:
+                spec = json.loads(n.content_text)
+            except Exception:
+                spec = {}
+            copy = (spec.get("copy") or {}).get(lang) or {}
+            out[lang] = copy
+        return out
+
+    def _r1_legal(self, req: HarnessRequest, provider, store, state: dict) -> HarnessResult:
+        base = self._base(req.run_id)
+        languages = state["languages"]
+
+        scene_copy = self._collect_scene_copy(store, req.run_id, languages)
+        meta_node = store.get(f"/{req.run_id}/design/metadata.md")
+        metadata_md = meta_node.content_text if meta_node else ""
+        whitelist = load_whitelist()
+
+        # 호출 1: 텍스트+서칭
+        kept, dropped, meta_flags = search_and_filter(
+            provider, scene_copy, metadata_md, whitelist)
+        if meta_flags.get("live_unavailable"):
+            state["live_unavailable"] = True
+        if meta_flags.get("parse_failed"):
+            state["parse_failed"] = True
+        state["dropped_findings_count"] += dropped
+        for f in kept:
+            loc = f.get("location", {}) or {}
+            f_lang = loc.get("lang")
+            self._persist_verdict(
+                store, req.run_id, node="legal",
+                asset_id=f"design/final/{f_lang or ''}/main.scene",
+                lang=f_lang,
+                severity=f.get("severity", "warning"),
+                location=loc,
+                evidence=f.get("evidence", ""),
+                clause=f.get("clause"),
+                official_source_url=f.get("official_source_url"))
+
+        # 호출 2/3은 Task 8/9에서 추가
+        state["step"] = "R2"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(
+            text=f"R1 법률 검토 완료 (텍스트 {len(kept)}건).",
+            output_path=f"{base}/legal/",
+            meta={"source": "marker", "step": "R1",
+                  "findings_text": len(kept), "dropped": dropped},
+            events=[{"type": "artifact", "path": f"{base}/legal/"}])
 
     def _r2_i18n(self, req, provider, store, state):
         raise NotImplementedError("Task 11~12에서 구현")

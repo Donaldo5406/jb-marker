@@ -109,3 +109,54 @@ def test_r0_render_matrix_detects_uploaded(tmp_path):
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert state["matrix"]["ko"]["render"] is True
     assert state["matrix"]["en"]["render"] is False
+
+
+def test_r1_legal_text_search_persists_verdicts(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    # R0 먼저 실행
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    # 텍스트 provider: 1 finding (화이트리스트 통과)
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text=('{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+              '"clause":"표시광고법 §3 ①",'
+              '"official_source_url":"https://law.go.kr/x",'
+              '"severity":"critical","evidence":"\\uD655\\uC2E4\\uD788 \\uC218\\uC775"}]}'),
+        model="x")])
+    h.handle_turn(req, provider=text_provider, store=store)
+    # legal/ 아래 verdict 1건
+    nodes = store.list("/r1/review/legal/")
+    verdict_files = [n for n in nodes if n.path.endswith("verdict.json")]
+    assert len(verdict_files) == 1
+    v = json.loads(verdict_files[0].content_text)
+    assert v["node"] == "legal"
+    assert v["severity"] == "critical"
+    assert v["location"]["slot"] == "headline"
+    assert v["verdict_id"].startswith("legal")  # 안정 ID prefix
+    # state 전이
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "R2"
+
+
+def test_r1_legal_whitelist_drops_off_source(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text=('{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+              '"clause":"§X","official_source_url":"https://blog.com/x",'
+              '"severity":"critical","evidence":"x"}]}'),
+        model="x")])
+    h.handle_turn(req, provider=text_provider, store=store)
+    nodes = store.list("/r1/review/legal/")
+    assert [n for n in nodes if n.path.endswith("verdict.json")] == []
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["dropped_findings_count"] >= 1
