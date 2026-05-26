@@ -503,3 +503,87 @@ def test_r3_pass_demoted_to_warn_per_trigger(tmp_path, make_scripted, flag_key, 
     h.handle_turn(req, provider=text_provider, store=store)
     m = store.get_manifest("r1")
     assert m.step_status.get("review") == "WARN"
+
+
+# ===== Task 15: ack / restart / regenerate =====
+
+
+def test_action_ack_sets_acknowledged_only_on_warn(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    text_provider = make_scripted(complete_responses=[
+        ProviderResponse(text='{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+                               '"clause":"§X","official_source_url":"https://law.go.kr/x",'
+                               '"severity":"warning","evidence":"x"}]}', model="x"),
+        ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}', model="x"),
+    ])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=text_provider, store=store)  # R1 (warning 1건)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 (mono-lingual skip)
+    h.handle_turn(req, provider=text_provider, store=store)  # R3 reconcile → WARN
+    m = store.get_manifest("r1")
+    assert m.step_status.get("review") == "WARN"
+
+    # ack 호출
+    ack_req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                              provider="fake", is_marker=True, action="ack")
+    h.handle_turn(ack_req, provider=FakeProvider(), store=store)
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["acknowledged"] is True
+    # step_status는 WARN 유지(신호 보존)
+    m2 = store.get_manifest("r1")
+    assert m2.step_status.get("review") == "WARN"
+
+
+def test_action_restart_resets_to_r0(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    # stale 영속
+    store.put("/r1/review/legal/law_x/verdict.json", '{"x":1}',
+              source="marker", mime="application/json")
+    # restart
+    restart_req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                                  provider="fake", is_marker=True, action="restart")
+    h.handle_turn(restart_req, provider=FakeProvider(), store=store)
+    # stale 삭제 + step=R1(R0 재실행 후 자동 전이)
+    assert store.get("/r1/review/legal/law_x/verdict.json") is None
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "R1"
+    assert state["acknowledged"] is False
+
+
+def test_action_restart_idempotent_same_id(tmp_path, make_scripted):
+    """동일 finding 재검출 시 같은 verdict_id로 영속(멱등)."""
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    text_provider1 = make_scripted(complete_responses=[ProviderResponse(
+        text=('{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+              '"clause":"§A","official_source_url":"https://law.go.kr/a",'
+              '"severity":"warning","evidence":"x"}]}'), model="x")])
+    h.handle_turn(req, provider=text_provider1, store=store)  # R1
+    nodes1 = [n.path for n in store.list("/r1/review/legal/") if n.path.endswith("verdict.json")]
+    # restart + 동일 finding 재검출
+    restart = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                              provider="fake", is_marker=True, action="restart")
+    h.handle_turn(restart, provider=FakeProvider(), store=store)
+    text_provider2 = make_scripted(complete_responses=[ProviderResponse(
+        text=('{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+              '"clause":"§A","official_source_url":"https://law.go.kr/a",'
+              '"severity":"warning","evidence":"x"}]}'), model="x")])
+    h.handle_turn(req, provider=text_provider2, store=store)
+    nodes2 = [n.path for n in store.list("/r1/review/legal/") if n.path.endswith("verdict.json")]
+    assert nodes1 == nodes2  # 같은 경로(=같은 verdict_id)

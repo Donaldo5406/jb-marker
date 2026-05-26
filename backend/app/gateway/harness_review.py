@@ -559,11 +559,50 @@ class ReviewHarness(Harness):
             meta={"source": "marker", "step": "R3", "gate": gate},
             events=[{"type": "artifact", "path": f"{base}/report.md"}])
 
-    def _restart(self, req, store, state):
-        raise NotImplementedError("Task 15에서 구현")
+    def _restart(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
+        """state 리셋 + 멱등 cleanup → R0부터 full 재검토."""
+        state.update({
+            "step": "R0", "matrix": {}, "acknowledged": False,
+            "live_unavailable": False, "parse_failed": False,
+            "vision_failed": False, "step_failed": "",
+            "vision_skipped": [], "dropped_findings_count": 0,
+            "r2_skipped": "",
+        })
+        self._save_state(store, req.run_id, state)
+        # R0가 자체 cleanup 수행
+        return self._r0_setup(req, store, state)
 
-    def _ack(self, req, store, state):
-        raise NotImplementedError("Task 15에서 구현")
+    def _ack(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
+        """WARN 상태에서 사용자 확인 → state.acknowledged=true. step_status는 WARN 유지."""
+        m = store.get_manifest(req.run_id)
+        current = m.step_status.get("review") if m else None
+        if current != "WARN":
+            return HarnessResult(
+                text=f"ack은 WARN 상태에서만 유효합니다 (현재: {current}).",
+                output_path=f"{self._base(req.run_id)}/_state.json",
+                meta={"source": "marker", "step": state["step"], "ack_ignored": True},
+                events=[])
+        state["acknowledged"] = True
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(
+            text="경고를 확인했습니다. deploy 진입이 해제됩니다.",
+            output_path=f"{self._base(req.run_id)}/_state.json",
+            meta={"source": "marker", "step": "done", "acknowledged": True},
+            events=[{"type": "artifact",
+                     "path": f"{self._base(req.run_id)}/_state.json"}])
 
-    def _regenerate(self, req, store, state):
-        raise NotImplementedError("Task 15에서 구현")
+    def _regenerate(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
+        """직전 완료 step 재실행 (M4 DesignHarness 패턴 미러)."""
+        idx = STEPS.index(state["step"]) if state["step"] in STEPS else 0
+        prev = STEPS[idx - 1] if idx > 0 else None
+        if not prev or prev == "done":
+            return HarnessResult(
+                text="재실행할 이전 단계가 없습니다.",
+                output_path=f"{self._base(req.run_id)}/_state.json",
+                meta={"source": "marker", "step": state["step"]}, events=[])
+        state["step"] = prev
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(
+            text=f"{prev} 단계로 되돌렸습니다. 다음 호출에서 재실행됩니다.",
+            output_path=f"{self._base(req.run_id)}/_state.json",
+            meta={"source": "marker", "step": prev}, events=[])
