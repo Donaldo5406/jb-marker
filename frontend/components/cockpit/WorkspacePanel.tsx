@@ -40,7 +40,7 @@ export function WorkspacePanel() {
               파이프라인을 시작하면 brainstorming 스튜디오가 열리고, 챗으로 산출물을 만들 수 있습니다.
             </p>
           </div>
-          <Button variant="primary" size="lg" onClick={start} disabled={starting}>
+          <Button variant="primary" size="lg" className="text-white" onClick={start} disabled={starting}>
             {starting ? "시작 중…" : "Use Marker"}
           </Button>
         </div>

@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -51,6 +52,13 @@ def _node_dict(n) -> dict[str, Any]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="JB Marker API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     settings = load_settings()
     store = get_vfs_store(settings)
 
