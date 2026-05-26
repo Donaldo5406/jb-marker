@@ -36,6 +36,8 @@ class GatewayRun(BaseModel):
 class PutText(BaseModel):
     content: str
     mime: str | None = None
+    # "base64" → 백엔드가 디코드해 bytes로 저장 (PNG 등 바이너리 라운드트립용)
+    content_encoding: str | None = None
 
 
 class EntitlementPut(BaseModel):
@@ -158,7 +160,17 @@ def create_app() -> FastAPI:
     @app.put("/vfs/{run_id}/{rest:path}")
     def vfs_put(run_id: str, rest: str, body: PutText) -> dict:
         mime = body.mime or ("application/json" if rest.endswith(".json") else "text/markdown")
-        node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime=mime)
+        # base64 인코딩 본문이면 bytes로 디코드해 저장 (PNG 등 바이너리 라운드트립).
+        # 미지정 시 기존 텍스트 경로 유지(하위호환).
+        if body.content_encoding == "base64":
+            import base64
+            try:
+                raw = base64.b64decode(body.content, validate=True)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"base64 decode failed: {e}")
+            node = store.put(f"/{run_id}/{rest}", raw, source="frontend", mime=mime)
+        else:
+            node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime=mime)
         return _node_dict(node)
 
     @app.websocket("/ws/{run_id}")

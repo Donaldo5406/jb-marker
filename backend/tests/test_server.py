@@ -101,6 +101,49 @@ def test_free_brain_uses_passthrough():
     assert r.json()["output_path"].endswith("/passthrough.md")
 
 
+def test_vfs_put_base64_decodes_to_bytes(client):
+    """T17 가산 — content_encoding="base64"면 bytes 라운드트립.
+
+    sceneRender.uploadRender가 PNG를 base64로 인코드해 PUT /vfs/{run_id}/{rest}로
+    보낼 때, 백엔드가 bytes로 디코드해 blob으로 저장하고 GET이 원본 바이트를
+    반환해야 R1 vision 단계에서 정상 읽기가 가능하다.
+    """
+    import base64
+    rid = client.post("/runs", json={"title": "B64"}).json()["run_id"]
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00\x01\x02\x03fakecontent"
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    r = client.put(f"/vfs/{rid}/review/_render/ko.png", json={
+        "content": b64,
+        "content_encoding": "base64",
+        "mime": "image/png",
+    })
+    assert r.status_code == 200, r.text
+    # GET → blob 라운드트립 (bytes 그대로)
+    r2 = client.get(f"/vfs/{rid}/review/_render/ko.png")
+    assert r2.status_code == 200
+    assert r2.content == png_bytes
+    assert r2.headers.get("content-type", "").startswith("image/png")
+
+
+def test_vfs_put_text_path_unchanged_when_no_encoding(client):
+    """T17 가산 회귀 — content_encoding 미지정이면 기존 텍스트 경로 그대로."""
+    rid = client.post("/runs", json={"title": "T"}).json()["run_id"]
+    r = client.put(f"/vfs/{rid}/design/note.md", json={"content": "메모"})
+    assert r.status_code == 200
+    assert client.get(f"/vfs/{rid}/design/note.md").json()["content_text"] == "메모"
+
+
+def test_vfs_put_base64_invalid_returns_400(client):
+    """T17 가산 — 깨진 base64는 400."""
+    rid = client.post("/runs", json={"title": "E"}).json()["run_id"]
+    r = client.put(f"/vfs/{rid}/review/_render/ko.png", json={
+        "content": "!!!not-base64!!!",
+        "content_encoding": "base64",
+        "mime": "image/png",
+    })
+    assert r.status_code == 400
+
+
 def test_model_bound_provider_has_name_and_review_image():
     """_ModelBoundProvider 보강 회귀 — legal_search/vision 통합 위험 차단.
 
