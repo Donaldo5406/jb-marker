@@ -7,7 +7,7 @@ const button = cva(
   {
     variants: {
       variant: {
-        primary: "bg-primary text-on-primary hover:bg-primary-container",
+        primary: "bg-primary text-white hover:bg-primary-container",
         secondary: "bg-surface-container text-on-surface hover:bg-surface-container-high",
       },
       size: { md: "h-11 px-6 text-body-sm", sm: "h-9 px-4 text-caption", lg: "h-12 px-8 text-body-lg" },
