@@ -255,3 +255,46 @@ def test_r1_composite_vision_skipped_per_lang(tmp_path, make_scripted):
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert "composite/en" in state["vision_skipped"]
     assert "composite/ko" not in state["vision_skipped"]
+
+
+def test_r1_graceful_no_live_search(tmp_path, make_scripted):
+    """provider.complete 자체 크래시 → live_unavailable=true, step 500 없음."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    failing = make_scripted(complete_raises=RuntimeError("no key"))
+    h.handle_turn(req, provider=failing, store=store)  # R1 — 크래시 없이 통과
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["live_unavailable"] is True
+    assert state["step"] == "R2"
+
+
+def test_r1_graceful_parse_failed(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    bad = make_scripted(complete_responses=[ProviderResponse(text="not json", model="x")])
+    h.handle_turn(req, provider=bad, store=store)  # R1
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["parse_failed"] is True
+
+
+def test_r1_graceful_vision_failed(tmp_path, make_scripted):
+    """vision_provider.review_image 크래시 → vision_failed=true."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=make_scripted(
+        review_image_raises=RuntimeError("vision down")))
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["vision_failed"] is True
