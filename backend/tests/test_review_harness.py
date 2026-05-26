@@ -587,3 +587,51 @@ def test_action_restart_idempotent_same_id(tmp_path, make_scripted):
     h.handle_turn(req, provider=text_provider2, store=store)
     nodes2 = [n.path for n in store.list("/r1/review/legal/") if n.path.endswith("verdict.json")]
     assert nodes1 == nodes2  # 같은 경로(=같은 verdict_id)
+
+
+# ===== Task 16: server.py 하네스 팩토리 — review+marker → ReviewHarness =====
+
+
+def test_server_factory_review_marker_selects_review_harness(tmp_path, monkeypatch):
+    """server.py 하네스 팩토리에서 review+marker → ReviewHarness.
+
+    R0가 실행되면 step_status['review']='in_progress'로 셋되며
+    이는 ReviewHarness가 호출된 직접 증거다. PassthroughHarness는 이를 세팅하지 않는다.
+    """
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("JBM_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "true")
+    client = TestClient(create_app())
+
+    # run 생성
+    r = client.post("/runs", json={"languages": ["ko"]})
+    assert r.status_code == 200
+    run_id = r.json()["run_id"]
+
+    # design 산출 박아두기 (server.py의 PUT /vfs/{run_id}/{rest:path} 사용)
+    client.put(f"/vfs/{run_id}/brainstorming/plan.md", json={
+        "content": "---\nlanguages: [ko]\ndisclosures: []\n---\n",
+        "mime": "text/markdown",
+    })
+    client.put(f"/vfs/{run_id}/design/final/ko/main.scene", json={
+        "content": '{"copy":{"ko":{"headline":"x"}}}',
+        "mime": "application/json",
+    })
+    client.put(f"/vfs/{run_id}/design/metadata.md", json={
+        "content": "", "mime": "text/markdown",
+    })
+
+    # review+marker gateway 호출 (FakeProvider)
+    g = client.post("/gateway/run", json={
+        "run_id": run_id, "studio": "review", "is_marker": True,
+        "provider": "fake", "prompt": "검토 시작",
+    })
+    assert g.status_code == 200
+
+    # 응답 정상 + manifest에 review step_status 기록 (PassthroughHarness였다면 미세팅)
+    runs = client.get("/runs").json()["runs"]
+    run = next(x for x in runs if x["run_id"] == run_id)
+    assert run["step_status"].get("review") == "in_progress"

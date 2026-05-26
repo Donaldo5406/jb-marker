@@ -123,6 +123,9 @@ def create_app() -> FastAPI:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:
             harness = DesignHarness(image_provider=_ModelBoundProvider("google"))
+        elif body.studio == "review" and body.is_marker:
+            from .gateway.harness_review import ReviewHarness
+            harness = ReviewHarness(vision_provider=_ModelBoundProvider("google"))
         else:
             harness = PassthroughHarness()
         try:
