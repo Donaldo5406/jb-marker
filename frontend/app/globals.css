@@ -5,7 +5,22 @@
 
 @layer base {
   body {
-    @apply bg-background text-on-surface font-sans;
+    @apply text-on-surface font-sans;
+    background-color: #faf0ea;
+    background-image:
+      radial-gradient(ellipse 70% 55% at 18% 22%, #fde2cf 0%, rgba(253, 226, 207, 0) 60%),
+      radial-gradient(ellipse 65% 55% at 82% 18%, #dccaec 0%, rgba(220, 202, 236, 0) 62%),
+      radial-gradient(ellipse 85% 60% at 50% 92%, #f5d9e0 0%, rgba(245, 217, 224, 0) 60%),
+      radial-gradient(ellipse 60% 55% at 92% 82%, #e4dfee 0%, rgba(228, 223, 238, 0) 60%),
+      radial-gradient(ellipse 55% 50% at 8% 75%, #f7e4d6 0%, rgba(247, 228, 214, 0) 60%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
     -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .bg-background {
+    background-color: transparent;
   }
 }
