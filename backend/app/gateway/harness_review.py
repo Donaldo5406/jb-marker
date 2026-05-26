@@ -547,7 +547,8 @@ class ReviewHarness(Harness):
         store.put(f"{base}/report.md", "\n".join(report_lines),
                   source="marker", mime="text/markdown")
 
-        # 게이트·step_status 쓰기는 Task 14에서 가산. 여기서는 step=done만.
+        # 게이트 → manifest.step_status
+        store.set_step_status(req.run_id, "review", gate["status"])
         state["step"] = "done"
         state["last_run_at"] = _now_iso()
         self._save_state(store, req.run_id, state)

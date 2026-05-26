@@ -433,3 +433,73 @@ def test_r3_persists_recommendations_and_report(tmp_path, make_scripted):
     assert "gate:" in report.content_text
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert state["step"] == "done"
+
+
+# ===== Task 14: 게이트 산정 → manifest.step_status =====
+
+
+@pytest.mark.parametrize("verdicts_and_expected", [
+    ([], "PASS"),
+    ([{"severity": "warning"}], "WARN"),
+    ([{"severity": "critical"}], "BLOCKED"),
+    ([{"severity": "critical"}, {"severity": "warning"}], "BLOCKED"),
+])
+def test_r3_gate_status_set_on_manifest(tmp_path, make_scripted, verdicts_and_expected):
+    from app.providers.base import ProviderResponse
+    verdicts, expected = verdicts_and_expected
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko"])
+    store.put("/r1/brainstorming/plan.md", "---\nlanguages: [ko]\n---\n",
+              source="marker", mime="text/markdown")
+    for i, v in enumerate(verdicts):
+        store.put(f"/r1/review/legal/law_{i}/verdict.json",
+                  json.dumps({**v, "verdict_id": f"legal_{i}",
+                              "location": {"slot": "headline", "lang": "ko"}}),
+                  source="marker", mime="application/json")
+    state = {"step": "R3", "languages": ["ko"], "matrix": {},
+             "acknowledged": False, "live_unavailable": False,
+             "parse_failed": False, "vision_failed": False,
+             "step_failed": "", "vision_skipped": [],
+             "dropped_findings_count": 0, "r2_skipped": ""}
+    store.put("/r1/review/_state.json", json.dumps(state),
+              source="marker", mime="application/json")
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text='{"recommendations":[],"conflicts_resolved":[]}', model="x")])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=text_provider, store=store)
+    m = store.get_manifest("r1")
+    assert m.step_status.get("review") == expected
+
+
+@pytest.mark.parametrize("flag_key,flag_val", [
+    ("live_unavailable", True),
+    ("parse_failed", True),
+    ("vision_failed", True),
+    ("step_failed", "R1"),
+    ("vision_skipped", ["visual/v1.png"]),
+])
+def test_r3_pass_demoted_to_warn_per_trigger(tmp_path, make_scripted, flag_key, flag_val):
+    """verdict 0건이어도 5트리거 중 하나라도 켜져 있으면 PASS→WARN 강등."""
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko"])
+    store.put("/r1/brainstorming/plan.md", "---\nlanguages: [ko]\n---\n",
+              source="marker", mime="text/markdown")
+    state = {"step": "R3", "languages": ["ko"], "matrix": {},
+             "acknowledged": False, "live_unavailable": False,
+             "parse_failed": False, "vision_failed": False,
+             "step_failed": "", "vision_skipped": [],
+             "dropped_findings_count": 0, "r2_skipped": "",
+             flag_key: flag_val}
+    store.put("/r1/review/_state.json", json.dumps(state),
+              source="marker", mime="application/json")
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text='{"recommendations":[],"conflicts_resolved":[]}', model="x")])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=text_provider, store=store)
+    m = store.get_manifest("r1")
+    assert m.step_status.get("review") == "WARN"
