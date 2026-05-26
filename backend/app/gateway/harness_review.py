@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import yaml
 
-from ..core.legal_search import load_whitelist, search_and_filter
+from ..core.legal_search import _parse_json, apply_whitelist, load_whitelist, search_and_filter
 from ..core.severity import (  # T7: import-only, 사용은 T11/T14
     DISCLOSURE_I18N,
     EXAGGERATION_TOKENS,
@@ -268,7 +268,43 @@ class ReviewHarness(Harness):
                 clause=f.get("clause"),
                 official_source_url=f.get("official_source_url"))
 
-        # 호출 2/3은 Task 8/9에서 추가
+        # 호출 2: 컴포넌트 단독 비전 (v1.png — text-free 계약·오해유발·상표침해)
+        v1 = store.get(f"/{req.run_id}/design/design-system/components/visual/v1.png")
+        if v1 is None:
+            state["vision_skipped"].append("visual/v1.png")
+        else:
+            vision_prompt = (
+                "이 이미지는 금융 마케팅 캠페인용 AI 생성 비주얼입니다(텍스트-free 계약). "
+                "다음을 평가하세요: ① 이미지에 우발 텍스트가 박혔는지(계약 위반) "
+                "② 수익 보장·무위험 등 오해 유발 비주얼 ③ 상표·로고 침해. "
+                "공식 법령 출처(law.go.kr 등)만 인용. "
+                'JSON: {"findings":[{"location":{"slot":"visual","lang":null},'
+                '"clause":"...","official_source_url":"https://law.go.kr/...",'
+                '"severity":"critical|warning","evidence":"..."}, ...]}'
+            )
+            try:
+                img_bytes = v1.blob if v1.blob else (v1.content_text or "").encode("utf-8")
+                vresp = self._vision_provider.review_image(
+                    img_bytes, vision_prompt, mime="image/png")
+                vdata = _parse_json(vresp.text)
+                vfindings = vdata.get("findings") or []
+                vkept, vdropped = apply_whitelist(vfindings, whitelist)
+                state["dropped_findings_count"] += vdropped
+                for f in vkept:
+                    self._persist_verdict(
+                        store, req.run_id, node="legal",
+                        asset_id="design/design-system/components/visual/v1.png",
+                        lang=None,
+                        severity=f.get("severity", "warning"),
+                        location={"slot": "visual", "lang": None},
+                        evidence=f.get("evidence", ""),
+                        clause=f.get("clause"),
+                        official_source_url=f.get("official_source_url"))
+            except Exception:
+                state["vision_failed"] = True
+                state["vision_skipped"].append("visual/v1.png")
+
+        # 호출 3은 Task 9에서 추가
         state["step"] = "R2"
         self._save_state(store, req.run_id, state)
         return HarnessResult(

@@ -160,3 +160,44 @@ def test_r1_legal_whitelist_drops_off_source(tmp_path, make_scripted):
     assert [n for n in nodes if n.path.endswith("verdict.json")] == []
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert state["dropped_findings_count"] >= 1
+
+
+def test_r1_component_vision_persists_visual_verdict(tmp_path, make_scripted):
+    from app.providers.base import ProviderResponse
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=make_scripted(
+        review_image_responses=[ProviderResponse(
+            text=('{"findings":[{"location":{"slot":"visual","lang":null},'
+                  '"clause":"표시광고법 §3 ①",'
+                  '"official_source_url":"https://law.go.kr/v",'
+                  '"severity":"critical",'
+                  '"evidence":"이미지에 \\"확실한 수익\\" 텍스트 박힘"}]}'),
+            model="g")]))
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1 (text 빈, component vision 1건)
+    nodes = store.list("/r1/review/legal/")
+    visual_verdicts = []
+    for n in nodes:
+        if n.path.endswith("verdict.json"):
+            v = json.loads(n.content_text)
+            if v["location"]["slot"] == "visual":
+                visual_verdicts.append(v)
+    assert len(visual_verdicts) == 1
+    assert visual_verdicts[0]["lang"] is None
+    assert visual_verdicts[0]["severity"] == "critical"
+
+
+def test_r1_component_vision_skipped_when_v1_missing(tmp_path):
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    store.delete("/r1/design/design-system/components/visual/v1.png")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert "visual/v1.png" in state["vision_skipped"]
