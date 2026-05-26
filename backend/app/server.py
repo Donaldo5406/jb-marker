@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
 
     class _ModelBoundProvider:
         def __init__(self, name: str):
+            self.name = name  # legal_search.search_and_filter가 provider.name 사용
             self._p = get_provider(name, settings)
             self._model = model_map.get(name, "fake-1")
 
@@ -66,6 +67,9 @@ def create_app() -> FastAPI:
 
         def generate_image(self, prompt, *, aspect="1:1"):
             return self._p.generate_image(prompt, aspect=aspect)
+
+        def review_image(self, image_bytes, prompt, *, mime="image/png"):
+            return self._p.review_image(image_bytes, prompt, mime=mime)
 
     entitlement_state = {"marker": settings.entitlement_override}
     gateway = MarkerGateway(store,
