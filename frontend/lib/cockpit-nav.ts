@@ -16,3 +16,22 @@ export function studioNavState(stepStatus: Record<string, string>): Record<Studi
   }
   return map;
 }
+
+/** Deploy 잠금 해제 술어 — M5 spec §7.2.
+ *  PASS = 무조건 해제 / WARN = ack 후 해제 / BLOCKED·pending = 잠금. */
+export interface DeployUnlockManifest {
+  step_status?: { review?: string } & Record<string, string>;
+}
+export interface DeployUnlockReviewState {
+  acknowledged?: boolean;
+}
+
+export function isDeployUnlocked(
+  manifest: DeployUnlockManifest,
+  reviewState?: DeployUnlockReviewState
+): boolean {
+  const s = manifest.step_status?.review;
+  if (s === "PASS") return true;
+  if (s === "WARN" && reviewState?.acknowledged === true) return true;
+  return false;
+}
