@@ -1,0 +1,11 @@
+{
+  "version": "2026-05-26",
+  "domains": [
+    "law.go.kr",
+    "moleg.go.kr",
+    "fss.or.kr",
+    "fsc.go.kr",
+    "elaw.klri.re.kr"
+  ],
+  "rationale": "공식 법령·금융감독 정보 출처만 허용. R1 finding이 이 외부 출처를 인용하면 drop."
+}
