@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,6 +6,7 @@
 @layer base {
   body {
     @apply text-on-surface font-sans;
+    font-weight: 600;
     background-color: #faf0ea;
     background-image:
       radial-gradient(ellipse 70% 55% at 18% 22%, #fde2cf 0%, rgba(253, 226, 207, 0) 60%),

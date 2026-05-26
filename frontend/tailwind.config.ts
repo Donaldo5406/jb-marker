@@ -38,7 +38,7 @@ const config: Config = {
         h3: ["24px", { lineHeight: "1.3", fontWeight: "500" }],
         "body-lg": ["16px", { lineHeight: "1.6" }],
         "body-sm": ["14px", { lineHeight: "1.6" }],
-        caption: ["12px", { lineHeight: "1.4", letterSpacing: "0.02em", fontWeight: "500" }],
+        caption: ["12px", { lineHeight: "1.4", letterSpacing: "0.02em", fontWeight: "600" }],
       },
       borderRadius: {
         sm: "0.25rem",
