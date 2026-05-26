@@ -43,3 +43,28 @@ class GoogleProvider(Provider):
             if inline and getattr(inline, "data", None):
                 return inline.data   # bytes (PNG)
         raise RuntimeError("Nano Banana 응답에 이미지 파트가 없습니다")
+
+    def review_image(self, image_bytes: bytes, prompt: str, *,
+                     mime: str = "image/png") -> ProviderResponse:
+        """Gemini 멀티모달 호출 — image_bytes + prompt → JSON findings 텍스트.
+
+        spec §9: 라이브 키 부재·SDK 실패 시 RuntimeError raise → caller(T8/T9)가
+        try/except로 vision_failed=true setter 호출하도록 위임.
+        google-genai SDK 패턴(complete/generate_image와 동일) — types.Part로 이미지 첨부.
+        """
+        from google import genai
+        from google.genai import types
+        model_name = "gemini-2.5-flash"
+        try:
+            client = genai.Client(api_key=self._api_key)
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime),
+                    prompt,
+                ],
+            )
+            text = getattr(resp, "text", "") or "{}"
+            return ProviderResponse(text=text, model=model_name, raw=resp)
+        except Exception as e:
+            raise RuntimeError(f"google review_image 실패: {e}") from e

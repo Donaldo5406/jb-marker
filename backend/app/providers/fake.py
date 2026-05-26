@@ -23,3 +23,7 @@ class FakeProvider(Provider):
         return base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
         )
+
+    def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
+        """결정론 스텁 — 거짓 finding 만들지 않음(spec §7.3 거짓 BLOCK/PASS 방지)."""
+        return ProviderResponse(text='{"findings":[]}', model="fake")
