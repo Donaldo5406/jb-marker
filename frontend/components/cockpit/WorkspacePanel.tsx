@@ -9,6 +9,7 @@ import { EditorPane } from "./EditorPane";
 import { ChatPane } from "./ChatPane";
 import { DesignStudio } from "./DesignStudio";
 import { ReviewStudio } from "./ReviewStudio";
+import { DeployStudio } from "./DeployStudio";
 import { StudioPlaceholder } from "./StudioPlaceholder";
 
 /** Workspace 본문. runId/activeStudio로 분기:
@@ -51,6 +52,7 @@ export function WorkspacePanel() {
   const isBrain = c.activeStudio === "brainstorming";
   const isDesign = c.activeStudio === "design";
   const isReview = c.activeStudio === "review";
+  const isDeploy = c.activeStudio === "deploy";
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr_360px] overflow-hidden">
@@ -72,6 +74,8 @@ export function WorkspacePanel() {
         <DesignStudio />
       ) : isReview ? (
         <ReviewStudio />
+      ) : isDeploy ? (
+        <DeployStudio />
       ) : (
         <>
           <div className="min-h-0 overflow-hidden border-r border-outline-variant">

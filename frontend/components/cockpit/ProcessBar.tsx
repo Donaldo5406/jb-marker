@@ -29,6 +29,15 @@ function reviewColorClass(s: string | undefined): string {
   return "";
 }
 
+/** deploy 셀 raw step_status → 색 클래스(M6 T22). review와 동일한 어휘를 공유한다. */
+function deployColorClass(s: string | undefined): string {
+  if (s === "BLOCKED") return "bg-red-100 text-red-700 border-red-300";
+  if (s === "WARN") return "bg-amber-100 text-amber-700 border-amber-300";
+  if (s === "PASS") return "bg-green-100 text-green-700 border-green-300";
+  if (s === "in_progress") return "bg-blue-100 text-blue-700 border-blue-300 animate-pulse";
+  return "";
+}
+
 export type ProcessBarProps = {
   stepStatus: Record<string, string>;
   active: Studio;
@@ -57,6 +66,9 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
         // 별도 색상을 가져온다 — 일반 NavStatus와 어휘가 다름. 매칭 없으면 빈 문자열로 fallback.
         const reviewRaw = s === "review" ? stepStatus.review : undefined;
         const reviewColor = s === "review" ? reviewColorClass(reviewRaw) : "";
+        // M6 T22: deploy 셀 색 매핑(review 패턴과 동일 어휘).
+        const deployRaw = s === "deploy" ? stepStatus.deploy : undefined;
+        const deployColor = s === "deploy" ? deployColorClass(deployRaw) : "";
         return (
           <div key={s} className="flex items-center">
             <button
@@ -64,6 +76,7 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
               data-testid={`step-${s}`}
               data-status={status}
               data-review-status={s === "review" ? (reviewRaw ?? "") : undefined}
+              data-deploy-status={s === "deploy" ? (deployRaw ?? "") : undefined}
               aria-current={isActive ? "step" : undefined}
               onClick={() => onSelect(s)}
               className={cn(
@@ -75,6 +88,8 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
                 blocked && "opacity-60",
                 // M5: review 셀 색 매핑(active 토큰 위에 우선 적용).
                 reviewColor,
+                // M6 T22: deploy 셀 색 매핑(review와 동일 우선순위).
+                deployColor,
               )}
             >
               <span className="flex h-4 w-4 items-center justify-center">

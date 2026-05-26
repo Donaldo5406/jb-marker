@@ -14,6 +14,17 @@ export type Entitlement = { marker: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
 export type ReviewGate = { status: string; critical: number; warning: number };
+// M6 T19 deploy 상태 타입.
+export type DeployStateLike = {
+  step_status: string;
+  selected_providers: string[];
+  matrix: { channel: string; lang: string }[];
+  dev_pass: boolean;
+};
+export type EligibilityResult = { total: number; eligible_count: number; excluded_count: number };
+export type PackageInfo = { status: string; reason?: string };
+export type AdvisorResult = { text?: string; tool_results?: unknown[]; needsPayment?: boolean };
+export type DispatchResult = { needsPayment?: boolean; report_path?: string } & Record<string, unknown>;
 
 export type CockpitContextValue = {
   // ---- state (spec §2.2) ----
@@ -38,6 +49,11 @@ export type CockpitContextValue = {
   reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
   reviewGate: ReviewGate | null;            // 통합 reconciler 산정 결과(critical/warning 수)
   reviewAcknowledged: boolean;              // WARN ack 클릭 시 true — deploy 게이트 해제 조건
+  // ---- deploy state (M6 T19) ----
+  deployState: DeployStateLike | null;
+  eligibility: EligibilityResult | null;
+  packages: Record<string, PackageInfo>;
+  devPass: boolean;
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -59,6 +75,13 @@ export type CockpitContextValue = {
   setView: (v: CockpitView) => void;
   toggleEntitlement: () => Promise<void>;
   closeUpsell: () => void;
+  // ---- deploy actions (M6 T19) ----
+  setupDeploy: (selected: string[], languages: string[]) => Promise<{ matrix?: { channel: string; lang: string }[]; step_status?: string } & Record<string, unknown>>;
+  runEligibility: () => Promise<EligibilityResult>;
+  runPackagingCell: (channel: string, lang: string, originalCopy: string, visualPath: string) => Promise<{ package_id: string; status: string; reason?: string } & Record<string, unknown>>;
+  askAdvisor: (packageId: string, message: string) => Promise<AdvisorResult>;
+  dispatchConfirm: () => Promise<DispatchResult>;
+  payDemo: () => Promise<{ dev_pass: boolean }>;
 };
 
 const CockpitContext = createContext<CockpitContextValue | null>(null);
@@ -68,8 +91,8 @@ function restOf(runId: string, path: string): string {
   return path.replace(`/${runId}/`, "");
 }
 
-export function CockpitProvider({ children }: { children: React.ReactNode }) {
-  const [runId, setRunId] = useState<string | null>(null);
+export function CockpitProvider({ children, runId: initialRunId }: { children: React.ReactNode; runId?: string }) {
+  const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [view, setViewState] = useState<CockpitView>("workspace");
   const [activeStudio, setActiveStudio] = useState<Studio>(STUDIOS[0]);
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -87,6 +110,11 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   const [reviewStage, setReviewStage] = useState<ReviewStage | null>(null);
   const [reviewGate, setReviewGate] = useState<ReviewGate | null>(null);
   const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
+  // M6 T19: deploy state — runId 전환 시 리셋(openRun/startRun).
+  const [deployState, setDeployState] = useState<DeployStateLike | null>(null);
+  const [eligibility, setEligibility] = useState<EligibilityResult | null>(null);
+  const [packages, setPackages] = useState<Record<string, PackageInfo>>({});
+  const [devPass, setDevPass] = useState(false);
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -157,6 +185,8 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       // M5 spec §7.4: run 전환 시 review state 3 필드 리셋 — 이전 run의 stale ack가
       // T18 isDeployUnlocked를 거짓 해제하지 않도록.
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
+      // M6 T19: deploy state 리셋(이전 run 잔여 차단).
+      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false);
       syncRunQuery(id);
       await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id),
         api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
@@ -175,6 +205,7 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       setOpenFile(null);
       setMessages([]); setPendingAsk(null); setBrainStage("A");
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
+      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false);
       syncRunQuery(run_id);
     },
     [syncRunQuery],
@@ -390,6 +421,81 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
 
   const closeUpsell = useCallback(() => setUpsellOpen(false), []);
 
+  // ---- M6 T19: deploy 액션 6개 ----
+  // 모든 액션은 runIdRef.current를 통해 최신 runId를 사용한다(WS/poll 콜백과 동일 패턴).
+  // /api/runs/... 경로는 ${BASE}로 직접 호출(다른 api.ts 헬퍼와 일관).
+  const setupDeploy = useCallback(async (selected: string[], languages: string[]) => {
+    const id = runIdRef.current;
+    if (!id) return {} as { matrix?: { channel: string; lang: string }[]; step_status?: string };
+    const res = await fetch(`/api/runs/${id}/deploy/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selected_providers: selected, languages }),
+    });
+    return res.json();
+  }, []);
+
+  const runEligibility = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return { total: 0, eligible_count: 0, excluded_count: 0 };
+    const res = await fetch(`/api/runs/${id}/deploy/eligibility`, { method: "POST" });
+    const data = await res.json();
+    setEligibility(data);
+    return data;
+  }, []);
+
+  const runPackagingCell = useCallback(async (channel: string, lang: string, originalCopy: string, visualPath: string) => {
+    const id = runIdRef.current;
+    if (!id) return { package_id: `${channel}_${lang}`, status: "error" };
+    const res = await fetch(`/api/runs/${id}/deploy/packages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel, lang, original_copy: originalCopy, visual_path: visualPath }),
+    });
+    const data = await res.json();
+    if (data && data.package_id) {
+      setPackages((p) => ({ ...p, [data.package_id]: { status: data.status, reason: data.reason } }));
+    }
+    return data;
+  }, []);
+
+  const askAdvisor = useCallback(async (packageId: string, message: string): Promise<AdvisorResult> => {
+    const id = runIdRef.current;
+    if (!id) return { needsPayment: false };
+    const res = await fetch(`/api/runs/${id}/deploy/advisor/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package_id: packageId, message }),
+    });
+    if (res.status === 402) {
+      return { needsPayment: true };
+    }
+    return res.json();
+  }, []);
+
+  const dispatchConfirm = useCallback(async (): Promise<DispatchResult> => {
+    const id = runIdRef.current;
+    if (!id) return { needsPayment: false };
+    const res = await fetch(`/api/runs/${id}/deploy/dispatch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmed: true }),
+    });
+    if (res.status === 402) {
+      return { needsPayment: true };
+    }
+    return res.json();
+  }, []);
+
+  const payDemo = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return { dev_pass: false };
+    const res = await fetch(`/api/runs/${id}/deploy/demo-payment`, { method: "POST" });
+    const data = await res.json();
+    setDevPass(!!data.dev_pass);
+    return data;
+  }, []);
+
   // ---- mount: `?run=` 복원 + entitlement 초기화 ----
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -433,6 +539,10 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     reviewStage,
     reviewGate,
     reviewAcknowledged,
+    deployState,
+    eligibility,
+    packages,
+    devPass,
     startRun,
     openRun,
     refreshTree,
@@ -452,6 +562,12 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     setView,
     toggleEntitlement,
     closeUpsell,
+    setupDeploy,
+    runEligibility,
+    runPackagingCell,
+    askAdvisor,
+    dispatchConfirm,
+    payDemo,
   };
 
   return <CockpitContext.Provider value={value}>{children}</CockpitContext.Provider>;

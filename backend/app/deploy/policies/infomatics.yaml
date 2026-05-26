@@ -1,0 +1,10 @@
+name: infomatics
+title: "정보통신망 이용촉진 및 정보보호 등에 관한 법률 §50"
+night_window: {start_hour: 21, end_hour: 8}
+same_product_exception_days: 180
+required_sender_fields: ["sender_name", "contact", "opt_out_method"]
+citation:
+  law: "정보통신망 이용촉진 및 정보보호 등에 관한 법률"
+  article: "제50조"
+  source_url: "https://www.law.go.kr"
+  quote: "오후 9시~익일 오전 8시 전송은 별도 사전 동의 필요; 수신거부 즉시 반영"

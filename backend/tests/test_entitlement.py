@@ -1,16 +1,27 @@
+"""dev_pass 흐름."""
 import pytest
-
-from app.gateway.entitlement import EntitlementError, check_entitlement
-
-
-def test_free_tier_allows_raw():
-    check_entitlement(is_marker=False, override=False)   # no raise
+from app import entitlement
 
 
-def test_free_tier_blocks_marker():
-    with pytest.raises(EntitlementError):
-        check_entitlement(is_marker=True, override=False)
+@pytest.fixture(autouse=True)
+def _reset():
+    entitlement.reset()
+    yield
+    entitlement.reset()
 
 
-def test_override_allows_marker():
-    check_entitlement(is_marker=True, override=True)      # no raise
+def test_default_false():
+    assert entitlement.check("alice") is False
+
+
+def test_set_then_check():
+    entitlement.set_dev_pass("alice")
+    assert entitlement.check("alice") is True
+
+
+def test_reset_specific_user():
+    entitlement.set_dev_pass("alice")
+    entitlement.set_dev_pass("bob")
+    entitlement.reset("alice")
+    assert entitlement.check("alice") is False
+    assert entitlement.check("bob") is True

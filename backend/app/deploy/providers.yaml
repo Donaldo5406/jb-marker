@@ -1,0 +1,93 @@
+- id: email
+  name: "이메일"
+  logo_path: "/providers/email.svg"
+  channel_type: "email"
+  adapter_status: "stub"
+  priority: 1
+  credentials_schema:
+    smtp_host: "string"
+    smtp_port: "int"
+    sender: "email"
+  spec:
+    image_sizes:
+      - {w: 600, h: 800, name: "body"}
+      - {w: 1200, h: 600, name: "header"}
+    copy_limits: {title: 60, body: 5000}
+    required_disclosures: ["sender_name", "contact", "opt_out_method"]
+
+- id: kakao
+  name: "카카오 알림톡"
+  logo_path: "/providers/kakao.svg"
+  channel_type: "messenger"
+  adapter_status: "stub"
+  priority: 2
+  credentials_schema:
+    biz_app_id: "string"
+    sender_key: "string"
+  spec:
+    image_sizes:
+      - {w: 800, h: 400, name: "thumb"}
+    copy_limits: {title: 50, body: 1000}
+    required_disclosures: ["광고 표시", "수신거부"]
+
+- id: sms
+  name: "SMS"
+  logo_path: "/providers/sms.svg"
+  channel_type: "sms"
+  adapter_status: "stub"
+  priority: 3
+  credentials_schema:
+    api_key: "string"
+    sender_number: "string"
+  spec:
+    image_sizes: []
+    copy_limits: {title: 0, body: 90}
+    required_disclosures: ["광고", "수신거부 080-XXX-XXXX"]
+
+- id: naver
+  name: "네이버 광고"
+  logo_path: "/providers/naver.svg"
+  channel_type: "ad"
+  adapter_status: "stub"
+  priority: 4
+  credentials_schema:
+    customer_id: "string"
+    api_key: "string"
+  spec:
+    image_sizes:
+      - {w: 1080, h: 1080, name: "square"}
+      - {w: 1920, h: 1080, name: "wide"}
+    copy_limits: {title: 30, body: 90}
+    required_disclosures: ["광고주", "관련법 준수"]
+
+- id: google
+  name: "구글 광고"
+  logo_path: "/providers/google.svg"
+  channel_type: "ad"
+  adapter_status: "stub"
+  priority: 5
+  credentials_schema:
+    customer_id: "string"
+    refresh_token: "string"
+  spec:
+    image_sizes:
+      - {w: 1200, h: 628, name: "display"}
+      - {w: 1080, h: 1080, name: "square"}
+    copy_limits: {title: 30, body: 90}
+    required_disclosures: ["광고주명"]
+
+- id: instagram
+  name: "인스타그램"
+  logo_path: "/providers/instagram.svg"
+  channel_type: "social"
+  adapter_status: "stub"
+  priority: 6
+  credentials_schema:
+    account_id: "string"
+    access_token: "string"
+  spec:
+    image_sizes:
+      - {w: 1080, h: 1080, name: "feed"}
+      - {w: 1080, h: 1920, name: "story"}
+    copy_limits: {title: 0, body: 2200}
+    required_disclosures: ["#광고"]

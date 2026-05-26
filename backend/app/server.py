@@ -1,6 +1,7 @@
 """FastAPI 앱 — 헬스 + runs + VFS CRUD + 게이트웨이 + WS _publish."""
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -9,9 +10,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from . import entitlement
 from .config import load_settings
+from .deploy.adapters.base import Package, ScheduleSpec
+from .deploy.adapters.registry import get_adapter
+from .deploy.eligibility import build_eligibility
+from .deploy.ledger import load_ledger
+from .deploy.packager import package_channel
+from .deploy.providers import get_provider as get_deploy_provider
+from .deploy.rules_engine import load_policies
 from .gateway.gateway import MarkerGateway
 from .gateway.harness import HarnessRequest, PassthroughHarness
+from .gateway.harness_advisor import AdvisorHarness
 from .gateway.harness_brainstorming import BrainstormingHarness
 from .gateway.harness_design import DesignHarness
 from .providers.registry import get_provider
@@ -43,6 +53,28 @@ class PutText(BaseModel):
 
 class EntitlementPut(BaseModel):
     marker: bool
+
+
+# === M6 DeployStudio request bodies ===
+class DeploySetupBody(BaseModel):
+    selected_providers: list[str]
+    languages: list[str]
+
+
+class DeployPackageBody(BaseModel):
+    channel: str
+    lang: str
+    original_copy: str
+    visual_path: str
+
+
+class AdvisorChatBody(BaseModel):
+    package_id: str
+    message: str
+
+
+class DispatchBody(BaseModel):
+    confirmed: bool = False
 
 
 def _node_dict(n) -> dict[str, Any]:
@@ -180,6 +212,242 @@ def create_app() -> FastAPI:
         else:
             node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime=mime)
         return _node_dict(node)
+
+    # === M6 DeployStudio routes ===
+    def _require_run(run_id: str):
+        m = store.get_manifest(run_id)
+        if m is None:
+            raise HTTPException(404, "run not found")
+        return m
+
+    @app.post("/runs/{run_id}/deploy/setup")
+    def deploy_setup(run_id: str, body: DeploySetupBody) -> dict:
+        m = _require_run(run_id)
+        matrix = [{"channel": p, "lang": l}
+                  for p in body.selected_providers for l in body.languages]
+        store.put_text(
+            f"/{run_id}/deploy/inputs/selected_providers.json",
+            json.dumps(body.selected_providers, ensure_ascii=False),
+        )
+        store.put_text(
+            f"/{run_id}/deploy/inputs/matrix.json",
+            json.dumps(matrix, ensure_ascii=False),
+        )
+        store.set_step_status(run_id, "deploy", "in_progress")
+        return {"matrix": matrix, "step_status": "in_progress"}
+
+    @app.post("/runs/{run_id}/deploy/eligibility")
+    def deploy_eligibility(run_id: str) -> dict:
+        _require_run(run_id)
+        ledger = load_ledger()
+        policies = load_policies()
+        result = build_eligibility(ledger, policies, send_hour=10)
+        # rules_engine.evaluate_recipient: primary["all_blocks"] = blocks
+        # where blocks contains primary → 자기참조. 직렬화 전 단일 단계만 펼친다.
+        sanitized_excluded = []
+        for ex in result["excluded"]:
+            flat_blocks = [
+                {k: v for k, v in b.items() if k != "all_blocks"}
+                for b in ex.get("all_blocks", [])
+            ]
+            sanitized_excluded.append({
+                **{k: v for k, v in ex.items() if k != "all_blocks"},
+                "all_blocks": flat_blocks,
+            })
+        store.put_text(
+            f"/{run_id}/deploy/eligibility/recipients.json",
+            json.dumps(result["recipients"], ensure_ascii=False),
+        )
+        store.put_text(
+            f"/{run_id}/deploy/eligibility/excluded.json",
+            json.dumps(sanitized_excluded, ensure_ascii=False),
+        )
+        store.put_text(
+            f"/{run_id}/deploy/eligibility/calendar.json",
+            json.dumps(result["calendar"], ensure_ascii=False),
+        )
+        return {
+            "total": result["total"],
+            "eligible_count": result["eligible_count"],
+            "excluded_count": len(result["excluded"]),
+        }
+
+    @app.post("/runs/{run_id}/deploy/packages")
+    def deploy_packages(run_id: str, body: DeployPackageBody) -> dict:
+        _require_run(run_id)
+        provider = get_deploy_provider(body.channel)
+        pkg = package_channel(
+            channel=body.channel,
+            lang=body.lang,
+            original_copy=body.original_copy,
+            provider=provider,
+            visual_path=body.visual_path,
+        )
+        package_id = f"{body.channel}_{body.lang}"
+        if pkg["status"] == "ok":
+            store.put_text(
+                f"/{run_id}/deploy/packages/{package_id}/copy.md",
+                pkg["copy_text"],
+            )
+        store.put_text(
+            f"/{run_id}/deploy/packages/{package_id}/copy.meta.json",
+            json.dumps(pkg, ensure_ascii=False),
+        )
+        store.put_text(
+            f"/{run_id}/deploy/packages/{package_id}/package.meta.json",
+            json.dumps(
+                {
+                    "channel": body.channel,
+                    "lang": body.lang,
+                    "spec_id": provider.id,
+                    "adapter_status": provider.adapter_status,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        return {"package_id": package_id, "status": pkg["status"], "reason": pkg.get("reason")}
+
+    class _ScriptedAdvisorProvider:
+        """AdvisorHarness 계약(.chat) 충족용 데모 advisor — ctx·channel 주입.
+
+        키워드(압축·짧·줄여·shorten·shorter·compress) 감지 시 채널 한도에 맞게
+        원본을 공백 단위 truncate(부분집합 보장) → write_d2_copy tool_call.
+        실 LLM 배선은 M7 또는 ANTHROPIC_API_KEY 도입 시 별도 wrapper로 교체.
+        """
+
+        SHORTEN_KEYWORDS = ("압축", "짧", "줄여", "shorten", "shorter", "compress")
+        LIMITS = {"sms": 90, "email": 600, "kakao": 1000, "naver": 400, "google": 400, "instagram": 400}
+
+        def __init__(self, *, ctx: dict, channel: str) -> None:
+            self._ctx = ctx
+            self._channel = channel
+
+        def chat(self, *, system, messages, tools):
+            last = messages[-1].get("content", "") if messages else ""
+            wants_short = any(k in last for k in self.SHORTEN_KEYWORDS) or any(k in last.lower() for k in ("shorten", "shorter", "compress"))
+            original = self._ctx.get("original_text", "")
+            if wants_short and original:
+                limit = self.LIMITS.get(self._channel, 90)
+                tokens = original.split()
+                adapted = ""
+                for tok in tokens:
+                    candidate = (adapted + " " + tok).strip() if adapted else tok
+                    if len(candidate) > limit:
+                        break
+                    adapted = candidate
+                return {
+                    "text": f"원본 {len(original)}자 → {self._channel} 한도 {limit}자에 맞게 다듬었습니다.",
+                    "tool_calls": [{"name": "write_d2_copy", "input": {"adapted_text": adapted}}],
+                }
+            return {
+                "text": f"카드 컨텍스트를 불러왔어요. '{last}'에 대해 더 구체적으로 말씀해 주시면 카피를 다듬어 드릴게요.",
+                "tool_calls": [],
+            }
+
+    @app.post("/runs/{run_id}/deploy/advisor/chat")
+    def deploy_advisor_chat(run_id: str, body: AdvisorChatBody) -> dict:
+        m = _require_run(run_id)
+        user_id = m.user_id or "demo"
+        if not entitlement.check(user_id):
+            raise HTTPException(402, "Payment required (entitlement)")
+        ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
+        ctx = json.loads(ctx_raw) if ctx_raw else {}
+        channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
+        provider = _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
+        h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
+        return h.handle_turn(package_id=body.package_id, user_message=body.message)
+
+    @app.post("/runs/{run_id}/deploy/dispatch")
+    def deploy_dispatch(run_id: str, body: DispatchBody) -> dict:
+        m = _require_run(run_id)
+        if not body.confirmed:
+            raise HTTPException(400, "user confirm required")
+        user_id = m.user_id or "demo"
+        if not entitlement.check(user_id):
+            raise HTTPException(402, "Payment required (entitlement)")
+
+        selected = json.loads(
+            store.get_text(f"/{run_id}/deploy/inputs/selected_providers.json") or "[]"
+        )
+        recipients = json.loads(
+            store.get_text(f"/{run_id}/deploy/eligibility/recipients.json") or "[]"
+        )
+        if len(recipients) == 0:
+            raise HTTPException(400, "no eligible recipients")
+        if len(selected) == 0:
+            raise HTTPException(400, "no provider selected")
+
+        matrix = json.loads(store.get_text(f"/{run_id}/deploy/inputs/matrix.json") or "[]")
+        plan = {"send_hour": 10, "channels": selected, "recipients_count": len(recipients)}
+        simulation: list[dict] = []
+        for cell in matrix:
+            adapter = get_adapter(cell["channel"])
+            copy_meta_raw = store.get_text(
+                f"/{run_id}/deploy/packages/{cell['channel']}_{cell['lang']}/copy.meta.json"
+            )
+            if not copy_meta_raw:
+                continue
+            meta = json.loads(copy_meta_raw)
+            if meta.get("status") == "needs_advisor" and meta.get("grounding_check") != "ok":
+                simulation.append({
+                    "channel": cell["channel"], "lang": cell["lang"],
+                    "status": "skipped",
+                    "reason": "grounding_fail or needs_advisor",
+                })
+                continue
+            pkg = Package(
+                channel=cell["channel"],
+                lang=cell["lang"],
+                visual_path=meta.get("visual_path", ""),
+                copy_text=meta.get("copy_text", meta.get("adapted_text", "")),
+                meta=meta,
+            )
+            recs_for_lang = [r for r in recipients if r["lang"] == cell["lang"]]
+            res = adapter.dispatch(cell["channel"], pkg, ScheduleSpec(send_hour=10), recs_for_lang)
+            simulation.append({
+                "channel": cell["channel"], "lang": cell["lang"],
+                "status": res.status, "message": res.message,
+                "recipients_count": res.recipients_count,
+            })
+
+        store.put_text(
+            f"/{run_id}/deploy/dispatch/plan.json",
+            json.dumps(plan, ensure_ascii=False),
+        )
+        store.put_text(
+            f"/{run_id}/deploy/dispatch/simulation.json",
+            json.dumps(simulation, ensure_ascii=False),
+        )
+
+        report = (
+            f"# Deploy Report\n\n## Eligibility\n- Eligible: {len(recipients)}\n\n"
+            f"## Channels\n{json.dumps(simulation, ensure_ascii=False, indent=2)}\n"
+        )
+        store.put_text(f"/{run_id}/deploy/report.md", report)
+        store.set_step_status(run_id, "deploy", "PASS")
+        return {"step_status": "PASS", "simulation": simulation}
+
+    @app.post("/runs/{run_id}/deploy/demo-payment")
+    def deploy_demo_payment(run_id: str) -> dict:
+        m = _require_run(run_id)
+        user_id = m.user_id or "demo"
+        entitlement.set_dev_pass(user_id)
+        return {"dev_pass": True}
+
+    @app.get("/runs/{run_id}/deploy/_state")
+    def deploy_state(run_id: str) -> dict:
+        m = _require_run(run_id)
+        user_id = m.user_id or "demo"
+        return {
+            "step_status": m.step_status.get("deploy", "idle"),
+            "selected_providers": json.loads(
+                store.get_text(f"/{run_id}/deploy/inputs/selected_providers.json") or "[]"
+            ),
+            "matrix": json.loads(
+                store.get_text(f"/{run_id}/deploy/inputs/matrix.json") or "[]"
+            ),
+            "dev_pass": entitlement.check(user_id),
+        }
 
     @app.websocket("/ws/{run_id}")
     async def ws(websocket: WebSocket, run_id: str):
