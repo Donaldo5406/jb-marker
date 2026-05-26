@@ -6,11 +6,14 @@ import { api, type AskPayload, type Manifest, type Provider, type VfsNode } from
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
+import { renderAndUploadAll } from "@/lib/sceneRender";
 
 export type CockpitView = "workspace" | "history" | "setting";
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
 export type Entitlement = { marker: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
+export type ReviewGate = { status: string; critical: number; warning: number };
 
 export type CockpitContextValue = {
   // ---- state (spec §2.2) ----
@@ -31,6 +34,10 @@ export type CockpitContextValue = {
   switchDesignLang: (lang: string) => Promise<void>;   // 언어 전환 + 해당 언어 scene 재조립/열기(I4)
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
+  // ---- review state (M5 spec §8.3) ----
+  reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
+  reviewGate: ReviewGate | null;            // 통합 reconciler 산정 결과(critical/warning 수)
+  reviewAcknowledged: boolean;              // WARN ack 클릭 시 true — deploy 게이트 해제 조건
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -42,6 +49,9 @@ export type CockpitContextValue = {
   sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean })
     => Promise<{ text?: string; ask?: AskPayload | null } | null>;
   runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
+  runReview: () => Promise<{ text: string }>;
+  ackReview: () => Promise<void>;
+  restartReview: () => Promise<void>;
   saveSceneJson: (content: string) => Promise<void>;
   answerAsk: (choice: string) => Promise<void>;
   closeAsk: () => void;
@@ -73,6 +83,10 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
   const [designStep, setDesignStep] = useState("S0");
   const [designLang, setDesignLang] = useState("ko");
   const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
+  // M5: 검토 진행 단계·게이트·ack 플래그(메모리 상). 새 run 마다 R0/null/false로 리셋.
+  const [reviewStage, setReviewStage] = useState<ReviewStage | null>(null);
+  const [reviewGate, setReviewGate] = useState<ReviewGate | null>(null);
+  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -157,6 +171,7 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
       setNodes([]);
       setOpenFile(null);
       setMessages([]); setPendingAsk(null); setBrainStage("A");
+      setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       syncRunQuery(run_id);
     },
     [syncRunQuery],
@@ -255,6 +270,76 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  /** 검토 시작(spec §8.3): 모든 lang scene 로드 → composite PNG 업로드 → R0 호출.
+   *  성공한 lang만 vision 입력으로 사용(renderAndUploadAll graceful skip).
+   *  gateway studio="review", is_marker=true. response.meta.step·gate를 state에 반영. */
+  const runReview = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return { text: "" };
+    // 1) 모든 final/{lang}/main.scene 로드 — vfsList로 lang 탐색.
+    const scenes: Record<string, any> = {};
+    try {
+      const { nodes: ns } = await api.vfsList(id);
+      const sceneNodes = ns.filter((n) => /^design\/final\/[^/]+\/main\.scene$/.test(n.path));
+      for (const n of sceneNodes) {
+        const m = n.path.match(/^design\/final\/([^/]+)\/main\.scene$/);
+        const lang = m?.[1];
+        if (!lang) continue;
+        try {
+          const node = await api.vfsGet(id, n.path);
+          scenes[lang] = node.content_text ? JSON.parse(node.content_text) : {};
+        } catch { /* lang 누락 — graceful skip */ }
+      }
+    } catch { /* vfsList 실패 → 빈 scenes로 진입(백엔드는 vision_skipped로 흡수) */ }
+    // 2) composite PNG 업로드 (lib/sceneRender — base64 round-trip, /api/vfs/.../review/_render/{lang}.png).
+    await renderAndUploadAll(id, scenes);
+    // 3) R0 호출.
+    const res = await api.gatewayRun({
+      run_id: id, studio: "review", prompt: "검토 시작",
+      provider: "anthropic", is_marker: true,
+    });
+    // 4) manifest·트리 재조회 + state 진행.
+    await Promise.all([refreshTree(), loadManifest(id)]);
+    const st = res.meta?.step;
+    if (typeof st === "string") setReviewStage(st as ReviewStage);
+    else setReviewStage("R1");
+    const gate = (res.meta as any)?.gate;
+    if (gate && typeof gate === "object") {
+      setReviewGate({
+        status: String(gate.status ?? ""),
+        critical: Number(gate.critical ?? 0),
+        warning: Number(gate.warning ?? 0),
+      });
+    }
+    return { text: res.text };
+  }, [refreshTree, loadManifest]);
+
+  /** WARN ack(spec §8.3): backend acknowledged flag 갱신 + 클라이언트 플래그 set. */
+  const ackReview = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return;
+    await api.gatewayRun({
+      run_id: id, studio: "review", prompt: "",
+      provider: "anthropic", is_marker: true, action: "ack",
+    });
+    setReviewAcknowledged(true);
+    await loadManifest(id);
+  }, [loadManifest]);
+
+  /** 재검토(spec §8.3): backend signal 초기화 + 클라이언트 상태 리셋. */
+  const restartReview = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return;
+    await api.gatewayRun({
+      run_id: id, studio: "review", prompt: "",
+      provider: "anthropic", is_marker: true, action: "restart",
+    });
+    setReviewStage("R0");
+    setReviewGate(null);
+    setReviewAcknowledged(false);
+    await Promise.all([refreshTree(), loadManifest(id)]);
+  }, [refreshTree, loadManifest]);
+
   /** 언어 전환(I4): 현재 언어를 바꾸고 해당 언어 scene을 재조립/열기(spec 없으면 no-op). */
   const switchDesignLang = useCallback(async (lang: string) => {
     setDesignLang(lang);
@@ -342,6 +427,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     switchDesignLang,
     designBypass,
     setDesignBypass,
+    reviewStage,
+    reviewGate,
+    reviewAcknowledged,
     startRun,
     openRun,
     refreshTree,
@@ -351,6 +439,9 @@ export function CockpitProvider({ children }: { children: React.ReactNode }) {
     saveFile,
     sendChat,
     runDesign,
+    runReview,
+    ackReview,
+    restartReview,
     saveSceneJson,
     answerAsk,
     closeAsk,
