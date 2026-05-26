@@ -19,6 +19,16 @@ const DOT_TONE: Record<NavStatus, string> = {
   blocked: "bg-error",
 };
 
+/** review 셀 raw step_status(BLOCKED/WARN/PASS/in_progress) → 색 클래스(M5 §8.1).
+ *  review는 일반 NavStatus(done/active/blocked/pending)와 다른 어휘를 갖는다 — 별도 매핑. */
+function reviewColorClass(s: string | undefined): string {
+  if (s === "BLOCKED") return "bg-red-100 text-red-700 border-red-300";
+  if (s === "WARN") return "bg-amber-100 text-amber-700 border-amber-300";
+  if (s === "PASS") return "bg-green-100 text-green-700 border-green-300";
+  if (s === "in_progress") return "bg-blue-100 text-blue-700 border-blue-300 animate-pulse";
+  return "";
+}
+
 export type ProcessBarProps = {
   stepStatus: Record<string, string>;
   active: Studio;
@@ -43,21 +53,28 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
         const status = nav[s];
         const isActive = active === s;
         const blocked = status === "blocked";
+        // M5 §8.1: review 셀은 raw step_status(BLOCKED/WARN/PASS/in_progress)에서
+        // 별도 색상을 가져온다 — 일반 NavStatus와 어휘가 다름. 매칭 없으면 빈 문자열로 fallback.
+        const reviewRaw = s === "review" ? stepStatus.review : undefined;
+        const reviewColor = s === "review" ? reviewColorClass(reviewRaw) : "";
         return (
           <div key={s} className="flex items-center">
             <button
               type="button"
               data-testid={`step-${s}`}
               data-status={status}
+              data-review-status={s === "review" ? (reviewRaw ?? "") : undefined}
               aria-current={isActive ? "step" : undefined}
               onClick={() => onSelect(s)}
               className={cn(
-                "group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-body-sm transition-colors",
+                "group inline-flex items-center gap-2 rounded-full border border-transparent px-3 py-1.5 text-body-sm transition-colors",
                 isActive
                   ? "bg-surface-container-highest font-medium text-on-surface"
                   : "text-on-surface-variant hover:bg-surface-container",
                 // D8: blocked는 잠금 '시각 표현'만 — 흐림 처리하되 클릭은 막지 않음.
                 blocked && "opacity-60",
+                // M5: review 셀 색 매핑(active 토큰 위에 우선 적용).
+                reviewColor,
               )}
             >
               <span className="flex h-4 w-4 items-center justify-center">
