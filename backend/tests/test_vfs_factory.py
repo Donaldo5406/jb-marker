@@ -10,6 +10,7 @@ def _settings(backend: str) -> Settings:
         anthropic_api_key=None, openai_api_key=None, google_api_key=None,
         vfs_backend=backend, entitlement_override=False, storage_dir="data/runs",
         anthropic_model="m", openai_model="m", google_model="m",
+        advisor_mode="auto", anthropic_advisor_model="m",
     )
 
 

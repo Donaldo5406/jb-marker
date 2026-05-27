@@ -81,10 +81,12 @@ class AdvisorHarness:
                 result["tool_results"].append({"name": "read_eligibility", "output": out})
             elif call["name"] == "write_d2_copy":
                 adapted = call["input"]["adapted_text"]
+                # disclosures는 코드가 자동 append(prompt §"필수 고지" 참고) →
+                # grounding 검증 대상 아님(빈 리스트). grounding.py 자체는 옵션 보존.
                 g = grounding_check(
                     original=ctx.get("original_text", ""),
                     adapted=adapted,
-                    disclosures=ctx.get("disclosures", []),
+                    disclosures=[],
                 )
                 if g.ok:
                     # 영속 — copy.md + copy.meta.json grounding_check 갱신

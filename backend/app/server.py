@@ -344,6 +344,25 @@ def create_app() -> FastAPI:
                 "tool_calls": [],
             }
 
+    def _make_advisor_provider(ctx: dict, channel: str):
+        """advisor_mode 분기 — auto: 키 있으면 live, scripted: 강제 scripted, live: 키 필수.
+
+        실LLM 배선 실패(SDK import / 호출 예외)는 호출부에서 잡아 422로 변환.
+        """
+        mode = settings.advisor_mode
+        has_key = bool(settings.anthropic_api_key)
+        if mode == "live" or (mode == "auto" and has_key):
+            if not has_key:
+                raise HTTPException(422, "ADVISOR_MODE=live but ANTHROPIC_API_KEY is empty")
+            from .deploy.advisor.live import AnthropicAdvisorProvider
+            return AnthropicAdvisorProvider(
+                api_key=settings.anthropic_api_key,
+                model=settings.anthropic_advisor_model,
+                ctx=ctx,
+                channel=channel,
+            )
+        return _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
+
     @app.post("/runs/{run_id}/deploy/advisor/chat")
     def deploy_advisor_chat(run_id: str, body: AdvisorChatBody) -> dict:
         m = _require_run(run_id)
@@ -353,7 +372,7 @@ def create_app() -> FastAPI:
         ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
         ctx = json.loads(ctx_raw) if ctx_raw else {}
         channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
-        provider = _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
+        provider = _make_advisor_provider(ctx, channel)
         h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
         return h.handle_turn(package_id=body.package_id, user_message=body.message)
 

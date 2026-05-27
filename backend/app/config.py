@@ -22,6 +22,9 @@ class Settings:
     anthropic_model: str
     openai_model: str
     google_model: str
+    # M6 advisor live-LLM 모드 — "auto"(키 있으면 live, 없으면 scripted) | "live" | "scripted"
+    advisor_mode: str
+    anthropic_advisor_model: str
 
 
 def load_settings() -> Settings:
@@ -36,4 +39,6 @@ def load_settings() -> Settings:
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o"),
         google_model=os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"),
+        advisor_mode=os.getenv("ADVISOR_MODE", "auto").strip().lower() or "auto",
+        anthropic_advisor_model=os.getenv("ANTHROPIC_ADVISOR_MODEL", "claude-sonnet-4-6"),
     )

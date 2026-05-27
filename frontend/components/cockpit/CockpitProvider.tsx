@@ -8,6 +8,8 @@ import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
 import { renderAndUploadAll } from "@/lib/sceneRender";
 
+const DEPLOY_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
 export type CockpitView = "workspace" | "history" | "setting";
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
 export type Entitlement = { marker: boolean };
@@ -423,11 +425,11 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   // ---- M6 T19: deploy 액션 6개 ----
   // 모든 액션은 runIdRef.current를 통해 최신 runId를 사용한다(WS/poll 콜백과 동일 패턴).
-  // /api/runs/... 경로는 ${BASE}로 직접 호출(다른 api.ts 헬퍼와 일관).
+  // /runs/... 경로는 NEXT_PUBLIC_API_BASE로 직접 호출(api.ts와 일관, 로컬·Vercel 공용).
   const setupDeploy = useCallback(async (selected: string[], languages: string[]) => {
     const id = runIdRef.current;
     if (!id) return {} as { matrix?: { channel: string; lang: string }[]; step_status?: string };
-    const res = await fetch(`/api/runs/${id}/deploy/setup`, {
+    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ selected_providers: selected, languages }),
@@ -438,7 +440,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const runEligibility = useCallback(async () => {
     const id = runIdRef.current;
     if (!id) return { total: 0, eligible_count: 0, excluded_count: 0 };
-    const res = await fetch(`/api/runs/${id}/deploy/eligibility`, { method: "POST" });
+    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, { method: "POST" });
     const data = await res.json();
     setEligibility(data);
     return data;
@@ -447,7 +449,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const runPackagingCell = useCallback(async (channel: string, lang: string, originalCopy: string, visualPath: string) => {
     const id = runIdRef.current;
     if (!id) return { package_id: `${channel}_${lang}`, status: "error" };
-    const res = await fetch(`/api/runs/${id}/deploy/packages`, {
+    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/packages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel, lang, original_copy: originalCopy, visual_path: visualPath }),
@@ -462,7 +464,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const askAdvisor = useCallback(async (packageId: string, message: string): Promise<AdvisorResult> => {
     const id = runIdRef.current;
     if (!id) return { needsPayment: false };
-    const res = await fetch(`/api/runs/${id}/deploy/advisor/chat`, {
+    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/advisor/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ package_id: packageId, message }),
@@ -476,7 +478,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const dispatchConfirm = useCallback(async (): Promise<DispatchResult> => {
     const id = runIdRef.current;
     if (!id) return { needsPayment: false };
-    const res = await fetch(`/api/runs/${id}/deploy/dispatch`, {
+    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/dispatch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirmed: true }),
@@ -490,7 +492,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const payDemo = useCallback(async () => {
     const id = runIdRef.current;
     if (!id) return { dev_pass: false };
-    const res = await fetch(`/api/runs/${id}/deploy/demo-payment`, { method: "POST" });
+    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/demo-payment`, { method: "POST" });
     const data = await res.json();
     setDevPass(!!data.dev_pass);
     return data;
