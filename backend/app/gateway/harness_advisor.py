@@ -64,6 +64,10 @@ class AdvisorHarness:
         self._append_event(package_id, {"role": "assistant", "content": response.get("text", ""), "tool_calls": response.get("tool_calls", [])})
 
         result: dict[str, Any] = {"status": "ok", "text": response.get("text", ""), "tool_results": []}
+        # provider가 usage 메타데이터를 노출하면 결과에 echo — 호출자가 record_usage에 사용.
+        if "_usage" in response:
+            result["_usage"] = response["_usage"]
+            result["_model"] = response.get("_model")
 
         for call in response.get("tool_calls", []):
             try:

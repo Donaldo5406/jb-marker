@@ -24,6 +24,7 @@ from .gateway.harness import HarnessRequest, PassthroughHarness
 from .gateway.harness_advisor import AdvisorHarness
 from .gateway.harness_brainstorming import BrainstormingHarness
 from .gateway.harness_design import DesignHarness
+from .observability import usage as usage_log
 from .providers.registry import get_provider
 from .vfs.factory import get_vfs_store
 
@@ -113,10 +114,54 @@ def create_app() -> FastAPI:
         def review_image(self, image_bytes, prompt, *, mime="image/png"):
             return self._p.review_image(image_bytes, prompt, mime=mime)
 
+    class _TrackedProvider:
+        """ModelBoundProvider wrapper — 각 LLM/이미지 호출 직후 usage 영속."""
+
+        def __init__(self, inner, *, run_id: str, step: str) -> None:
+            self._inner = inner
+            self._run_id = run_id
+            self._step = step
+            # legal_search 등이 .name 속성을 검사하므로 노출.
+            self.name = getattr(inner, "name", "unknown")
+
+        def _model_for(self, fallback: str | None = None) -> str:
+            return getattr(self._inner, "_model", None) or fallback or "unknown"
+
+        def complete(self, messages, *, model=None, system=None, **kw):
+            resp = self._inner.complete(messages, model=model, system=system, **kw)
+            usage_log.record_usage(
+                store, run_id=self._run_id, step=self._step,
+                model=getattr(resp, "model", None) or self._model_for(),
+                kind="text", usage=getattr(resp, "usage", None),
+            )
+            return resp
+
+        def generate_image(self, prompt, *, aspect="1:1"):
+            out = self._inner.generate_image(prompt, aspect=aspect)
+            usage_log.record_usage(
+                store, run_id=self._run_id, step=self._step,
+                model="gemini-2.5-flash-image" if self.name == "google" else self._model_for(),
+                kind="image", images=1, meta={"aspect": aspect},
+            )
+            return out
+
+        def review_image(self, image_bytes, prompt, *, mime="image/png"):
+            resp = self._inner.review_image(image_bytes, prompt, mime=mime)
+            usage_log.record_usage(
+                store, run_id=self._run_id, step=self._step,
+                model=getattr(resp, "model", None) or self._model_for(),
+                kind="vision", usage=getattr(resp, "usage", None),
+            )
+            return resp
+
+    def _wrap_for_usage(provider, req):
+        return _TrackedProvider(provider, run_id=req.run_id, step=req.studio or "gateway")
+
     entitlement_state = {"marker": settings.entitlement_override}
     gateway = MarkerGateway(store,
                             entitlement_override=lambda: entitlement_state["marker"],
-                            provider_factory=_ModelBoundProvider)
+                            provider_factory=_ModelBoundProvider,
+                            wrap_provider=_wrap_for_usage)
 
     connections: dict[str, set[WebSocket]] = {}
 
@@ -374,7 +419,22 @@ def create_app() -> FastAPI:
         channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
         provider = _make_advisor_provider(ctx, channel)
         h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
-        return h.handle_turn(package_id=body.package_id, user_message=body.message)
+        result = h.handle_turn(package_id=body.package_id, user_message=body.message)
+        # advisor live LLM이 usage 노출 시 영속(scripted는 _usage 없음 → skip).
+        if "_usage" in result:
+            usage_log.record_usage(
+                store, run_id=run_id, step="advisor",
+                model=result.get("_model") or settings.anthropic_advisor_model,
+                kind="text", usage=result["_usage"],
+                meta={"package_id": body.package_id},
+            )
+        return result
+
+    @app.get("/runs/{run_id}/usage")
+    def get_usage(run_id: str) -> dict:
+        if store.get_manifest(run_id) is None:
+            raise HTTPException(404, "run 없음")
+        return usage_log.summarize(store, run_id=run_id)
 
     @app.post("/runs/{run_id}/deploy/dispatch")
     def deploy_dispatch(run_id: str, body: DispatchBody) -> dict:

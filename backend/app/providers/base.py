@@ -18,6 +18,9 @@ class ProviderResponse:
     model: str
     raw: Any = None
     citations: list[dict] = field(default_factory=list)   # [{"url","title","snippet"}]
+    # 토큰 사용량 — SDK 응답에서 추출. None=알 수 없음(Fake/오프라인 stub).
+    # {"input_tokens": int, "output_tokens": int}
+    usage: dict | None = None
 
 
 class Provider(ABC):

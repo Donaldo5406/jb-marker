@@ -69,4 +69,15 @@ class AnthropicAdvisorProvider:
                 tool_calls.append(
                     {"name": getattr(block, "name", ""), "input": getattr(block, "input", {}) or {}}
                 )
-        return {"text": "".join(text_parts), "tool_calls": tool_calls}
+        usage = None
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            usage = {
+                "input_tokens": int(getattr(u, "input_tokens", 0) or 0),
+                "output_tokens": int(getattr(u, "output_tokens", 0) or 0),
+            }
+        out: dict[str, Any] = {"text": "".join(text_parts), "tool_calls": tool_calls}
+        if usage is not None:
+            out["_usage"] = usage
+            out["_model"] = self._model
+        return out

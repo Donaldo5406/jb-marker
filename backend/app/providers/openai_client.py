@@ -28,4 +28,11 @@ class OpenAIProvider(Provider):
             url = getattr(getattr(ann, "url_citation", None), "url", None)
             if url:
                 citations.append({"url": url, "title": getattr(ann.url_citation, "title", None), "snippet": None})
-        return ProviderResponse(text=msg.content or "", model=model, raw=resp, citations=citations)
+        usage = None
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            usage = {
+                "input_tokens": int(getattr(u, "prompt_tokens", 0) or 0),
+                "output_tokens": int(getattr(u, "completion_tokens", 0) or 0),
+            }
+        return ProviderResponse(text=msg.content or "", model=model, raw=resp, citations=citations, usage=usage)

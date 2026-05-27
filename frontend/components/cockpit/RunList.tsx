@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Clock, FolderOpen, RotateCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, FolderOpen, RotateCw } from "lucide-react";
 import { api, type Manifest } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
+import { UsagePanel } from "./UsagePanel";
 
 type LoadState = "loading" | "ok" | "error";
 
@@ -31,6 +32,7 @@ export function RunList() {
   const c = useCockpit();
   const [runs, setRuns] = React.useState<Manifest[]>([]);
   const [state, setState] = React.useState<LoadState>("loading");
+  const [openUsage, setOpenUsage] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setState("loading");
@@ -102,34 +104,58 @@ export function RunList() {
 
         {state === "ok" && runs.length > 0 && (
           <ul className="space-y-3">
-            {runs.map((r) => (
-              <li key={r.run_id}>
-                <button
-                  type="button"
-                  data-testid={`run-row-${r.run_id}`}
-                  onClick={() => void c.openRun(r.run_id)}
-                  className="block w-full text-left"
-                >
-                  <Card className="flex items-center gap-4 p-5 transition-colors hover:bg-surface-container-low">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="truncate text-body-lg font-medium text-on-surface">
-                        {r.title?.trim() || "제목 없는 작업"}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-on-surface-variant">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="h-3 w-3" aria-hidden />
-                          {formatDate(r.created_at)}
+            {runs.map((r) => {
+              const isOpen = openUsage === r.run_id;
+              return (
+                <li key={r.run_id}>
+                  <Card className="overflow-hidden">
+                    <div className="flex items-center gap-2 p-5">
+                      <button
+                        type="button"
+                        aria-label={isOpen ? "토큰 사용량 닫기" : "토큰 사용량 보기"}
+                        aria-expanded={isOpen}
+                        data-testid={`run-toggle-usage-${r.run_id}`}
+                        onClick={() => setOpenUsage(isOpen ? null : r.run_id)}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                      >
+                        {isOpen ? (
+                          <ChevronDown className="h-4 w-4" aria-hidden />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" aria-hidden />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`run-row-${r.run_id}`}
+                        onClick={() => void c.openRun(r.run_id)}
+                        className="flex flex-1 items-center gap-4 text-left transition-colors hover:opacity-80"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="truncate text-body-lg font-medium text-on-surface">
+                            {r.title?.trim() || "제목 없는 작업"}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-on-surface-variant">
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" aria-hidden />
+                              {formatDate(r.created_at)}
+                            </span>
+                            <span>{summarizeSteps(r.step_status)}</span>
+                          </div>
+                        </div>
+                        <span className="shrink-0 font-mono text-caption text-outline">
+                          {r.run_id.slice(0, 8)}
                         </span>
-                        <span>{summarizeSteps(r.step_status)}</span>
-                      </div>
+                      </button>
                     </div>
-                    <span className="shrink-0 font-mono text-caption text-outline">
-                      {r.run_id.slice(0, 8)}
-                    </span>
+                    {isOpen && (
+                      <div className="border-t border-outline-variant/40 px-5 pb-5">
+                        <UsagePanel runId={r.run_id} />
+                      </div>
+                    )}
                   </Card>
-                </button>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

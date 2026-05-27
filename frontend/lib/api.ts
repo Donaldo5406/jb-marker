@@ -70,4 +70,35 @@ export const api = {
   wsUrl(runId: string): string {
     return `${BASE.replace(/^http/, "ws")}/ws/${runId}`;
   },
+  async getUsage(runId: string): Promise<UsageSummary> {
+    return j(await fetch(`${BASE}/runs/${runId}/usage`));
+  },
+};
+
+export type UsageModelBreakdown = {
+  input_tokens: number;
+  output_tokens: number;
+  images: number;
+  cost_usd: number;
+  calls: number;
+};
+export type UsageStepBreakdown = UsageModelBreakdown & {
+  by_model: Record<string, UsageModelBreakdown>;
+};
+export type UsageEntry = {
+  ts: number;
+  step: string;
+  kind: "text" | "vision" | "image";
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  images: number;
+  cost_usd: number;
+  known_model: boolean;
+  meta: Record<string, unknown>;
+};
+export type UsageSummary = {
+  total: UsageModelBreakdown;
+  by_step: Record<string, UsageStepBreakdown>;
+  entries: UsageEntry[];
 };

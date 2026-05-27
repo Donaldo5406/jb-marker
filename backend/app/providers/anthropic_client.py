@@ -27,4 +27,11 @@ class AnthropicProvider(Provider):
                 citations.append({"url": getattr(c, "url", None),
                                   "title": getattr(c, "title", None),
                                   "snippet": getattr(c, "cited_text", None)})
-        return ProviderResponse(text=text, model=model, raw=resp, citations=citations)
+        usage = None
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            usage = {
+                "input_tokens": int(getattr(u, "input_tokens", 0) or 0),
+                "output_tokens": int(getattr(u, "output_tokens", 0) or 0),
+            }
+        return ProviderResponse(text=text, model=model, raw=resp, citations=citations, usage=usage)

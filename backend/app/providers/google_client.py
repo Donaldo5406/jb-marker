@@ -27,7 +27,8 @@ class GoogleProvider(Provider):
                     citations.append({"url": getattr(w, "uri", None), "title": getattr(w, "title", None), "snippet": None})
         except Exception:
             pass
-        return ProviderResponse(text=text, model=model, raw=resp, citations=citations)
+        usage = _extract_google_usage(resp)
+        return ProviderResponse(text=text, model=model, raw=resp, citations=citations, usage=usage)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
         from google import genai
@@ -65,6 +66,17 @@ class GoogleProvider(Provider):
                 ],
             )
             text = getattr(resp, "text", "") or "{}"
-            return ProviderResponse(text=text, model=model_name, raw=resp)
+            return ProviderResponse(text=text, model=model_name, raw=resp, usage=_extract_google_usage(resp))
         except Exception as e:
             raise RuntimeError(f"google review_image 실패: {e}") from e
+
+
+def _extract_google_usage(resp) -> dict | None:
+    """google-genai 응답에서 토큰 카운트 추출 (usage_metadata.prompt/candidates_token_count)."""
+    u = getattr(resp, "usage_metadata", None)
+    if u is None:
+        return None
+    return {
+        "input_tokens": int(getattr(u, "prompt_token_count", 0) or 0),
+        "output_tokens": int(getattr(u, "candidates_token_count", 0) or 0),
+    }

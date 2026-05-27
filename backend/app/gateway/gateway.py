@@ -17,13 +17,17 @@ from .harness import Harness, HarnessRequest, HarnessResult
 class MarkerGateway:
     def __init__(self, store: VfsStore, *,
                  entitlement_override: "bool | Callable[[], bool]",
-                 provider_factory: Callable[[str], Provider]) -> None:
+                 provider_factory: Callable[[str], Provider],
+                 wrap_provider: "Callable[[Provider, HarnessRequest], Provider] | None" = None) -> None:
         self._store = store
         self._override = entitlement_override
         self._provider_factory = provider_factory
+        self._wrap_provider = wrap_provider
 
     def run(self, req: HarnessRequest, harness: Harness) -> HarnessResult:
         override = self._override() if callable(self._override) else self._override
         check_entitlement(is_marker=req.is_marker, override=override)
         provider = self._provider_factory(req.provider)
+        if self._wrap_provider is not None:
+            provider = self._wrap_provider(provider, req)
         return harness.handle_turn(req, provider=provider, store=self._store)
