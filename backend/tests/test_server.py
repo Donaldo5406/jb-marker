@@ -44,7 +44,10 @@ def test_get_runs_lists_created_runs():
     assert "step_status" in runs[0] and "created_at" in runs[0]
 
 
-def test_entitlement_toggle_gates_marker():
+def test_entitlement_toggle_gates_marker(monkeypatch):
+    # per-user 게이트 검증 — env override는 0으로 둬 user_id(local=demo) 기반 토글만 본다.
+    monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "0")
+    monkeypatch.setenv("VFS_BACKEND", "local")
     from fastapi.testclient import TestClient
     from app.server import create_app
     client = TestClient(create_app())
@@ -55,9 +58,9 @@ def test_entitlement_toggle_gates_marker():
     assert client.post("/gateway/run", json=body).status_code == 402
     # 초기 상태 조회
     assert client.get("/entitlement").json()["marker"] is False
-    # 토글 ON
+    # 토글 ON (demo user에 dev_pass 부여)
     assert client.put("/entitlement", json={"marker": True}).json()["marker"] is True
-    # 이제 Marker 통과
+    # 이제 Marker 통과 (gateway가 user_id=demo의 entitlement.check를 평가)
     assert client.post("/gateway/run", json=body).status_code == 200
 
 
