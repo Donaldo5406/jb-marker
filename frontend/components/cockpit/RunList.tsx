@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, Clock, FolderOpen, RotateCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, FolderOpen, Play, RotateCw } from "lucide-react";
 import { api, type Manifest } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 import { UsagePanel } from "./UsagePanel";
+import { HistoryDetail } from "./HistoryDetail";
 
 type LoadState = "loading" | "ok" | "error";
 
@@ -48,6 +49,18 @@ export function RunList() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  // selectedHistoryRun이 설정되면 목록 대신 상세 갤러리로 토글.
+  // (모든 hook 호출 이후에 위치 — rules of hooks 준수.)
+  if (c.selectedHistoryRun) {
+    return (
+      <HistoryDetail
+        runId={c.selectedHistoryRun}
+        onBack={c.closeHistoryDetail}
+        onContinue={(id) => void c.openRun(id)}
+      />
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto bg-surface px-6 py-8">
@@ -127,7 +140,7 @@ export function RunList() {
                       <button
                         type="button"
                         data-testid={`run-row-${r.run_id}`}
-                        onClick={() => void c.openRun(r.run_id)}
+                        onClick={() => c.viewHistoryDetail(r.run_id)}
                         className="flex flex-1 items-center gap-4 text-left transition-colors hover:opacity-80"
                       >
                         <div className="min-w-0 flex-1 space-y-1">
@@ -145,6 +158,17 @@ export function RunList() {
                         <span className="shrink-0 font-mono text-caption text-outline">
                           {r.run_id.slice(0, 8)}
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="이어서 작업"
+                        title="이어서 작업"
+                        data-testid={`run-continue-${r.run_id}`}
+                        onClick={() => void c.openRun(r.run_id)}
+                        className="ml-2 flex h-8 shrink-0 items-center gap-1 rounded-md border border-outline-variant px-2.5 text-caption text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                      >
+                        <Play className="h-3.5 w-3.5" aria-hidden />
+                        이어서 작업
                       </button>
                     </div>
                     {isOpen && (

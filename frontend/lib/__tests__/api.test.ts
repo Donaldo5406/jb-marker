@@ -58,4 +58,32 @@ describe("api client", () => {
   it("assetUrl이 BASE 기준 vfs 경로를 만든다", () => {
     expect(api.assetUrl("r1", "design/x.png")).toContain("/vfs/r1/design/x.png");
   });
+
+  it("getGallery는 /runs/{id}/gallery를 호출하고 JSON을 반환", async () => {
+    const payload = { run: { run_id: "r1" }, sections: [] };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => payload,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const out = await api.getGallery("r1");
+    expect(out.run.run_id).toBe("r1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/runs/r1/gallery");
+  });
+
+  it("getPreviewHtml은 응답 텍스트(HTML)를 반환", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => "<html>x</html>",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const html = await api.getPreviewHtml("r1");
+    expect(html).toContain("<html>");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/runs/r1/preview");
+  });
+
+  it("getPreviewHtml은 비-2xx면 throw", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 404, text: async () => "nope",
+    }));
+    await expect(api.getPreviewHtml("r1")).rejects.toThrow();
+  });
 });

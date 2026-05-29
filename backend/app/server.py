@@ -25,6 +25,8 @@ from .gateway.harness import HarnessRequest, PassthroughHarness
 from .gateway.harness_advisor import AdvisorHarness
 from .gateway.harness_brainstorming import BrainstormingHarness
 from .gateway.harness_design import DesignHarness
+from .history.gallery import build_gallery
+from .history.preview import build_preview_html
 from .observability import usage as usage_log
 from .providers.registry import get_provider
 from .vfs.factory import get_vfs_store
@@ -454,6 +456,18 @@ def create_app() -> FastAPI:
     def get_usage(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
         require_owner(run_id, user_id)
         return usage_log.summarize(store, run_id=run_id)
+
+    @app.get("/runs/{run_id}/gallery")
+    def get_gallery(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
+        man = require_owner(run_id, user_id)
+        nodes = store.list(f"/{run_id}")
+        return build_gallery(man, nodes)
+
+    @app.get("/runs/{run_id}/preview")
+    def get_preview(run_id: str, user_id: str = Depends(user_id_dep)):
+        require_owner(run_id, user_id)
+        markup = build_preview_html(run_id, store)
+        return Response(content=markup, media_type="text/html")
 
     @app.post("/runs/{run_id}/deploy/dispatch")
     def deploy_dispatch(run_id: str, body: DispatchBody,

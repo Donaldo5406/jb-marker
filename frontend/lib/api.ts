@@ -84,6 +84,14 @@ export const api = {
   async getUsage(runId: string): Promise<UsageSummary> {
     return j(await authedFetch(`${BASE}/runs/${runId}/usage`));
   },
+  async getGallery(runId: string): Promise<GalleryResponse> {
+    return j(await authedFetch(`${BASE}/runs/${runId}/gallery`));
+  },
+  async getPreviewHtml(runId: string): Promise<string> {
+    const r = await authedFetch(`${BASE}/runs/${runId}/preview`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  },
 };
 
 export type UsageModelBreakdown = {
@@ -112,4 +120,22 @@ export type UsageSummary = {
   total: UsageModelBreakdown;
   by_step: Record<string, UsageStepBreakdown>;
   entries: UsageEntry[];
+};
+
+export type GalleryItem = {
+  path: string; name: string; mime: string | null; source: string | null;
+  is_media: boolean; meta: Record<string, unknown>;
+};
+export type GalleryGroup = { kind: string; items: GalleryItem[] };
+export type GallerySection = {
+  studio: string; label: string; status: string;
+  has_preview: boolean; groups: GalleryGroup[];
+};
+export type GalleryResponse = {
+  run: {
+    run_id: string; title: string | null; created_at: string | null;
+    current_step: string | null; step_status: Record<string, string>;
+    languages: string[];
+  };
+  sections: GallerySection[];
 };

@@ -76,6 +76,9 @@ export type CockpitContextValue = {
   closeAsk: () => void;
   setStudio: (s: Studio) => void;
   setView: (v: CockpitView) => void;
+  selectedHistoryRun: string | null;
+  viewHistoryDetail: (runId: string) => void;
+  closeHistoryDetail: () => void;
   toggleEntitlement: () => Promise<void>;
   closeUpsell: () => void;
   // ---- deploy actions (M6 T19) ----
@@ -118,6 +121,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [eligibility, setEligibility] = useState<EligibilityResult | null>(null);
   const [packages, setPackages] = useState<Record<string, PackageInfo>>({});
   const [devPass, setDevPass] = useState(false);
+  // M7-B: history 목록 ↔ 상세 뷰 전환 — 선택된 run id(null=목록 표시).
+  const [selectedHistoryRun, setSelectedHistoryRun] = useState<string | null>(null);
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -415,6 +420,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const setStudio = useCallback((s: Studio) => setActiveStudio(s), []);
   const setView = useCallback((v: CockpitView) => setViewState(v), []);
+  const viewHistoryDetail = useCallback((id: string) => setSelectedHistoryRun(id), []);
+  const closeHistoryDetail = useCallback(() => setSelectedHistoryRun(null), []);
 
   const toggleEntitlement = useCallback(async () => {
     const next = !entitlement.marker;
@@ -571,6 +578,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     closeAsk,
     setStudio,
     setView,
+    selectedHistoryRun,
+    viewHistoryDetail,
+    closeHistoryDetail,
     toggleEntitlement,
     closeUpsell,
     setupDeploy,
