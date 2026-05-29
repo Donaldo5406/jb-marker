@@ -35,6 +35,8 @@ class Settings:
     supabase_anon_key: str | None = None
     supabase_jwt_secret: str | None = None
     supabase_storage_bucket: str = "vfs-blobs"
+    # M7-C 분리형 배포 — 명시 CORS origin 화이트리스트(쉼표 구분). 미설정 시 localhost 폴백.
+    cors_allow_origins: tuple[str, ...] = ()
 
 
 def load_settings() -> Settings:
@@ -56,4 +58,7 @@ def load_settings() -> Settings:
         supabase_anon_key=os.getenv("SUPABASE_ANON_KEY") or None,
         supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET") or None,
         supabase_storage_bucket=os.getenv("SUPABASE_STORAGE_BUCKET", "vfs-blobs"),
+        cors_allow_origins=tuple(
+            o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()
+        ),
     )

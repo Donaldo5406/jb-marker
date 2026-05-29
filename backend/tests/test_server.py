@@ -161,3 +161,31 @@ def test_model_bound_provider_has_name_and_review_image():
     src = inspect.getsource(server_mod.create_app)
     assert "self.name = name" in src, "self.name 누락"
     assert "def review_image(" in src, "review_image pass-through 누락"
+
+
+def test_cors_allows_configured_origin(monkeypatch):
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://foo.vercel.app")
+    from app.server import create_app
+    from fastapi.testclient import TestClient
+    client = TestClient(create_app())
+    r = client.options(
+        "/health",
+        headers={
+            "Origin": "https://foo.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert r.headers.get("access-control-allow-origin") == "https://foo.vercel.app"
+
+
+def test_cors_still_allows_localhost(monkeypatch):
+    monkeypatch.delenv("CORS_ALLOW_ORIGINS", raising=False)
+    from app.server import create_app
+    from fastapi.testclient import TestClient
+    client = TestClient(create_app())
+    r = client.options(
+        "/health",
+        headers={"Origin": "http://localhost:3000",
+                 "Access-Control-Request-Method": "GET"},
+    )
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:3000"

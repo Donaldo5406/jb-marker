@@ -100,14 +100,19 @@ def _require_run_owner_factory(store):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="JB Marker API")
+    settings = load_settings()
+    # 분리형 배포: env로 명시한 origin(예: https://*.vercel.app) 화이트리스트 +
+    # localhost regex 폴백. allow_credentials=True라 wildcard("*") 불가 → 명시 리스트.
+    _dev_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    _origins = list(settings.cors_allow_origins) or _dev_origins
     app.add_middleware(
         CORSMiddleware,
+        allow_origins=_origins,
         allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    settings = load_settings()
     store = get_vfs_store(settings)
 
     user_id_dep = make_user_id_dep(settings)
