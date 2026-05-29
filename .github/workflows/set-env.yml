@@ -9,19 +9,22 @@ on:
         required: true
         options:
           - hf-variable
-          - hf-secret
           - vercel
       key:
         description: 'Env var name (KEY)'
         type: string
         required: true
       value:
-        description: 'Env var value (VALUE)'
+        description: 'Env var value — NON-SECRET only (visible in run logs/UI)'
         type: string
         required: true
 
 permissions:
   contents: read
+
+concurrency:
+  group: set-env
+  cancel-in-progress: false
 
 jobs:
   set:
@@ -55,7 +58,7 @@ jobs:
         if: ${{ inputs.target == 'vercel' }}
         working-directory: frontend
         run: |
-          vercel env rm "$KEY" production -y --token=$T || true
+          vercel env rm "$KEY" production -y --token=$T || echo "env rm skipped (key absent or rm failed; continuing)"
           printf '%s' "$VALUE" | vercel env add "$KEY" production --token=$T
           vercel pull --yes --environment=production --token=$T
           vercel build --prod --token=$T
