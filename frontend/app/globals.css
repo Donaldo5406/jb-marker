@@ -25,3 +25,9 @@
     background-color: transparent;
   }
 }
+
+/* .md Preview: 코드블록(pre) 내부 inline code 스타일 중복 제거(이중 배경 방지). */
+.markdown-body pre code {
+  background-color: transparent;
+  padding: 0;
+}

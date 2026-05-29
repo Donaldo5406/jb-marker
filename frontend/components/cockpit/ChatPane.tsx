@@ -26,8 +26,9 @@ export function ChatPane() {
     setInput("");
     setLoading(true);
     try {
-      // bypass: 키 "0"일 때만 OFF, 그 외(부재 포함)는 기본 ON.
-      const bypass = typeof window !== "undefined" && window.localStorage.getItem("brain_askuser_bypass") !== "0";
+      // bypass 기본 OFF — spec/plan 확정 게이트를 AI가 사용자에게 묻도록(단계 전환을 사용자가 통제).
+      // 자동 진행을 원하면 localStorage "brain_askuser_bypass"="1"로 켤 수 있다.
+      const bypass = typeof window !== "undefined" && window.localStorage.getItem("brain_askuser_bypass") === "1";
       await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker, bypass });
     } catch (err) {
       // 402(업셀)는 Provider가 처리. 그 외(네트워크/500)는 unhandled rejection 방지용 로깅.

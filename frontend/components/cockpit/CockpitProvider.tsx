@@ -37,6 +37,7 @@ export type CockpitContextValue = {
   manifest: Manifest | null;
   nodes: VfsNode[];
   openFile: OpenFile | null;
+  loadingPath: string | null;          // 현재 fetch 중인 파일 path(즉각 active+스피너용)
   entitlement: Entitlement;
   upsellOpen: boolean;
   messages: ChatMessage[];
@@ -97,6 +98,17 @@ function restOf(runId: string, path: string): string {
   return path.replace(`/${runId}/`, "");
 }
 
+/** vfsGet + 비-404 오류 시 1회 재시도. HF Space 콜드스타트/일시 블립으로 인한
+ *  복원 실패(=대화 휘발 체감)를 완화한다. 404(미존재)는 재시도 무의미하므로 즉시 전파. */
+async function vfsGetRetry(runId: string, rest: string): Promise<VfsNode> {
+  try {
+    return await api.vfsGet(runId, rest);
+  } catch (e) {
+    if ((e as { status?: number }).status === 404) throw e;
+    return await api.vfsGet(runId, rest);
+  }
+}
+
 export function CockpitProvider({ children, runId: initialRunId }: { children: React.ReactNode; runId?: string }) {
   const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [view, setViewState] = useState<CockpitView>("workspace");
@@ -104,6 +116,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [nodes, setNodes] = useState<VfsNode[]>([]);
   const [openFile, setOpenFile] = useState<OpenFile | null>(null);
+  const [loadingPath, setLoadingPath] = useState<string | null>(null);
+  // 파일 내용 캐시(path→OpenFile). 재클릭/재방문 시 네트워크 왕복 생략(#3 딜레이 해소).
+  // 무효화: 저장 시 해당 path 갱신, artifact 이벤트(백엔드 재생성) 시 해당 path/전체 제거.
+  const fileCacheRef = useRef<Map<string, OpenFile>>(new Map());
   const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false });
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -159,18 +175,24 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
   }, []);
 
-  /** brain 내부 상태(_messages/_state)를 서버에서 복원. 없으면 무시. */
+  /** brain 내부 상태(_messages/_state)를 서버에서 복원.
+   *  404 = 아직 대화/상태 없음(정상) → 기본값으로. 그 외 오류(네트워크/서버) → 기존 값 보존
+   *  (일시 오류로 대화가 통째로 비워지는 휘발을 막는다). 재시도는 vfsGetRetry가 1회 수행. */
   const loadBrainState = useCallback(async (id: string) => {
     try {
-      const m = await api.vfsGet(id, "brainstorming/_messages.json");
+      const m = await vfsGetRetry(id, "brainstorming/_messages.json");
       setMessages(m.content_text ? JSON.parse(m.content_text) : []);
-    } catch { setMessages([]); }
+    } catch (e) {
+      if ((e as { status?: number }).status === 404) setMessages([]);
+    }
     try {
-      const st = await api.vfsGet(id, "brainstorming/_state.json");
+      const st = await vfsGetRetry(id, "brainstorming/_state.json");
       const parsed = st.content_text ? JSON.parse(st.content_text) : null;
       setBrainStage(parsed?.stage ?? null);
       setPendingAsk(parsed?.pending_ask ?? null);
-    } catch { setBrainStage(null); setPendingAsk(null); }
+    } catch (e) {
+      if ((e as { status?: number }).status === 404) { setBrainStage(null); setPendingAsk(null); }
+    }
   }, []);
 
   /** design 내부 상태(_state.json)를 서버에서 복원(I3). 없으면(미시작) 무시. */
@@ -190,6 +212,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setActiveStudio(STUDIOS[0]);
       setViewState("workspace");
       setOpenFile(null);
+      // run 전환 시 이전 run의 챗/stage를 즉시 비운다 — 복원이 일시 실패해도 다른 run의
+      // 대화가 잘못 표시되지 않도록(loadBrainState는 일시 오류 시 기존 값을 보존하므로 선행 리셋 필요).
+      setMessages([]); setBrainStage(null); setPendingAsk(null);
       // M5 spec §7.4: run 전환 시 review state 3 필드 리셋 — 이전 run의 stale ack가
       // T18 isDeployUnlocked를 거짓 해제하지 않도록.
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
@@ -222,9 +247,25 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const selectFile = useCallback(async (path: string) => {
     const id = runIdRef.current;
     if (!id) return;
-    const rest = restOf(id, path);
-    const node = await api.vfsGet(id, rest);
-    setOpenFile({ path, content: node.content_text ?? "", mime: node.mime, dirty: false });
+    // 캐시 히트 → 즉시 표시, 네트워크 생략.
+    const cached = fileCacheRef.current.get(path);
+    if (cached) {
+      setOpenFile(cached);
+      setLoadingPath(null);
+      return;
+    }
+    // 캐시 미스 → 클릭 즉시 로딩 표시(낙관적 피드백) 후 fetch.
+    setLoadingPath(path);
+    try {
+      const rest = restOf(id, path);
+      const node = await api.vfsGet(id, rest);
+      const of: OpenFile = { path, content: node.content_text ?? "", mime: node.mime, dirty: false };
+      fileCacheRef.current.set(path, of);
+      setOpenFile(of);
+    } finally {
+      // 다른 파일을 그 사이 클릭했다면(loadingPath 변경) 그 로딩은 유지.
+      setLoadingPath((p) => (p === path ? null : p));
+    }
   }, []);
 
   /** backend layout.spec → assembleScene → design/final/{lang}/main.scene 저장 후 에디터에 자동 open(C1).
@@ -261,7 +302,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     if (!id || !openFile) return;
     const rest = restOf(id, openFile.path);
     await api.vfsPut(id, rest, openFile.content, openFile.mime ?? undefined);
-    setOpenFile((prev) => (prev ? { ...prev, dirty: false } : prev));
+    const saved: OpenFile = { ...openFile, dirty: false };
+    fileCacheRef.current.set(openFile.path, saved);   // 캐시 동기화(저장 내용 = 서버 최신).
+    setOpenFile(saved);
     await refreshTree();
   }, [openFile, refreshTree]);
 
@@ -394,6 +437,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     if (!id || !openFile) return;
     const rest = restOf(id, openFile.path);
     await api.vfsPut(id, rest, content, "application/json");
+    // 캔버스 저장 결과를 캐시에 반영(다음 selectFile이 stale 내용을 돌려주지 않도록).
+    fileCacheRef.current.set(openFile.path, { ...openFile, content, dirty: false });
   }, [openFile]);
 
   const answerAsk = useCallback(async (choice: string) => {
@@ -531,9 +576,23 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   }, []);
 
   // ---- WS: askuser → pendingAsk, artifact/poll → 트리 재조회 ----
+  // artifact(백엔드 쓰기)는 캐시 무효화도 수행 — 재생성된 파일이 stale 캐시로 가려지지 않도록.
+  // poll(쓰기 아님)은 트리만 갱신해 캐시를 보존(#3 딜레이 해소 핵심).
   useRunSocket(runId, (e) => {
-    if (e.type === "askuser" && e.ask) setPendingAsk(e.ask);
-    else if (e.type === "artifact" || e.type === "poll") void refreshTree();
+    if (e.type === "askuser" && e.ask) {
+      setPendingAsk(e.ask);
+    } else if (e.type === "artifact") {
+      if (e.path) {
+        fileCacheRef.current.delete(e.path);
+        // 현재 열린 파일이 재생성됐으면 새 내용으로 다시 연다.
+        if (openFile?.path === e.path) void selectFile(e.path);
+      } else {
+        fileCacheRef.current.clear();
+      }
+      void refreshTree();
+    } else if (e.type === "poll") {
+      void refreshTree();
+    }
   }, { pollMs: 4000 });
 
   const value: CockpitContextValue = {
@@ -543,6 +602,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     manifest,
     nodes,
     openFile,
+    loadingPath,
     entitlement,
     upsellOpen,
     messages,

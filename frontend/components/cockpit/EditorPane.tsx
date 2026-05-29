@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { ImageIcon, Save, X } from "lucide-react";
+import { Code2, Eye, ImageIcon, Loader2, Save, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 
@@ -10,6 +10,12 @@ import { useCockpit } from "./CockpitProvider";
 const FabricEditor = dynamic(
   () => import("./FabricEditor").then((m) => m.FabricEditor),
   { ssr: false },
+);
+
+/** MarkdownView는 react-markdown 번들(~46KB)을 끌어오므로 .md Preview를 열 때만 lazy-load. */
+const MarkdownView = dynamic(
+  () => import("./MarkdownView").then((m) => m.MarkdownView),
+  { loading: () => <div className="flex-1 bg-surface" /> },
 );
 
 /** 파일명에서 마지막 세그먼트만(상단 바 표시용). */
@@ -36,6 +42,23 @@ export function EditorPane() {
   const c = useCockpit();
   const file = c.openFile;
   const [saving, setSaving] = React.useState(false);
+  // .md 보기 모드(Preview=렌더, Source=raw 편집). 파일이 바뀌면 Preview로 초기화(기본 = 보기쉽게).
+  const [mdMode, setMdMode] = React.useState<"preview" | "source">("preview");
+  const filePath = file?.path;
+  React.useEffect(() => {
+    setMdMode("preview");
+  }, [filePath]);
+
+  // 캐시 미스로 fetch 중이고 아직 해당 파일이 안 열렸으면 로딩 표시(체감 지연 완화).
+  const loadingNew = c.loadingPath && (!file || file.path !== c.loadingPath);
+  if (loadingNew) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-surface px-8 text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden />
+        <p className="text-body-sm text-on-surface-variant">불러오는 중…</p>
+      </div>
+    );
+  }
 
   if (!file) {
     return (
@@ -52,6 +75,8 @@ export function EditorPane() {
   }
 
   const isScene = file.path.endsWith(".scene");
+  const isMd = file.path.endsWith(".md");
+  const showPreview = isMd && mdMode === "preview";
 
   const handleSave = async () => {
     setSaving(true);
@@ -78,6 +103,18 @@ export function EditorPane() {
             />
           )}
         </div>
+        {isMd && (
+          <button
+            type="button"
+            onClick={() => setMdMode((m) => (m === "preview" ? "source" : "preview"))}
+            aria-label={showPreview ? "소스 보기" : "미리보기"}
+            title={showPreview ? "소스 보기" : "미리보기"}
+            className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1.5 text-caption font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            {showPreview ? <Code2 className="h-3.5 w-3.5" aria-hidden /> : <Eye className="h-3.5 w-3.5" aria-hidden />}
+            {showPreview ? "소스" : "미리보기"}
+          </button>
+        )}
         {!isScene && (
           <button
             type="button"
@@ -110,6 +147,8 @@ export function EditorPane() {
           scene={parseScene(file.content)}
           onSave={(json) => c.saveSceneJson(JSON.stringify(json))}
         />
+      ) : showPreview ? (
+        <MarkdownView content={file.content} />
       ) : (
         <textarea
           value={file.content}

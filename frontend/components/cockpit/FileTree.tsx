@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, File as FileIcon, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, File as FileIcon, Folder, FolderOpen, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 import type { VfsNode } from "@/lib/api";
@@ -57,13 +57,16 @@ function sortedChildren(node: TreeNode): TreeNode[] {
 
 function FileRow({ node, depth }: { node: TreeNode; depth: number }) {
   const c = useCockpit();
-  const active = c.openFile?.path === node.fullPath;
+  const loading = c.loadingPath === node.fullPath;
+  // 즉각 피드백: 열린 파일이거나 현재 로딩 중인 파일이면 active 강조(클릭 직후 바로 반영).
+  const active = c.openFile?.path === node.fullPath || loading;
   return (
     <button
       type="button"
       onClick={() => node.fullPath && void c.selectFile(node.fullPath)}
       title={node.name}
       data-testid={`file-${node.name}`}
+      aria-busy={loading || undefined}
       style={{ paddingLeft: 8 + depth * 14 }}
       className={cn(
         "group flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-body-sm transition-colors",
@@ -72,7 +75,11 @@ function FileRow({ node, depth }: { node: TreeNode; depth: number }) {
           : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
       )}
     >
-      <FileIcon className="h-3.5 w-3.5 shrink-0 text-outline" aria-hidden />
+      {loading ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+      ) : (
+        <FileIcon className="h-3.5 w-3.5 shrink-0 text-outline" aria-hidden />
+      )}
       <span className="truncate">{node.name}</span>
     </button>
   );
