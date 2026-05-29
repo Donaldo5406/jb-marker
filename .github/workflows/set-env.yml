@@ -1,0 +1,66 @@
+name: set-env
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Where to set the env var'
+        type: choice
+        required: true
+        options:
+          - hf-variable
+          - hf-secret
+          - vercel
+      key:
+        description: 'Env var name (KEY)'
+        type: string
+        required: true
+      value:
+        description: 'Env var value (VALUE)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install huggingface_hub
+        run: pip install "huggingface_hub>=1.15"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Set HF Space env (variable or secret)
+        if: ${{ startsWith(inputs.target, 'hf') }}
+        run: python .github/scripts/set_env_hf.py
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TARGET: ${{ inputs.target }}
+          KEY: ${{ inputs.key }}
+          VALUE: ${{ inputs.value }}
+
+      - name: Set Vercel env and redeploy
+        if: ${{ inputs.target == 'vercel' }}
+        working-directory: frontend
+        run: |
+          vercel env rm "$KEY" production -y --token=$T || true
+          printf '%s' "$VALUE" | vercel env add "$KEY" production --token=$T
+          vercel pull --yes --environment=production --token=$T
+          vercel build --prod --token=$T
+          vercel deploy --prebuilt --prod --token=$T
+        env:
+          T: ${{ secrets.VERCEL_TOKEN }}
+          KEY: ${{ inputs.key }}
+          VALUE: ${{ inputs.value }}
