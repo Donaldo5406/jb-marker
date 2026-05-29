@@ -100,14 +100,19 @@ def _require_run_owner_factory(store):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="JB Marker API")
+    settings = load_settings()
+    # 분리형 배포: env로 명시한 origin(예: https://*.vercel.app) 화이트리스트 +
+    # localhost regex 폴백. allow_credentials=True라 wildcard("*") 불가 → 명시 리스트.
+    _dev_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    _origins = list(settings.cors_allow_origins) or _dev_origins
     app.add_middleware(
         CORSMiddleware,
+        allow_origins=_origins,
         allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    settings = load_settings()
     store = get_vfs_store(settings)
 
     user_id_dep = make_user_id_dep(settings)
@@ -179,9 +184,9 @@ def create_app() -> FastAPI:
     def _wrap_for_usage(provider, req):
         return _TrackedProvider(provider, run_id=req.run_id, step=req.studio or "gateway")
 
-    entitlement_state = {"marker": settings.entitlement_override}
     gateway = MarkerGateway(store,
-                            entitlement_override=lambda: entitlement_state["marker"],
+                            entitlement_check=entitlement.check,
+                            env_override=lambda: settings.entitlement_override,
                             provider_factory=_ModelBoundProvider,
                             wrap_provider=_wrap_for_usage)
 
@@ -199,13 +204,16 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/entitlement")
-    def get_entitlement() -> dict:
-        return {"marker": entitlement_state["marker"]}
+    def get_entitlement(user_id: str = Depends(user_id_dep)) -> dict:
+        return {"marker": settings.entitlement_override or entitlement.check(user_id)}
 
     @app.put("/entitlement")
-    def put_entitlement(body: EntitlementPut) -> dict:
-        entitlement_state["marker"] = body.marker
-        return {"marker": entitlement_state["marker"]}
+    def put_entitlement(body: EntitlementPut, user_id: str = Depends(user_id_dep)) -> dict:
+        if body.marker:
+            entitlement.set_dev_pass(user_id)
+        else:
+            entitlement.reset(user_id)
+        return {"marker": settings.entitlement_override or entitlement.check(user_id)}
 
     @app.post("/runs")
     def create_run(body: RunCreate, user_id: str = Depends(user_id_dep)) -> dict:
@@ -226,7 +234,7 @@ def create_app() -> FastAPI:
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=body.provider,
                              is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
-                             action=body.action)
+                             action=body.action, user_id=user_id)
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:

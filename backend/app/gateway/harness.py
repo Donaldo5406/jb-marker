@@ -22,6 +22,7 @@ class HarnessRequest:
     answer: str | None = None      # AskUser 응답(다음 턴 재개)
     bypass: bool = False           # AskUser bypass(자동 기본값)
     action: str | None = None      # design step 액션: advance|confirm|regenerate|chat|answer
+    user_id: str = "demo"          # 게이트(entitlement) 평가 대상. 기본 demo(로컬-우선)
 
 
 @dataclass
