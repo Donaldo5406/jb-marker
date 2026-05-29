@@ -61,7 +61,35 @@ def test_stage_a_writes_spec_and_research_and_returns_reply():
     research = s.list("/rb/brainstorming/assets/research")
     assert len(research) >= 1 and research[0].meta.get("source_url") == "https://x.com"
     assert len(h._load_messages(s, "rb")) == 2  # user + assistant
-    assert stub.calls[0]["tools"] is not None
+    assert stub.calls[0]["tools"] is None  # B: Stage A 웹서치 OFF(아티클 자동수집 안 함)
+
+
+def test_stage_a_conversation_turn_writes_no_spec():
+    # 대화-우선(B): document가 빈 턴은 spec.md를 만들지 않고 reply로만 대화.
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "어떤 연령대를 타겟하나요?", "document": "",
+         "ask": {"trigger": "a", "question": "연령대?", "options": ["20대", "30대"]}, "ready": False})}])
+    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="적금 캠페인 만들자", provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert res.text == "어떤 연령대를 타겟하나요?"
+    assert s.get("/rb/brainstorming/spec.md") is None  # 빈 document → spec 미생성
+    assert res.ask is not None and res.ask.trigger == "a"
+
+
+def test_stage_a_parse_failure_falls_back_and_keeps_spec():
+    # 파싱 실패/절단(A2): 빈 spec으로 덮어쓰지 않고, 빈 reply 대신 폴백 안내를 돌려준다.
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    s.put("/rb/brainstorming/spec.md", "---\ngoal: 기존\n---\n본문", source="marker", mime="text/markdown")
+    stub = StubProvider([{"text": "JSON이 아닌 잘린 텍스트 {\"reply\": \"중간에 끊"}])
+    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="계속", provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert res.text  # 빈 답장이 아니라 폴백 안내
+    assert s.get("/rb/brainstorming/spec.md").content_text == "---\ngoal: 기존\n---\n본문"  # 기존 spec 보존
 
 
 def test_stage_a_ready_proposes_b_when_not_bypass():

@@ -11,7 +11,10 @@ def get_provider(name: str, settings: Settings | None = None) -> Provider:
         return FakeProvider()
     if name == "anthropic":
         from .anthropic_client import AnthropicProvider
-        return AnthropicProvider(settings.anthropic_api_key if settings else None)
+        return AnthropicProvider(
+            settings.anthropic_api_key if settings else None,
+            max_tokens=settings.anthropic_max_tokens if settings else None,
+        )
     if name == "openai":
         from .openai_client import OpenAIProvider
         return OpenAIProvider(settings.openai_api_key if settings else None)

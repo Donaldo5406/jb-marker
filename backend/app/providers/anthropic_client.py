@@ -7,15 +7,19 @@ from .base import Message, Provider, ProviderResponse
 class AnthropicProvider(Provider):
     name = "anthropic"
 
-    def __init__(self, api_key: str | None) -> None:
+    # 기본 출력 상한 — spec/plan 전체 문서를 JSON으로 담아야 해 과거 2048은 절단(빈 산출물 원인).
+    DEFAULT_MAX_TOKENS = 8192
+
+    def __init__(self, api_key: str | None, max_tokens: int | None = None) -> None:
         self._api_key = api_key
+        self._max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
 
     def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
         from anthropic import Anthropic
         client = Anthropic(api_key=self._api_key)
         api_tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}] if tools else []
         resp = client.messages.create(
-            model=model, max_tokens=kwargs.get("max_tokens", 2048),
+            model=model, max_tokens=kwargs.get("max_tokens") or self._max_tokens,
             system=system or "",
             tools=api_tools,
             messages=[{"role": m.role, "content": m.content} for m in messages if m.role != "system"],

@@ -89,7 +89,10 @@ def test_brain_marker_uses_brainstorming_harness_and_writes_spec():
     assert r.status_code == 200
     nodes = client.get(f"/vfs/{rid}").json()["nodes"]
     paths = [n["path"] for n in nodes]
-    assert f"/{rid}/brainstorming/spec.md" in paths
+    # 브레인스토밍 하네스 사용 신호(passthrough는 _state.json을 만들지 않음).
+    # fake provider는 비-JSON echo라 document가 비어 spec.md는 쓰지 않음(대화-우선) —
+    # 실제 spec 생성은 test_brainstorming_harness가 StubProvider로 커버.
+    assert f"/{rid}/brainstorming/_state.json" in paths
     assert "ask" in r.json()
 
 

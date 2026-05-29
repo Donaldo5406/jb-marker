@@ -144,26 +144,35 @@ class BrainstormingHarness(Harness):
         spec_node = store.get(f"{base}/spec.md")
         cur = spec_node.content_text if spec_node else ""
         sys = self.system_prompt() + (
-            "\n\n[Stage A] 사용자와 대화하며 캠페인 기획을 탐색하고 spec.md를 점증 구축합니다. "
-            "document에는 goal/target_segments/key_messages/channels/languages/multinational/tone/"
-            "factsheet/disclosures/research_refs를 YAML frontmatter로 담으세요. "
-            "필요하면 웹서치로 근거를 찾으세요." + _PROTOCOL +
+            "\n\n[Stage A] 먼저 사용자와 대화하며 캠페인 기획에 필요한 정보를 한 번에 하나씩 질문해 모읍니다. "
+            "정보가 충분해지기 전에는 document를 빈 문자열(\"\")로 두고 reply로만 대화하세요(이때 spec 파일은 생성되지 않습니다). "
+            "충분히 모이면 그때 document에 spec.md 전체를 작성하세요 — "
+            "goal/target_segments/key_messages/channels/languages/multinational/tone/factsheet/disclosures를 "
+            "YAML frontmatter로 담고, 작성을 마치면 ready=true로 표시합니다. "
+            "외부 사실이 꼭 필요하면 그 사실을 사용자에게 질문해 확인하세요(자동 웹검색은 하지 않습니다)." + _PROTOCOL +
             f"\n\n[현재 spec.md]\n{cur}")
-        resp = provider.complete(self._conversation(msgs),
-                                 model=req.provider, system=sys, tools=[{"type": "web_search"}])
+        # 웹서치 OFF(B): 한 줄 프롬프트에 아티클을 자동 수집하지 않음 — 대화-우선.
+        resp = provider.complete(self._conversation(msgs), model=req.provider, system=sys)
         data = _parse_json(resp.text)
-        reply = data.get("reply", "")
-        document = data.get("document") or cur
+        reply = (data.get("reply") or "").strip()
+        document = (data.get("document") or "").strip()
         ask = data.get("ask")
         ready = bool(data.get("ready"))
 
         events = []
+        # 인용이 있으면 보존(향후 검색 도입 대비) — 기본 경로에선 비어 no-op.
         self._save_research(store, req.run_id, resp.citations)
-        store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown")
-        events.append({"type": "artifact", "path": f"{base}/spec.md"})
+        # spec.md는 document가 있을 때만 기록(A2): 빈/절단 출력으로 빈 파일을 만들거나 기존 spec을 지우지 않음.
+        if document:
+            store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown")
+            events.append({"type": "artifact", "path": f"{base}/spec.md"})
+        # reply 폴백: 파싱 실패/빈 reply여도 사용자에게 무언가는 보여 침묵(휘발 체감)을 막는다.
+        if not reply:
+            reply = ("내용을 정리하지 못했어요. 원하는 캠페인을 조금만 더 구체적으로 알려주시겠어요?"
+                     if not document else "초안을 정리했어요. 확인해 주세요.")
 
-        # ready → spec lock 제안(b). bypass면 즉시 Stage B 진입.
-        if ready and not ask:
+        # ready(+document) → spec lock 제안(b). bypass면 즉시 Stage B 진입.
+        if ready and document and not ask:
             if req.bypass:
                 state["spec_locked"] = True; state["stage"] = "B"; state["pending_ask"] = None
                 msgs.append({"role": "assistant", "content": reply})
@@ -225,10 +234,18 @@ class BrainstormingHarness(Harness):
             f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}\n\n[현재 plan.md]\n{cur_plan}")
         resp = provider.complete(self._conversation(msgs), model=req.provider, system=sys)
         data = _parse_json(resp.text)
-        reply = data.get("reply", "")
-        document = data.get("document") or cur_plan
-        store.put(f"{base}/plan.md", document, source="marker", mime="text/markdown")
-        events = [{"type": "artifact", "path": f"{base}/plan.md"}]
+        reply = (data.get("reply") or "").strip()
+        document = (data.get("document") or "").strip()
+        events = []
+        # plan.md는 document가 있을 때만 기록(A2): 빈/절단 출력으로 기존 plan을 지우지 않음.
+        if document:
+            store.put(f"{base}/plan.md", document, source="marker", mime="text/markdown")
+            events.append({"type": "artifact", "path": f"{base}/plan.md"})
+        else:
+            document = cur_plan   # 평가·이후 로직은 기존 plan 기준
+        if not reply:
+            reply = ("계획을 정리하지 못했어요. 한 번 더 시도해 주세요."
+                     if not document else "계획 초안입니다. 확인해 주세요.")
 
         # 3) ⓪계약 검증
         missing = self.critic(document)
