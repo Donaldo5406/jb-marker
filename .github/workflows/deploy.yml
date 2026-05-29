@@ -1,0 +1,72 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/deploy.yml'
+              - '.github/scripts/deploy_hf.py'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/deploy.yml'
+
+  backend:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install huggingface_hub
+        run: pip install "huggingface_hub>=1.15"
+      - name: Deploy backend to HF Space
+        run: python .github/scripts/deploy_hf.py
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+  frontend:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+      - name: Pull, build, and deploy to Vercel
+        working-directory: frontend
+        run: |
+          vercel pull --yes --environment=production --token=$T
+          vercel build --prod --token=$T
+          vercel deploy --prebuilt --prod --token=$T
+        env:
+          T: ${{ secrets.VERCEL_TOKEN }}

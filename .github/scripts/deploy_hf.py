@@ -1,0 +1,11 @@
+import os
+from huggingface_hub import HfApi
+
+RID = "Doss-8b-instruct/jb-marker"
+api = HfApi(token=os.environ["HF_TOKEN"])
+api.create_repo(RID, repo_type="space", space_sdk="docker", exist_ok=True)
+api.upload_file(path_or_fileobj="backend/SPACE_README.md", path_in_repo="README.md", repo_id=RID, repo_type="space")
+api.upload_file(path_or_fileobj="backend/Dockerfile", path_in_repo="Dockerfile", repo_id=RID, repo_type="space")
+api.upload_file(path_or_fileobj="backend/requirements-deploy.txt", path_in_repo="requirements-deploy.txt", repo_id=RID, repo_type="space")
+api.upload_folder(folder_path="backend/app", path_in_repo="app", repo_id=RID, repo_type="space", ignore_patterns=["**/__pycache__/*", "*.pyc"])
+print("HF Space updated:", RID)
