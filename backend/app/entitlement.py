@@ -1,20 +1,26 @@
-"""인메모리 entitlement — dev_pass(데모 결제 통과 플래그). M7에서 Supabase 컬럼으로 전환."""
+"""entitlement — EntitlementStore 위임. 기본 Local 싱글턴(테스트·오프라인).
+
+server.create_app이 supabase 모드면 set_store()로 교체.
+"""
 from __future__ import annotations
 
-_DEV_PASS: dict[str, bool] = {}
+from .entitlement_store import EntitlementStore, LocalEntitlementStore
+
+_store: EntitlementStore = LocalEntitlementStore()
+
+
+def set_store(store: EntitlementStore) -> None:
+    global _store
+    _store = store
 
 
 def check(user_id: str) -> bool:
-    return _DEV_PASS.get(user_id, False)
+    return _store.check(user_id)
 
 
 def set_dev_pass(user_id: str) -> None:
-    _DEV_PASS[user_id] = True
+    _store.set_dev_pass(user_id)
 
 
 def reset(user_id: str | None = None) -> None:
-    """테스트용 — 특정 user 또는 전체 초기화."""
-    if user_id is None:
-        _DEV_PASS.clear()
-    else:
-        _DEV_PASS.pop(user_id, None)
+    _store.reset(user_id)

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, type AskPayload, type Manifest, type Provider, type VfsNode } from "@/lib/api";
+import { api, authedFetch, type AskPayload, type Manifest, type Provider, type VfsNode } from "@/lib/api";
+import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
@@ -429,7 +430,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const setupDeploy = useCallback(async (selected: string[], languages: string[]) => {
     const id = runIdRef.current;
     if (!id) return {} as { matrix?: { channel: string; lang: string }[]; step_status?: string };
-    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/setup`, {
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ selected_providers: selected, languages }),
@@ -440,7 +441,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const runEligibility = useCallback(async () => {
     const id = runIdRef.current;
     if (!id) return { total: 0, eligible_count: 0, excluded_count: 0 };
-    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, { method: "POST" });
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, { method: "POST" });
     const data = await res.json();
     setEligibility(data);
     return data;
@@ -449,7 +450,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const runPackagingCell = useCallback(async (channel: string, lang: string, originalCopy: string, visualPath: string) => {
     const id = runIdRef.current;
     if (!id) return { package_id: `${channel}_${lang}`, status: "error" };
-    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/packages`, {
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/packages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel, lang, original_copy: originalCopy, visual_path: visualPath }),
@@ -464,7 +465,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const askAdvisor = useCallback(async (packageId: string, message: string): Promise<AdvisorResult> => {
     const id = runIdRef.current;
     if (!id) return { needsPayment: false };
-    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/advisor/chat`, {
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/advisor/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ package_id: packageId, message }),
@@ -478,7 +479,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const dispatchConfirm = useCallback(async (): Promise<DispatchResult> => {
     const id = runIdRef.current;
     if (!id) return { needsPayment: false };
-    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/dispatch`, {
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/dispatch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirmed: true }),
@@ -492,24 +493,32 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const payDemo = useCallback(async () => {
     const id = runIdRef.current;
     if (!id) return { dev_pass: false };
-    const res = await fetch(`${DEPLOY_BASE}/runs/${id}/deploy/demo-payment`, { method: "POST" });
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/demo-payment`, { method: "POST" });
     const data = await res.json();
     setDevPass(!!data.dev_pass);
     return data;
   }, []);
 
-  // ---- mount: `?run=` 복원 + entitlement 초기화 ----
+  // ---- mount: 익명 세션 확보 → `?run=` 복원 + entitlement 초기화 ----
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const fromUrl = new URL(window.location.href).searchParams.get("run");
-      if (fromUrl) void openRun(fromUrl);
-    }
-    void api
-      .getEntitlement()
-      .then((e) => setEntitlement({ marker: e.marker }))
-      .catch(() => {
-        /* 백엔드 미기동 시 기본값(무료) 유지 */
-      });
+    let cancelled = false;
+    void (async () => {
+      // 익명 세션을 먼저 확보해야 이후 authed 호출(listRuns 등)에 토큰이 붙는다.
+      // 로컬 모드(Supabase 미설정)에선 ensureSession이 즉시 null → 기존 흐름 유지.
+      await ensureSession();
+      if (cancelled) return;
+      if (typeof window !== "undefined") {
+        const fromUrl = new URL(window.location.href).searchParams.get("run");
+        if (fromUrl) void openRun(fromUrl);
+      }
+      void api
+        .getEntitlement()
+        .then((e) => setEntitlement({ marker: e.marker }))
+        .catch(() => {
+          /* 백엔드 미기동 시 기본값(무료) 유지 */
+        });
+    })();
+    return () => { cancelled = true; };
     // 마운트 시 1회만 실행 — openRun은 안정 콜백.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

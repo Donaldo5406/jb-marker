@@ -5,12 +5,13 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from . import entitlement
+from .auth import make_user_id_dep
 from .config import load_settings
 from .deploy.adapters.base import Package, ScheduleSpec
 from .deploy.adapters.registry import get_adapter
@@ -83,6 +84,18 @@ def _node_dict(n) -> dict[str, Any]:
             "content_text": n.content_text, "meta": n.meta}
 
 
+def _require_run_owner_factory(store):
+    """run 소유권 가드. 소유자 불일치/부재 → 404(존재 노출 회피)."""
+    from fastapi import HTTPException
+
+    def _guard(run_id: str, user_id: str):
+        m = store.get_manifest(run_id)
+        if m is None or m.user_id != user_id:
+            raise HTTPException(404, "run not found")
+        return m
+    return _guard
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="JB Marker API")
     app.add_middleware(
@@ -94,6 +107,13 @@ def create_app() -> FastAPI:
     )
     settings = load_settings()
     store = get_vfs_store(settings)
+
+    user_id_dep = make_user_id_dep(settings)
+    require_owner = _require_run_owner_factory(store)
+
+    from .entitlement import set_store
+    from .entitlement_store import get_entitlement_store
+    set_store(get_entitlement_store(settings))
 
     # provider_factory: settings의 모델 매핑 주입
     model_map = {"anthropic": settings.anthropic_model, "openai": settings.openai_model,
@@ -186,22 +206,21 @@ def create_app() -> FastAPI:
         return {"marker": entitlement_state["marker"]}
 
     @app.post("/runs")
-    def create_run(body: RunCreate) -> dict:
+    def create_run(body: RunCreate, user_id: str = Depends(user_id_dep)) -> dict:
         run_id = uuid.uuid4().hex[:12]
-        m = store.create_run(run_id, title=body.title, languages=body.languages)
+        m = store.create_run(run_id, user_id=user_id, title=body.title, languages=body.languages)
         return {"run_id": m.run_id, "title": m.title}
 
     @app.get("/runs")
-    def list_runs(user_id: str = "demo") -> dict:
+    def list_runs(user_id: str = Depends(user_id_dep)) -> dict:
         runs = store.list_runs(user_id=user_id)
         return {"runs": [{"run_id": m.run_id, "title": m.title,
                           "created_at": m.created_at,
                           "step_status": m.step_status} for m in runs]}
 
     @app.post("/gateway/run")
-    async def gateway_run(body: GatewayRun) -> dict:
-        if store.get_manifest(body.run_id) is None:
-            raise HTTPException(404, "run 없음")
+    async def gateway_run(body: GatewayRun, user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(body.run_id, user_id)
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=body.provider,
                              is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
@@ -228,22 +247,27 @@ def create_app() -> FastAPI:
                 "ask": ask, "meta": result.meta}
 
     @app.get("/vfs/{run_id}")
-    def vfs_list(run_id: str, prefix: str | None = None) -> dict:
+    def vfs_list(run_id: str, prefix: str | None = None,
+                 user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         nodes = store.list(prefix or f"/{run_id}")
         return {"nodes": [_node_dict(n) for n in nodes]}
 
     @app.get("/vfs/{run_id}/{rest:path}")
-    def vfs_get(run_id: str, rest: str):
+    def vfs_get(run_id: str, rest: str, user_id: str = Depends(user_id_dep)):
+        require_owner(run_id, user_id)
         node = store.get(f"/{run_id}/{rest}")
         if node is None:
             raise HTTPException(404, "노드 없음")
         if node.blob is not None or node.blob_path is not None:
-            loaded = store.get(node.path)
-            return Response(content=loaded.blob or b"", media_type=node.mime or "application/octet-stream")
+            # node.blob 은 store.get()이 이미 로드함(Local·Supabase 공통) — 재조회 불필요.
+            return Response(content=node.blob or b"", media_type=node.mime or "application/octet-stream")
         return _node_dict(node)
 
     @app.put("/vfs/{run_id}/{rest:path}")
-    def vfs_put(run_id: str, rest: str, body: PutText) -> dict:
+    def vfs_put(run_id: str, rest: str, body: PutText,
+                user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         mime = body.mime or ("application/json" if rest.endswith(".json") else "text/markdown")
         # base64 인코딩 본문이면 bytes로 디코드해 저장 (PNG 등 바이너리 라운드트립).
         # 미지정 시 기존 텍스트 경로 유지(하위호환).
@@ -259,15 +283,10 @@ def create_app() -> FastAPI:
         return _node_dict(node)
 
     # === M6 DeployStudio routes ===
-    def _require_run(run_id: str):
-        m = store.get_manifest(run_id)
-        if m is None:
-            raise HTTPException(404, "run not found")
-        return m
-
     @app.post("/runs/{run_id}/deploy/setup")
-    def deploy_setup(run_id: str, body: DeploySetupBody) -> dict:
-        m = _require_run(run_id)
+    def deploy_setup(run_id: str, body: DeploySetupBody,
+                     user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         matrix = [{"channel": p, "lang": l}
                   for p in body.selected_providers for l in body.languages]
         store.put_text(
@@ -282,8 +301,8 @@ def create_app() -> FastAPI:
         return {"matrix": matrix, "step_status": "in_progress"}
 
     @app.post("/runs/{run_id}/deploy/eligibility")
-    def deploy_eligibility(run_id: str) -> dict:
-        _require_run(run_id)
+    def deploy_eligibility(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         ledger = load_ledger()
         policies = load_policies()
         result = build_eligibility(ledger, policies, send_hour=10)
@@ -318,8 +337,9 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/runs/{run_id}/deploy/packages")
-    def deploy_packages(run_id: str, body: DeployPackageBody) -> dict:
-        _require_run(run_id)
+    def deploy_packages(run_id: str, body: DeployPackageBody,
+                        user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         provider = get_deploy_provider(body.channel)
         pkg = package_channel(
             channel=body.channel,
@@ -409,9 +429,9 @@ def create_app() -> FastAPI:
         return _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
 
     @app.post("/runs/{run_id}/deploy/advisor/chat")
-    def deploy_advisor_chat(run_id: str, body: AdvisorChatBody) -> dict:
-        m = _require_run(run_id)
-        user_id = m.user_id or "demo"
+    def deploy_advisor_chat(run_id: str, body: AdvisorChatBody,
+                            user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         if not entitlement.check(user_id):
             raise HTTPException(402, "Payment required (entitlement)")
         ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
@@ -431,17 +451,16 @@ def create_app() -> FastAPI:
         return result
 
     @app.get("/runs/{run_id}/usage")
-    def get_usage(run_id: str) -> dict:
-        if store.get_manifest(run_id) is None:
-            raise HTTPException(404, "run 없음")
+    def get_usage(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         return usage_log.summarize(store, run_id=run_id)
 
     @app.post("/runs/{run_id}/deploy/dispatch")
-    def deploy_dispatch(run_id: str, body: DispatchBody) -> dict:
-        m = _require_run(run_id)
+    def deploy_dispatch(run_id: str, body: DispatchBody,
+                        user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         if not body.confirmed:
             raise HTTPException(400, "user confirm required")
-        user_id = m.user_id or "demo"
         if not entitlement.check(user_id):
             raise HTTPException(402, "Payment required (entitlement)")
 
@@ -507,16 +526,14 @@ def create_app() -> FastAPI:
         return {"step_status": "PASS", "simulation": simulation}
 
     @app.post("/runs/{run_id}/deploy/demo-payment")
-    def deploy_demo_payment(run_id: str) -> dict:
-        m = _require_run(run_id)
-        user_id = m.user_id or "demo"
+    def deploy_demo_payment(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
         entitlement.set_dev_pass(user_id)
         return {"dev_pass": True}
 
     @app.get("/runs/{run_id}/deploy/_state")
-    def deploy_state(run_id: str) -> dict:
-        m = _require_run(run_id)
-        user_id = m.user_id or "demo"
+    def deploy_state(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
+        m = require_owner(run_id, user_id)
         return {
             "step_status": m.step_status.get("deploy", "idle"),
             "selected_providers": json.loads(
@@ -530,6 +547,17 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws/{run_id}")
     async def ws(websocket: WebSocket, run_id: str):
+        token = websocket.query_params.get("token")
+        from .auth import resolve_user_id, AuthError
+        try:
+            uid = resolve_user_id(f"Bearer {token}" if token else None, settings)
+            m = store.get_manifest(run_id)
+            if m is None or m.user_id != uid:
+                await websocket.close(code=4404)
+                return
+        except AuthError:
+            await websocket.close(code=4401)
+            return
         await websocket.accept()
         connections.setdefault(run_id, set()).add(websocket)
         try:

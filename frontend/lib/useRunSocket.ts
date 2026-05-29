@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 import { api } from "./api";
 import type { AskPayload } from "./api";
+import { getAccessToken } from "./supabase";
 
 export type RunEvent = { type: string; path?: string; ask?: AskPayload };
 
@@ -30,21 +31,24 @@ export function useRunSocket(
 
     const connect = () => {
       if (closed) return;
-      try {
-        ws = new WebSocket(api.wsUrl(runId));
-      } catch { startPoll(); return; }
-      ws.onopen = () => { retry = 0; stopPoll(); };
-      ws.onmessage = (ev) => {
-        try { onEventRef.current(JSON.parse(ev.data) as RunEvent); } catch { /* ignore */ }
-      };
-      ws.onclose = () => {
+      void getAccessToken().then((token) => {
         if (closed) return;
-        startPoll();
-        retry += 1;
-        const delay = Math.min(1000 * 2 ** retry, 15000);
-        setTimeout(connect, delay);
-      };
-      ws.onerror = () => { ws?.close(); };
+        try {
+          ws = new WebSocket(api.wsUrl(runId, token));
+        } catch { startPoll(); return; }
+        ws.onopen = () => { retry = 0; stopPoll(); };
+        ws.onmessage = (ev) => {
+          try { onEventRef.current(JSON.parse(ev.data) as RunEvent); } catch { /* ignore */ }
+        };
+        ws.onclose = () => {
+          if (closed) return;
+          startPoll();
+          retry += 1;
+          const delay = Math.min(1000 * 2 ** retry, 15000);
+          setTimeout(connect, delay);
+        };
+        ws.onerror = () => { ws?.close(); };
+      });
     };
     connect();
 

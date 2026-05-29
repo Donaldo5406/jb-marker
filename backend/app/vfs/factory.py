@@ -10,8 +10,12 @@ from .local import LocalVfsStore
 
 def get_vfs_store(settings: Settings) -> VfsStore:
     if settings.vfs_backend == "supabase":
+        from ..config import ConfigError
+        if not settings.supabase_url or not settings.supabase_service_role_key:
+            raise ConfigError(
+                "VFS_BACKEND=supabase 인데 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 부재")
         from .supabase import SupabaseVfsStore
-        return SupabaseVfsStore()
+        return SupabaseVfsStore(settings)
     return LocalVfsStore(storage_dir=settings.storage_dir)
 
 

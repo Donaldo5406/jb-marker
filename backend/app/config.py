@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 
+class ConfigError(RuntimeError):
+    """필수 설정 누락 — supabase 모드인데 키 부재 등."""
+
+
 def _truthy(v: str | None) -> bool:
     return (v or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -25,6 +29,12 @@ class Settings:
     # M6 advisor live-LLM 모드 — "auto"(키 있으면 live, 없으면 scripted) | "live" | "scripted"
     advisor_mode: str
     anthropic_advisor_model: str
+    # M7-A Supabase
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_anon_key: str | None = None
+    supabase_jwt_secret: str | None = None
+    supabase_storage_bucket: str = "vfs-blobs"
 
 
 def load_settings() -> Settings:
@@ -41,4 +51,9 @@ def load_settings() -> Settings:
         google_model=os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"),
         advisor_mode=os.getenv("ADVISOR_MODE", "auto").strip().lower() or "auto",
         anthropic_advisor_model=os.getenv("ANTHROPIC_ADVISOR_MODEL", "claude-sonnet-4-6"),
+        supabase_url=os.getenv("SUPABASE_URL") or None,
+        supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
+        supabase_anon_key=os.getenv("SUPABASE_ANON_KEY") or None,
+        supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET") or None,
+        supabase_storage_bucket=os.getenv("SUPABASE_STORAGE_BUCKET", "vfs-blobs"),
     )

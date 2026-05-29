@@ -13,10 +13,13 @@ class FakeWS {
 }
 
 describe("useRunSocket", () => {
-  it("연결 후 메시지를 onEvent로 전달", () => {
+  it("연결 후 메시지를 onEvent로 전달", async () => {
     vi.stubGlobal("WebSocket", FakeWS as unknown as typeof WebSocket);
     const onEvent = vi.fn();
     renderHook(() => useRunSocket("run1", onEvent));
+    // WS 생성은 getAccessToken() Promise resolve 후 → microtask flush 대기
+    await Promise.resolve();
+    await Promise.resolve();
     FakeWS.last!.onopen?.();
     FakeWS.last!.onmessage?.({ data: JSON.stringify({ type: "artifact", path: "/run1/brainstorming/passthrough.md" }) });
     expect(onEvent).toHaveBeenCalledWith({ type: "artifact", path: "/run1/brainstorming/passthrough.md" });

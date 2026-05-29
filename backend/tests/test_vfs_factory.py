@@ -18,7 +18,12 @@ def test_factory_returns_local_by_default():
     assert isinstance(get_vfs_store(_settings("local")), LocalVfsStore)
 
 
-def test_factory_supabase_stub_raises_until_implemented():
-    from app.vfs.supabase import SupabaseVfsStore
-    with pytest.raises(NotImplementedError):
-        SupabaseVfsStore().get("/r1/design/x.md")
+def test_supabase_backend_missing_keys_raises():
+    from app.config import ConfigError, load_settings
+    from dataclasses import replace
+    s = load_settings()
+    s2 = replace(s, vfs_backend="supabase", supabase_url=None,
+                 supabase_service_role_key=None)
+    from app.vfs.factory import get_vfs_store
+    with pytest.raises(ConfigError):
+        get_vfs_store(s2)

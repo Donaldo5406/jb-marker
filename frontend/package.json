@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
     "class-variance-authority": "0.7.0",
     "clsx": "2.1.1",
     "fabric": "^6.9.1",
