@@ -14,6 +14,9 @@ vi.mock("@/components/cockpit/GalleryMedia", () => ({
 vi.mock("@/components/cockpit/PreviewFrame", () => ({
   PreviewFrame: () => <div>PREVIEW</div>,
 }));
+vi.mock("@/components/cockpit/UsagePanel", () => ({
+  UsagePanel: () => <div>USAGE</div>,
+}));
 
 const GAL: GalleryResponse = {
   run: { run_id: "r1", title: "캠페인", created_at: null, current_step: "design",

@@ -125,9 +125,15 @@ function DirRow({ node, depth }: { node: TreeNode; depth: number }) {
 /** 좌측 패널: VFS 트리. 빈 상태/스크롤 처리. */
 export function FileTree() {
   const c = useCockpit();
-  // 내부 상태 노드(_state.json/_messages.json 등) 숨김: path에 `_` 접두 세그먼트가 있으면 제외.
+  // 탐색기 숨김 대상:
+  //  - 내부 상태 노드(_state.json/_messages.json 등): `_` 접두 세그먼트
+  //  - 관측성 로그(usage/log.jsonl): `usage` 디렉터리 — 비용/토큰은 History에서 직관적 UI로 제공.
   const visible = React.useMemo(
-    () => c.nodes.filter((n) => !n.path.split("/").some((seg) => seg.startsWith("_"))),
+    () =>
+      c.nodes.filter((n) => {
+        const segs = n.path.split("/");
+        return !segs.some((seg) => seg.startsWith("_") || seg === "usage");
+      }),
     [c.nodes],
   );
   const tree = React.useMemo(

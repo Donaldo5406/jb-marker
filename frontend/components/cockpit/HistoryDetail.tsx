@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { GalleryMedia } from "./GalleryMedia";
 import { PreviewFrame } from "./PreviewFrame";
+import { UsagePanel } from "./UsagePanel";
 
 type LoadState = "loading" | "ok" | "error";
 
@@ -76,6 +77,11 @@ export function HistoryDetail({ runId, onBack, onContinue }: HistoryDetailProps)
 
         {state === "ok" && data && (
           <div className="space-y-8">
+            {/* 사용량·비용을 상세 뷰 상단에 배치 — 탐색기에서 숨긴 usage/log.jsonl의 직관적 대체. */}
+            <section className="space-y-3">
+              <h2 className="text-body-lg font-semibold text-on-surface">사용량 · 비용</h2>
+              <UsagePanel runId={runId} />
+            </section>
             {data.sections.map((sec) => (
               <section key={sec.studio} className="space-y-3">
                 <div className="flex items-center gap-2">
