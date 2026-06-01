@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Code2, Eye, ImageIcon, Loader2, Save, X } from "lucide-react";
+import { Code2, Copy, Eye, ImageIcon, Loader2, Save, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fileType } from "@/lib/fileType";
 import { useCockpit } from "./CockpitProvider";
 
 /** FabricEditor는 client-only(브라우저 canvas 의존) — SSR 비활성 lazy-load. */
@@ -15,6 +16,12 @@ const FabricEditor = dynamic(
 /** MarkdownView는 react-markdown 번들(~46KB)을 끌어오므로 .md Preview를 열 때만 lazy-load. */
 const MarkdownView = dynamic(
   () => import("./MarkdownView").then((m) => m.MarkdownView),
+  { loading: () => <div className="flex-1 bg-surface" /> },
+);
+
+/** CodeView는 highlight.js 번들을 끌어오므로 코드 파일을 READ로 열 때만 lazy-load. */
+const CodeView = dynamic(
+  () => import("./CodeView").then((m) => m.CodeView),
   { loading: () => <div className="flex-1 bg-surface" /> },
 );
 
@@ -44,9 +51,12 @@ export function EditorPane() {
   const [saving, setSaving] = React.useState(false);
   // .md 보기 모드(Preview=렌더, Source=raw 편집). 파일이 바뀌면 Preview로 초기화(기본 = 보기쉽게).
   const [mdMode, setMdMode] = React.useState<"preview" | "source">("preview");
+  // 코드 파일(.json/.ts 등) 보기 모드(read=강조 읽기, source=raw 편집). 파일이 바뀌면 read로 초기화.
+  const [codeMode, setCodeMode] = React.useState<"read" | "source">("read");
   const filePath = file?.path;
   React.useEffect(() => {
     setMdMode("preview");
+    setCodeMode("read");
   }, [filePath]);
 
   // 캐시 미스로 fetch 중이고 아직 해당 파일이 안 열렸으면 로딩 표시(체감 지연 완화).
@@ -76,7 +86,10 @@ export function EditorPane() {
 
   const isScene = file.path.endsWith(".scene");
   const isMd = file.path.endsWith(".md");
+  const isCode = !isScene && !isMd; // .json/.ts 등
   const showPreview = isMd && mdMode === "preview";
+  const showCodeRead = isCode && codeMode === "read";
+  const ft = fileType(baseName(file.path));
 
   const handleSave = async () => {
     setSaving(true);
@@ -92,6 +105,18 @@ export function EditorPane() {
       {/* 상단 바: 경로 + dirty 표시 + 저장/닫기 */}
       <div className="flex items-center gap-2 border-b border-outline-variant bg-surface-container-low px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
+          {!isScene && (
+            <span
+              className={cn(
+                "flex h-4 w-4 shrink-0 items-center justify-center rounded text-[8px] font-bold leading-none",
+                ft.fg,
+                ft.bg,
+              )}
+              aria-hidden
+            >
+              {ft.label}
+            </span>
+          )}
           <span className="truncate text-body-sm font-medium text-on-surface" title={file.path}>
             {baseName(file.path)}
           </span>
@@ -113,6 +138,29 @@ export function EditorPane() {
           >
             {showPreview ? <Code2 className="h-3.5 w-3.5" aria-hidden /> : <Eye className="h-3.5 w-3.5" aria-hidden />}
             {showPreview ? "소스" : "미리보기"}
+          </button>
+        )}
+        {isCode && (
+          <button
+            type="button"
+            onClick={() => setCodeMode((m) => (m === "read" ? "source" : "read"))}
+            aria-label={showCodeRead ? "소스 보기" : "읽기"}
+            title={showCodeRead ? "소스 보기" : "읽기"}
+            className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1.5 text-caption font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            {showCodeRead ? <Code2 className="h-3.5 w-3.5" aria-hidden /> : <Eye className="h-3.5 w-3.5" aria-hidden />}
+            {showCodeRead ? "소스" : "읽기"}
+          </button>
+        )}
+        {!isScene && (
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard?.writeText(file.content)}
+            aria-label="내용 복사"
+            title="내용 복사"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <Copy className="h-3.5 w-3.5" aria-hidden />
           </button>
         )}
         {!isScene && (
@@ -149,6 +197,8 @@ export function EditorPane() {
         />
       ) : showPreview ? (
         <MarkdownView content={file.content} />
+      ) : showCodeRead ? (
+        <CodeView name={baseName(file.path)} content={file.content} />
       ) : (
         <textarea
           value={file.content}

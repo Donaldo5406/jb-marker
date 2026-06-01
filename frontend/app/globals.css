@@ -31,3 +31,20 @@
   background-color: transparent;
   padding: 0;
 }
+
+/* 문서형 본문: 전역 body{font-weight:600}을 마크다운 본문에서 400으로 되돌려 장문 가독성 확보(볼드는 700). */
+.markdown-body { font-weight: 400; }
+.markdown-body strong { font-weight: 700; }
+
+/* highlight.js github-light 토큰 — 마크다운 코드블록(.markdown-body) + 코드 READ 뷰(CodeView) 공용(.hljs 전역). */
+.hljs { color: #1c1b1b; background: transparent; }
+.hljs-comment, .hljs-quote { color: #6e7781; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: #cf222e; }
+.hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal,
+.hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-addition { color: #0a7d33; }
+.hljs-attr, .hljs-variable, .hljs-meta,
+.hljs-selector-attr, .hljs-selector-class, .hljs-selector-id { color: #0550ae; }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link { color: #953800; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+.hljs-deletion { color: #ba1a1a; }
