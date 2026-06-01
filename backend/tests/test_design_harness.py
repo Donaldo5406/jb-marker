@@ -29,9 +29,10 @@ def test_s0_parses_plan_into_tokens_and_state(tmp_path):
     tok = json.loads(s.get("/r1/design/design-system/tokens.json").content_text)
     assert tok["aspect"] == "1:1" and "#0A84FF" in tok["palette"]
     st = json.loads(s.get("/r1/design/_state.json").content_text)
-    assert st["step"] == "S1"
+    assert st["step"] == "S1"          # S0→S1 체인 후 S1 게이트
+    assert st["gate"] == "S1"
+    assert res.meta["step"] == "S1"
     assert st["languages"] == ["ko"]
-    assert res.output_path == "/r1/design/design-system/tokens.json"
 
 
 def test_state_default_step_s0(tmp_path):
@@ -68,7 +69,6 @@ def test_load_references_returns_bundled_specs(tmp_path):
 def test_s1_writes_layout_spec_from_llm(tmp_path):
     s = _store(tmp_path)
     h = DesignHarness(image_provider=FakeProvider())
-    h.handle_turn(_req(), provider=FakeProvider(), store=s)  # S0
 
     class SpecProvider(FakeProvider):
         def complete(self, messages, *, model, system=None, tools=None, **kw):
@@ -79,10 +79,11 @@ def test_s1_writes_layout_spec_from_llm(tmp_path):
                    "copy": {"ko": {"headline": "든든한 적금"}}}, "ready": True}
             return ProviderResponse(text=json.dumps(doc, ensure_ascii=False), model=model)
 
-    res = h.handle_turn(_req(action="advance"), provider=SpecProvider(), store=s)
+    res = h.handle_turn(_req(), provider=SpecProvider(), store=s)   # S0→S1(SpecProvider)
     spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
     assert spec["visual_concept"] == "블루 그라디언트"
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "S1" and st["gate"] == "S1"   # S1 게이트 정지
 
 
 # --- Task 7: S2a 비주얼(Nano Banana → components/visual) ---
@@ -101,7 +102,8 @@ def test_s2a_generates_visual_blob_via_image_provider(tmp_path):
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     nodes = s.list("/r1/design/design-system/components/visual")
     assert any(n.path.endswith(".png") for n in nodes)
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2b"
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["gate"] == "S2a"
 
 
 # --- Task 8: S2b 카피·타이포 + grounding 검증 ---
@@ -139,7 +141,8 @@ def test_s2c_writes_logo_disclosure_and_ai_notice(tmp_path):
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     disc = s.get("/r1/design/design-system/components/disclosure/ko.txt")
     assert disc is not None and "AI" in disc.content_text
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S3"
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "S2c" and st["gate"] == "S2c"
 
 
 # --- Task 10: S3 크리틱 루브릭 + metadata.md + step_status(done) ---
@@ -189,15 +192,14 @@ def test_parse_json_returns_empty_on_non_json_with_braces(tmp_path):
 
 
 def test_s1_does_not_crash_with_plain_fake_provider(tmp_path):
-    # FakeProvider는 JSON이 아닌 echo를 반환 — S1이 500나지 않고 파이프라인이 진행돼야 함
     s = _store(tmp_path)
     h = DesignHarness(image_provider=FakeProvider())
-    h.handle_turn(_req(), provider=FakeProvider(), store=s)            # S0 -> S1
-    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)  # S1
+    res = h.handle_turn(_req(), provider=FakeProvider(), store=s)   # S0→S1, gate
     assert res.meta.get("step") == "S1"
     spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
-    assert isinstance(spec, dict)                                     # 비어도 dict
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
+    assert isinstance(spec, dict)
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "S1" and st["gate"] == "S1"
 
 
 def test_full_pipeline_with_fake_provider_completes(tmp_path):
@@ -226,14 +228,7 @@ def test_s3_bypass_auto_passes_on_weak_critic(tmp_path):
     assert s.get_manifest("r1").step_status["design"] == "done"
 
 
-def test_bypass_flag_persisted_into_state(tmp_path):
-    s = _store(tmp_path)  # state starts at S0
-    h = DesignHarness(image_provider=FakeProvider())
-    req = HarnessRequest(run_id="r1", studio="design", user_prompt="",
-                         provider="fake", is_marker=True, action="advance", bypass=True)
-    h.handle_turn(req, provider=FakeProvider(), store=s)   # S0 -> S1, records bypass for S0
-    st = json.loads(s.get("/r1/design/_state.json").content_text)
-    assert st["bypass"].get("S0") is True
+# bypass_map 검증은 test_design_gate/test_server_design로 이동
 
 
 # --- Task 19 FIX A (M8): image generation fake fallback ---
@@ -258,7 +253,7 @@ def test_s2a_falls_back_to_fake_png_when_image_provider_raises(tmp_path):
     png = s.get("/r1/design/design-system/components/visual/v1.png")
     assert png is not None and png.blob  # valid PNG written
     assert res.meta.get("image_fallback") is True
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2b"
+    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
 
 
 def test_s2a_records_no_fallback_on_success(tmp_path):
@@ -321,7 +316,8 @@ def test_s3_runs_and_records_critic_without_blocking(tmp_path):
     assert res.meta.get("critic", {}).get("pass") in (True, False)
     md = s.get("/r1/design/metadata.md").content_text
     assert "크리틱" in md
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "done"
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "S3" and st["gate"] == "S3"   # S3 게이트 정지(critic은 자문 보존)
 
 
 # --- Task 19 FIX D (I5): localized AI-generated notice per language ---
@@ -366,35 +362,10 @@ def test_s2c_merges_disclosure_into_layout_spec_preserving_rest(tmp_path):
 # --- Task 19 FIX E (I2): regenerate re-runs the previous completed step ---
 
 
-def test_regenerate_reruns_previous_step(tmp_path):
-    s = _store(tmp_path)
-    # state at S2a → predecessor S1 was the last completed step
-    s.put("/r1/design/_state.json", json.dumps(
-        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
-         "languages": ["ko"], "pending_ask": None}),
-        source="marker", mime="application/json")
-    s.put("/r1/design/rough/layout.spec.json", json.dumps({"visual_concept": "old"}),
-          source="marker", mime="application/json")
-    h = DesignHarness(image_provider=FakeProvider())
-
-    class SpecProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
-            from app.providers.base import ProviderResponse
-            doc = {"reply": "재생성", "layout_spec": {"visual_concept": "재생성된 컨셉"},
-                   "ready": True}
-            return ProviderResponse(text=json.dumps(doc, ensure_ascii=False), model=model)
-
-    h.handle_turn(_req(action="regenerate"), provider=SpecProvider(), store=s)
-    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
-    assert spec["visual_concept"] == "재생성된 컨셉"   # S1 re-ran
-    assert json.loads(s.get("/r1/design/_state.json").content_text)["step"] == "S2a"
-
-
-def test_regenerate_is_noop_at_s0(tmp_path):
-    s = _store(tmp_path)  # state defaults to S0
+def test_regenerate_with_no_gate_runs_pipeline(tmp_path):
+    s = _store(tmp_path)   # state default S0, gate None
     h = DesignHarness(image_provider=FakeProvider())
     res = h.handle_turn(_req(action="regenerate"), provider=FakeProvider(), store=s)
-    st = json.loads(s.get("/r1/design/_state.json").content_text) \
-        if s.get("/r1/design/_state.json") else {"step": "S0"}
-    assert st["step"] == "S0"
-    assert res.meta.get("step") == "S0"
+    # 게이트 없음 + regenerate → (c) 루프 진입(S0→S1 게이트)
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "S1" and st["gate"] == "S1"

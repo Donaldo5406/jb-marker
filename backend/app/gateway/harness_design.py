@@ -22,6 +22,17 @@ from .harness import Harness, HarnessRequest, HarnessResult
 
 STEPS = ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
 
+# 게이트 대상(사람 confirm 또는 bypass 시 critic 품질게이트). S0·done 비게이트. spec §3.3.
+GATED_STEPS = ("S1", "S2a", "S2b", "S2c", "S3")
+# bypass 시 critic 품질게이트가 동작하는 단계(나머지는 항상 pass). spec §3.3/D2.
+CRITIC_STEPS = ("S1", "S3")   # 7항목 시각 critic. S2b는 grounding(별도 처리).
+
+
+def next_step(step: str) -> str:
+    """STEPS에서 다음 단계. done은 고정점."""
+    idx = STEPS.index(step)
+    return STEPS[idx + 1] if idx + 1 < len(STEPS) else "done"
+
 PERSONA = (
     "당신은 금융 마케팅 시니어 아트디렉터입니다. 시각 위계·그리드·여백·CTA 배치·"
     "브랜드 일관성·컴플라이언스 톤에 능하며, 텍스트는 절대 비주얼 픽셀에 굽지 않고 "
@@ -78,9 +89,11 @@ class DesignHarness(Harness):
     def _load_state(self, store, run_id: str) -> dict:
         n = store.get(f"{self._base(run_id)}/_state.json")
         if n and n.content_text:
-            return json.loads(n.content_text)
-        return {"step": "S0", "confirmed": {}, "bypass": {}, "languages": ["ko"],
-                "pending_ask": None}
+            st = json.loads(n.content_text)
+            st.setdefault("gate", None)   # 레거시 run 백필(spec §6)
+            return st
+        return {"step": "S0", "gate": None, "confirmed": {}, "bypass": {},
+                "languages": ["ko"], "pending_ask": None}
 
     def _save_state(self, store, run_id: str, state: dict) -> None:
         store.put(f"{self._base(run_id)}/_state.json",
@@ -89,28 +102,110 @@ class DesignHarness(Harness):
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)
+        if getattr(req, "bypass_map", None):
+            state.setdefault("bypass", {}).update(req.bypass_map)
+        action = getattr(req, "action", None)
+        gate = state.get("gate")
+
+        # (a) 게이트 정지 중 confirm/advance → 승인하고 다음으로
+        if gate and action in ("advance", "confirm"):
+            state["confirmed"][gate] = True
+            state["gate"] = None
+            state["step"] = next_step(gate)
+        # (b) 게이트 정지 중 regenerate / 프롬프트 정제 → 해당 step 재생성, gate 유지
+        elif gate and (action == "regenerate" or (req.user_prompt or "").strip()):
+            result = self._run_step(gate, req, provider, store, state)
+            verdict = self._critic_gate(gate, req, provider, store)
+            state["gate"] = gate
+            state["step"] = gate
+            self._save_state(store, req.run_id, state)
+            return self._gate_result(req, store, state, gate, result.events,
+                                     last=result, critic=verdict["critic"])
+        # (b') 무내용 폴링 → 재생성 없이 현 게이트 재노출(LLM 호출 없음)
+        elif gate:
+            self._save_state(store, req.run_id, state)
+            return self._gate_result(req, store, state, gate, [])
+
+        # (c) 현재 step부터 연쇄 루프
         step = state["step"]
-        # confirm 게이트 bypass(자동 진행) 선호를 현재 step에 영속화.
-        # M4 범위: 영속화만(게이트 의미론은 spec §13으로 유보).
-        if getattr(req, "bypass", False):
-            state.setdefault("bypass", {})[step] = True
-        # I2: regenerate = 사용자가 보고 있는 산출물(= 직전 완료 step)을 재생성.
-        # 직전 step으로 되돌린 뒤 정상 디스패치하면 해당 step이 재실행되고 현재 step으로 복귀한다.
-        if getattr(req, "action", None) == "regenerate":
-            idx = STEPS.index(step)
-            prev = STEPS[idx - 1] if idx > 0 else None
-            if prev and prev != "done" and step != "done":
-                state["step"] = step = prev
-            else:  # S0(완료된 step 없음) 또는 done → no-op
-                return HarnessResult(text="재생성할 이전 단계가 없습니다.",
-                    output_path=f"{self._base(req.run_id)}/_state.json",
-                    meta={"source": "marker", "step": step}, events=[])
+        events: list = []
+        regen: dict = {}
+        warnings: list = []
+        auto_advanced: list = []
+        while True:
+            if step == "done":
+                state["gate"] = None
+                self._save_state(store, req.run_id, state)
+                store.set_step_status(req.run_id, "design", "done")
+                meta = {"source": "marker", "step": "done",
+                        "gate": {"step": "done", "critic": None,
+                                 "auto_advanced": auto_advanced}}
+                if warnings:
+                    meta["warnings"] = warnings
+                return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
+                    output_path=f"{self._base(req.run_id)}/metadata.md", meta=meta, events=events)
+            result = self._run_step(step, req, provider, store, state)
+            events += result.events
+            if step in GATED_STEPS:
+                bypassed = bool(state.get("bypass", {}).get(step))
+                verdict = self._critic_gate(step, req, provider, store)
+                if bypassed:
+                    if not verdict["passed"] and regen.get(step, 0) < 1:
+                        regen[step] = 1
+                        continue                  # 같은 step 1회 재생성
+                    if not verdict["passed"]:
+                        warnings.append(step)      # 2차도 실패 → 경고 후 진행
+                    state["confirmed"][step] = True
+                    auto_advanced.append(step)
+                    step = state["step"] = next_step(step)
+                    continue                       # 연쇄
+                else:                              # 게이트 ON → 정지(verdict 자문)
+                    state["gate"] = step
+                    state["step"] = step
+                    self._save_state(store, req.run_id, state)
+                    return self._gate_result(req, store, state, step, events,
+                                             last=result, critic=verdict["critic"],
+                                             auto_advanced=auto_advanced, warnings=warnings)
+            # 비게이트(S0) → 통과 후 다음으로 체인
+            state["confirmed"][step] = True
+            step = state["step"] = next_step(step)
+
+    def _gate_result(self, req, store, state, gate, events, *, last=None,
+                     critic=None, auto_advanced=None, warnings=None) -> HarnessResult:
+        base = self._base(req.run_id)
+        out = last.output_path if last is not None else f"{base}/_state.json"
+        meta = dict(last.meta) if last is not None else {"source": "marker"}
+        meta["step"] = gate
+        meta["gate"] = {"step": gate, "critic": critic, "auto_advanced": auto_advanced or []}
+        if warnings:
+            meta["warnings"] = warnings
+        text = last.text if last is not None else "확정 대기 중입니다."
+        return HarnessResult(text=text, output_path=out, meta=meta, events=events)
+
+    def _critic_gate(self, step, req, provider, store) -> dict:
+        """단계별 품질 판정. {'passed': bool, 'critic': dict|None}. spec §3.3/§3.4."""
+        base = self._base(req.run_id)
+        if step in CRITIC_STEPS:                 # S1/S3 — 7항목 시각 critic
+            spec = self._parse_json(
+                (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+            verdict = self._run_critic(req, provider, spec)
+            return {"passed": bool(verdict["pass"]), "critic": verdict}
+        if step == "S2b":                        # grounding — ungrounded 비어야 pass
+            plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
+            fm = _frontmatter(plan.content_text if plan else "")
+            corpus = build_corpus(fm.get("factsheet") or {})
+            spec = self._parse_json(
+                (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+            bad = []
+            for fields in (spec.get("copy") or {}).values():
+                for role in ("headline", "body", "cta"):
+                    bad += find_ungrounded((fields or {}).get(role, ""), corpus)
+            return {"passed": not bad, "critic": {"ungrounded": sorted(set(bad))}}
+        return {"passed": True, "critic": None}  # S2a/S2c — critic 없음
+
+    def _run_step(self, step, req, provider, store, state) -> HarnessResult:
         if step == "S0":
             return self._s0_setup(req, store, state)
-        if step == "done":
-            return HarnessResult(text="이미 디자인이 확정되었습니다.",
-                output_path=f"{self._base(req.run_id)}/metadata.md",
-                meta={"source": "marker", "step": "done"}, events=[])
         return self._dispatch(step, req, provider, store, state)
 
     def _dispatch(self, step, req, provider, store, state) -> HarnessResult:
@@ -167,9 +262,6 @@ class DesignHarness(Harness):
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
-        state["confirmed"]["S1"] = True
-        state["step"] = "S2a"
-        self._save_state(store, req.run_id, state)
         return HarnessResult(text=data.get("reply", "러프 완성"),
             output_path=f"{base}/rough/layout.spec.json",
             meta={"source": "marker", "step": "S1"},
@@ -192,9 +284,6 @@ class DesignHarness(Harness):
         path = f"{base}/design-system/components/visual/v1.png"
         store.put(path, png, source="gemini", mime="image/png",
                   meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
-        state["confirmed"]["S2a"] = True
-        state["step"] = "S2b"
-        self._save_state(store, req.run_id, state)
         return HarnessResult(text="비주얼을 생성했습니다.", output_path=path,
             meta={"source": "gemini", "step": "S2a", "image_fallback": fallback},
             events=[{"type": "artifact", "path": path}])
@@ -231,9 +320,6 @@ class DesignHarness(Harness):
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
-        state["confirmed"]["S2b"] = True
-        state["step"] = "S2c"
-        self._save_state(store, req.run_id, state)
         return HarnessResult(text="카피를 확정했습니다.",
             output_path=f"{base}/design-system/components/headline",
             meta={"source": "marker", "step": "S2b", "ungrounded": sorted(set(ungrounded))},
@@ -264,9 +350,6 @@ class DesignHarness(Harness):
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
-        state["confirmed"]["S2c"] = True
-        state["step"] = "S3"
-        self._save_state(store, req.run_id, state)
         return HarnessResult(text="브랜드·고지 요소를 배치했습니다.",
             output_path=f"{base}/design-system/components/disclosure",
             meta={"source": "marker", "step": "S2c"},
@@ -294,10 +377,6 @@ class DesignHarness(Harness):
             lines.append(f"- {k}: {critic['scores'].get(k)}")
         store.put(f"{base}/metadata.md", "\n".join(lines),
                   source="marker", mime="text/markdown")
-        state["confirmed"]["S3"] = True
-        state["step"] = "done"
-        self._save_state(store, req.run_id, state)
-        store.set_step_status(req.run_id, "design", "done")
         return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
             output_path=f"{base}/metadata.md",
             meta={"source": "marker", "step": "done", "critic": critic},
@@ -334,9 +413,6 @@ class DesignHarness(Harness):
                   json.dumps(fm.get("material_matrix", []), ensure_ascii=False),
                   source="marker", mime="application/json")
         state["languages"] = fm.get("languages", ["ko"])
-        state["confirmed"]["S0"] = True
-        state["step"] = "S1"
-        self._save_state(store, req.run_id, state)
         return HarnessResult(
             text="디자인 토큰을 확정했습니다. Rough 단계로 진행합니다.",
             output_path=f"{base}/design-system/tokens.json",

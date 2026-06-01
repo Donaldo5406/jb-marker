@@ -94,7 +94,7 @@
 
 | 노드 | 책임 |
 |---|---|
-| `_state.json` | 하네스 무상태 재개용 스냅샷 (하네스 소유). |
+| `_state.json` | 하네스 무상태 재개용 스냅샷 (하네스 소유). design은 `gate`(None\|step) 필드로 confirm 게이트 정지 지점을 보존 — gate-ON 단계는 생성 후 정지(rail confirm), bypass 단계는 한 턴 내 critic/grounding 통과 시 연쇄. spec `2026-06-01-design-confirm-gate-o2-design.md` §3.2. |
 | `_messages.json` | 턴 메시지 영속 (하네스 소유). |
 | `_session.json` | 세션 수명주기 봉투 — created/updated/status(active·suspended·archived)·suspended_at·last_activity_kind. lazy heartbeat 2단계(active→suspended 60m→archived +7d). spec `2026-06-01-studio-session-lifecycle-policy-design.md` §3. 대상 스튜디오 = brainstorming/design/review/deploy(usage 제외). |
 

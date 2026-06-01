@@ -28,6 +28,7 @@ export function DesignStudio() {
       <div className="flex min-h-0 flex-col overflow-hidden border-r border-outline-variant">
         <PipelineRail
           step={c.designStep}
+          gate={c.designGate}
           busy={busy}
           onAdvance={() => act("advance")}
           onRegenerate={() => act("regenerate")}

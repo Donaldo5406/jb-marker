@@ -86,4 +86,15 @@ describe("api client", () => {
     }));
     await expect(api.getPreviewHtml("r1")).rejects.toThrow();
   });
+
+  it("gatewayRun이 bypass_map을 body에 포함한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ output_path: "/p", text: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await api.gatewayRun({ run_id: "r1", studio: "design", prompt: "",
+      provider: "fake", is_marker: true, action: "advance", bypass_map: { S1: true } });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toMatchObject({ bypass_map: { S1: true } });
+  });
 });

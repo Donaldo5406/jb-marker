@@ -17,6 +17,7 @@ export type Entitlement = { marker: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
 export type ReviewGate = { status: string; critical: number; warning: number };
+export type DesignGate = { step: string; critic: Record<string, unknown> | null; auto_advanced: string[] };
 // M6 T19 deploy 상태 타입.
 export type DeployStateLike = {
   step_status: string;
@@ -49,6 +50,7 @@ export type CockpitContextValue = {
   switchDesignLang: (lang: string) => Promise<void>;   // 언어 전환 + 해당 언어 scene 재조립/열기(I4)
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
+  designGate: DesignGate | null;          // meta.gate — 현재 confirm 게이트 상태(critic/auto_advanced)
   // ---- review state (M5 spec §8.3) ----
   reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
   reviewGate: ReviewGate | null;            // 통합 reconciler 산정 결과(critical/warning 수)
@@ -128,6 +130,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [designStep, setDesignStep] = useState("S0");
   const [designLang, setDesignLang] = useState("ko");
   const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
+  const [designGate, setDesignGate] = useState<DesignGate | null>(null);
   // M5: 검토 진행 단계·게이트·ack 플래그(메모리 상). 새 run 마다 R0/null/false로 리셋.
   const [reviewStage, setReviewStage] = useState<ReviewStage | null>(null);
   const [reviewGate, setReviewGate] = useState<ReviewGate | null>(null);
@@ -218,6 +221,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       // M5 spec §7.4: run 전환 시 review state 3 필드 리셋 — 이전 run의 stale ack가
       // T18 isDeployUnlocked를 거짓 해제하지 않도록.
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
+      setDesignGate(null);   // 새로 연 run은 stale design 게이트 없이 시작.
       // M6 T19: deploy state 리셋(이전 run 잔여 차단).
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false);
       syncRunQuery(id);
@@ -238,6 +242,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setOpenFile(null);
       setMessages([]); setPendingAsk(null); setBrainStage("A");
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
+      setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false);
       syncRunQuery(run_id);
     },
@@ -340,11 +345,13 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const res = await api.gatewayRun({
       run_id: id, studio: "design", prompt,
       provider: "anthropic", is_marker: true, action,
-      bypass: !!designBypass[designStep],   // 현재 step의 bypass 선호를 백엔드로 전달.
+      bypass: !!designBypass[designStep],   // 호환: 현재 step의 bypass 단일 플래그
+      bypass_map: designBypass,             // 전체 맵 전송(백엔드 연쇄 전제)
     });
     await refreshTree();
     const st = res.meta?.step;
     if (typeof st === "string") setDesignStep(st);
+    setDesignGate((res.meta?.gate as DesignGate) ?? null);   // 게이트 상태 보존(meta.gate)
     // S3→done: 백엔드 layout.spec 완성 → 현재 언어 scene 조립 + 자동 open(C1).
     if (st === "done") await assembleAndOpenScene(designLang);
     return { text: res.text };
@@ -614,6 +621,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     switchDesignLang,
     designBypass,
     setDesignBypass,
+    designGate,
     reviewStage,
     reviewGate,
     reviewAcknowledged,

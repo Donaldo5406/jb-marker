@@ -49,6 +49,7 @@ class GatewayRun(BaseModel):
     answer: str | None = None
     bypass: bool = False
     action: str | None = None
+    bypass_map: dict | None = None
 
 
 class PutText(BaseModel):
@@ -246,7 +247,8 @@ def create_app() -> FastAPI:
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=body.provider,
                              is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
-                             action=body.action, user_id=user_id)
+                             action=body.action, user_id=user_id,
+                             bypass_map=body.bypass_map)
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:

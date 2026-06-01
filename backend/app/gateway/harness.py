@@ -23,6 +23,7 @@ class HarnessRequest:
     bypass: bool = False           # AskUser bypass(자동 기본값)
     action: str | None = None      # design step 액션: advance|confirm|regenerate|chat|answer
     user_id: str = "demo"          # 게이트(entitlement) 평가 대상. 기본 demo(로컬-우선)
+    bypass_map: dict | None = None  # design 단계별 게이트 OFF 맵(프론트 전체 전송)
 
 
 @dataclass
