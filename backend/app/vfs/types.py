@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 STUDIOS = ("brainstorming", "design", "review", "deploy", "usage")
+# 세션 수명주기 대상(usage 제외 — 산출 집계 뷰라 대화 세션 없음). spec §4.
+LIFECYCLE_STUDIOS = ("brainstorming", "design", "review", "deploy")
 
 
 @dataclass

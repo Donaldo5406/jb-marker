@@ -40,6 +40,10 @@ class Settings:
     supabase_storage_bucket: str = "vfs-blobs"
     # M7-C 분리형 배포 — 명시 CORS origin 화이트리스트(쉼표 구분). 미설정 시 localhost 폴백.
     cors_allow_origins: tuple[str, ...] = ()
+    # 세션 수명주기 임계(ms) — spec §3.5. 데모/테스트에서 단축 가능.
+    session_stall_ms: int = 15 * 60 * 1000          # 900_000
+    session_suspend_ms: int = 60 * 60 * 1000        # 3_600_000
+    session_retention_ms: int = 7 * 24 * 60 * 60 * 1000  # 604_800_000
 
 
 def load_settings() -> Settings:
@@ -65,4 +69,7 @@ def load_settings() -> Settings:
         cors_allow_origins=tuple(
             o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()
         ),
+        session_stall_ms=int(os.getenv("SESSION_STALL_MS", str(15 * 60 * 1000))),
+        session_suspend_ms=int(os.getenv("SESSION_SUSPEND_MS", str(60 * 60 * 1000))),
+        session_retention_ms=int(os.getenv("SESSION_RETENTION_MS", str(7 * 24 * 60 * 60 * 1000))),
     )

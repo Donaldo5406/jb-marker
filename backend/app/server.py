@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from typing import Any
 
@@ -29,6 +30,8 @@ from .history.gallery import build_gallery
 from .history.preview import build_preview_html
 from .observability import usage as usage_log
 from .providers.registry import get_provider
+from .session.liveness import Thresholds
+from .session.store import SessionStore
 from .vfs.factory import get_vfs_store
 
 
@@ -114,6 +117,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     store = get_vfs_store(settings)
+
+    session_store = SessionStore(store, Thresholds(
+        stall_ms=settings.session_stall_ms,
+        suspend_ms=settings.session_suspend_ms,
+        retention_ms=settings.session_retention_ms,
+    ))
+
+    def _now_ms() -> int:
+        return int(time.time() * 1000)
 
     user_id_dep = make_user_id_dep(settings)
     require_owner = _require_run_owner_factory(store)
@@ -248,6 +260,15 @@ def create_app() -> FastAPI:
             result = gateway.run(req, harness)
         except PermissionError as e:
             raise HTTPException(402, str(e))
+        now = _now_ms()
+        kind = "ask_answer" if body.answer is not None else "user_turn"
+        hb = session_store.heartbeat(body.run_id, body.studio, now)
+        reactivated = bool(hb.get("exists")) and hb.get("status") != "active"
+        session_store.touch(body.run_id, body.studio, now, kind=kind)
+        if reactivated:
+            result.meta["session_event"] = "restored"
+            await _publish(body.run_id, {"kind": "restored",
+                                         "studio": body.studio, "run_id": body.run_id})
         for ev in result.events:
             await _publish(body.run_id, ev)
         ask = None
@@ -255,6 +276,30 @@ def create_app() -> FastAPI:
             ask = {"trigger": result.ask.trigger, "question": result.ask.question, "options": result.ask.options}
         return {"output_path": result.output_path, "text": result.text,
                 "ask": ask, "meta": result.meta}
+
+    @app.get("/runs/{run_id}/session/{studio}")
+    def session_heartbeat(run_id: str, studio: str,
+                          user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
+        return session_store.heartbeat(run_id, studio, _now_ms())
+
+    @app.post("/runs/{run_id}/session/{studio}/resume")
+    def session_resume(run_id: str, studio: str,
+                       user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
+        return session_store.resume(run_id, studio, _now_ms())
+
+    @app.post("/runs/{run_id}/session/{studio}/suspend")
+    def session_suspend(run_id: str, studio: str,
+                        user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
+        return session_store.suspend(run_id, studio, _now_ms())
+
+    @app.get("/runs/{run_id}/sessions")
+    def session_list(run_id: str,
+                     user_id: str = Depends(user_id_dep)) -> dict:
+        require_owner(run_id, user_id)
+        return session_store.list(run_id, _now_ms())
 
     @app.get("/vfs/{run_id}")
     def vfs_list(run_id: str, prefix: str | None = None,

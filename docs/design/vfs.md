@@ -88,6 +88,16 @@
 - 미디어 write 시 sidecar `*.meta.json` **동시 생성**.
 - 스텝 전환마다 `manifest.json` 갱신.
 
+## 내부 노드 (`_`-접두 — FileTree 숨김)
+
+스튜디오 네임스페이스 `/{runId}/{studio}/` 아래 `_` 접두 노드는 하네스/세션 내부 상태로, History FileTree에 노출하지 않는다.
+
+| 노드 | 책임 |
+|---|---|
+| `_state.json` | 하네스 무상태 재개용 스냅샷 (하네스 소유). |
+| `_messages.json` | 턴 메시지 영속 (하네스 소유). |
+| `_session.json` | 세션 수명주기 봉투 — created/updated/status(active·suspended·archived)·suspended_at·last_activity_kind. lazy heartbeat 2단계(active→suspended 60m→archived +7d). spec `2026-06-01-studio-session-lifecycle-policy-design.md` §3. 대상 스튜디오 = brainstorming/design/review/deploy(usage 제외). |
+
 ## 미결 / 후속 결정 항목
 
 - ~~파일시스템 CRUD 스킬 **인터페이스** + **저장 매개체**~~ → @marker_api.md 에서 확정(VfsStore 추상화 + Supabase Postgres/Storage, AI 게이트웨이).
