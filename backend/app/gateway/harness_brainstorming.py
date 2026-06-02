@@ -11,6 +11,13 @@ import re
 from ..providers.base import Message
 from .harness import AskPayload, Harness, HarnessRequest, HarnessResult
 
+# O4 compaction (spec: docs/specs/2026-06-02-messages-compaction-o4-design.md)
+COMPACT_INPUT_TOKENS = 100_000   # 직전 응답 usage.input_tokens 임계
+COMPACT_TURN_CAP = 20            # usage None 폴백: len(msgs) 임계(메시지 수)
+KEEP_RECENT = 8                  # 요약 후 원문 보존 최근 메시지 수
+MAX_FIELD_CHARS = 16 * 1024      # 개별 메시지 content 절단 임계(claw-code 미러)
+_TRUNC_MARKER = "… [truncated]"
+
 REQUIRED_PLAN_FIELDS = {
     "creative_direction", "material_matrix", "slots", "image_concept",
     "copy_themes", "multinational", "languages", "factsheet", "disclosures",
@@ -90,7 +97,8 @@ class BrainstormingHarness(Harness):
         n = store.get(f"{self._base(run_id)}/_state.json")
         if n and n.content_text:
             return json.loads(n.content_text)
-        return {"stage": "A", "spec_locked": False, "plan_locked": False, "pending_ask": None}
+        return {"stage": "A", "spec_locked": False, "plan_locked": False,
+                "pending_ask": None, "compaction": None, "last_input_tokens": 0}
 
     def _save_state(self, store, run_id: str, state: dict) -> None:
         store.put(f"{self._base(run_id)}/_state.json", json.dumps(state, ensure_ascii=False),
@@ -116,8 +124,59 @@ class BrainstormingHarness(Harness):
             return self._stage_b(req, provider, store, state, msgs)
         return self._stage_done(req, provider, store, state, msgs)
 
-    def _conversation(self, msgs: list[dict]) -> list[Message]:
-        return [Message(m["role"], m["content"]) for m in msgs]
+    def _truncate_msg(self, m: dict) -> Message:
+        """provider 입력 뷰용 필드 절단. 영속 _messages.json은 불변(비파괴)."""
+        content = m.get("content", "")
+        if len(content) > MAX_FIELD_CHARS:
+            keep = MAX_FIELD_CHARS - len(_TRUNC_MARKER)
+            content = content[:keep] + _TRUNC_MARKER
+        return Message(m["role"], content)
+
+    def _summarize(self, provider, model: str, prior: str, old: list[dict]) -> str:
+        """오래된 턴을 현재 턴 provider로 증분 요약. 캠페인 확정 사실 보존 우선."""
+        sys = ("당신은 금융 마케팅 캠페인 기획 대화의 요약자입니다. "
+               "확정된 사실(goal·target_segments·key_messages·channels·languages·"
+               "multinational·tone·factsheet·disclosures)만 골라 최대한 짧게 요약합니다. "
+               "표·머리말·수식어·인사말 없이 'key: value' 한 줄씩, 확정 안 된 항목은 생략하세요. "
+               "이것은 후속 대화의 컨텍스트로 쓰일 압축 메모이므로 재진술·부연 없이 핵심만 남깁니다.")
+        parts = []
+        if prior:
+            parts.append("[기존 요약]\n" + prior)
+        convo = "\n".join(f"{m['role']}: {m.get('content', '')}" for m in old)
+        parts.append("[추가 대화]\n" + convo)
+        resp = provider.complete([Message("user", "\n\n".join(parts))],
+                                 model=model, system=sys)
+        return (resp.text or "").strip()
+
+    def _window_for_provider(self, msgs: list[dict], state: dict,
+                             provider, model: str) -> list[Message]:
+        """provider 입력 뷰 구성. 임계 초과 시 오래된 턴을 증분 요약으로 접고
+        최근 KEEP_RECENT만 원문 전달. _messages.json 원본은 건드리지 않는다(비파괴).
+
+        state["compaction"]을 in-place 갱신하며, 영속은 호출부의 _save_state가 수행.
+        """
+        comp = state.get("compaction")
+        covered = comp["covered_upto"] if comp else 0
+        last_tok = state.get("last_input_tokens", 0)
+        trigger = (last_tok > COMPACT_INPUT_TOKENS) or \
+                  (last_tok == 0 and len(msgs) > COMPACT_TURN_CAP)   # usage None 폴백
+        if trigger:
+            boundary = max(covered, len(msgs) - KEEP_RECENT)
+            old = msgs[covered:boundary]
+            if old:
+                prior = comp["summary"] if comp else ""
+                try:
+                    summary = self._summarize(provider, model, prior, old)
+                    state["compaction"] = {
+                        "summary": summary, "covered_upto": boundary,
+                        "count": (comp["count"] + 1 if comp else 1)}
+                except Exception:
+                    pass   # 요약 실패 → 미갱신, 아래에서 가능한 만큼 보존
+        comp = state.get("compaction")
+        if comp:
+            head = [Message("user", "[이전 대화 요약]\n" + comp["summary"])]
+            return head + [self._truncate_msg(m) for m in msgs[comp["covered_upto"]:]]
+        return [self._truncate_msg(m) for m in msgs]
 
     def _save_research(self, store, run_id: str, citations: list[dict]) -> int:
         base = self._base(run_id)
@@ -152,7 +211,9 @@ class BrainstormingHarness(Harness):
             "외부 사실이 꼭 필요하면 그 사실을 사용자에게 질문해 확인하세요(자동 웹검색은 하지 않습니다)." + _PROTOCOL +
             f"\n\n[현재 spec.md]\n{cur}")
         # 웹서치 OFF(B): 한 줄 프롬프트에 아티클을 자동 수집하지 않음 — 대화-우선.
-        resp = provider.complete(self._conversation(msgs), model=req.provider, system=sys)
+        resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
+                                 model=req.provider, system=sys)
+        state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
         reply = (data.get("reply") or "").strip()
         document = (data.get("document") or "").strip()
@@ -232,7 +293,9 @@ class BrainstormingHarness(Harness):
             "\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. plan.md의 YAML frontmatter에 반드시 "
             f"다음 키를 포함하세요: {sorted(REQUIRED_PLAN_FIELDS)}. " + _PROTOCOL +
             f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}\n\n[현재 plan.md]\n{cur_plan}")
-        resp = provider.complete(self._conversation(msgs), model=req.provider, system=sys)
+        resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
+                                 model=req.provider, system=sys)
+        state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
         reply = (data.get("reply") or "").strip()
         document = (data.get("document") or "").strip()
