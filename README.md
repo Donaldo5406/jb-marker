@@ -120,5 +120,20 @@ cd frontend && npm run test && npm run typecheck && npm run build
 
 ## 스택
 
-- **프런트**: Next.js (App Router) · TypeScript · Tailwind · motion · Fabric.js v6 · lucide-react · vitest
+- **프런트**: Next.js (App Router) · TypeScript · Tailwind · motion · Fabric.js v7 · lucide-react · vitest
 - **백엔드**: FastAPI · uvicorn · websockets · httpx · pyyaml · (선택) anthropic / openai / google-genai · pytest
+
+## 보안 — 알려진 npm audit 예외
+
+`#10`에서 실질 런타임 위험을 우선 제거했다: **fabric 6→7**(SVG export XSS, PR #29) · **next 14.2.35 패치**(authorization bypass·content injection·일부 cache poisoning, PR #30).
+
+남은 `npm audit` 항목(2026-06 기준 10건)은 아래 사유로 의도적으로 보류한다. 대부분 프로덕션 번들에 포함되지 않거나, 본 앱이 쓰지 않는 조건부 기능에 한정된다.
+
+| 항목 | 심각도 | 보류 사유 |
+| --- | --- | --- |
+| `next` 잔여 | high·critical | 주로 DoS + 자체호스팅 image optimizer·Pages Router i18n·WebSocket 등 **조건부**. 완전 해소는 next 16 메이저(async request API·React 19 동반)가 필요해 별도 평가 대상. 본 앱은 App Router·Vercel 배포라 실노출이 제한적. |
+| `glob` · `eslint-config-next` · `minimatch` | high | **dev 전용**(lint CLI). 프로덕션 번들과 무관. `eslint-config-next` 16(next 16 동반) 필요. |
+| `esbuild` · `vite` · `vitest` | moderate | **dev 전용**(테스트 개발 서버). 프로덕션과 무관. vitest 4 전환은 vite 8(oxc)·plugin-react·TypeScript 연쇄 비용이 효과를 초과해 보류. |
+| `postcss` | moderate | next 경유. next 16에서 해소. |
+
+재평가 트리거: next 16 메이저를 진행하면 위 항목 대부분이 함께 해소된다.
