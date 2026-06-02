@@ -11,3 +11,18 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver =
     ResizeObserverStub as unknown as typeof ResizeObserver;
 }
+
+// jsdom은 matchMedia도 제공하지 않는다. motion(framer)의 useReducedMotion 등이
+// 마운트 시 window.matchMedia를 호출하므로, 항상 "비-reduce"를 답하는 stub을 둔다.
+if (typeof globalThis.matchMedia === "undefined") {
+  globalThis.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof globalThis.matchMedia;
+}
