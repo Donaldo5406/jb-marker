@@ -6,7 +6,6 @@ import { ArrowRight, ArrowDown } from "lucide-react";
 import { TextRotate } from "@/components/TextRotate";
 import Floating, { FloatingElement } from "@/components/ui/parallax-floating";
 
-// TODO(copy): 실제 히어로 카피는 추후 확정. demo.tsx 톤에 맞춰 짧고 비슷한 길이로.
 const HERO_LINES = ["더 빠르게", "더 쉽게", "자동으로", "한 번에"];
 
 // demo.tsx의 exampleImages 배치를 우리 5장 컬러 이미지로 매핑.
@@ -108,7 +107,7 @@ export function LandingHero() {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
           </span>
-          AI 마케팅 코파일럿 {/* TODO(copy) */}
+          AI 마케팅 코파일럿
         </motion.div>
 
         {/* h1: demo.tsx의 LayoutGroup + motion.span inline 회전 패턴 그대로 */}

@@ -4,7 +4,6 @@ import { motion } from "motion/react";
 import { PenLine, Wand2, ShieldCheck, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 
-// TODO(copy): 소개글·단계 본문은 추후 확정. 골격 + placeholder.
 const STEPS = [
   {
     step: "01",
@@ -39,7 +38,7 @@ export function IntroSection() {
             transition={{ duration: 0.5 }}
             className="mb-4 text-caption uppercase tracking-wider text-on-surface-variant"
           >
-            이용 방식 {/* TODO(copy) */}
+            이용 방식
           </motion.p>
           <motion.h2
             initial={{ opacity: 0, y: 12 }}
@@ -48,7 +47,6 @@ export function IntroSection() {
             transition={{ duration: 0.5, delay: 0.05 }}
             className="text-h2 tracking-[-0.02em] text-on-surface"
           >
-            {/* TODO(copy) */}
             하나의 파이프라인,<br />세 번의 흐름.
           </motion.h2>
           <motion.p
@@ -58,7 +56,6 @@ export function IntroSection() {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="mt-5 text-body-lg text-on-surface-variant"
           >
-            {/* TODO(copy) */}
             각 단계는 콕핏에서 이어지는 하나의 작업 흐름입니다. 산출물은 가상 폴더에
             쌓이고, 언제든 되돌아가 편집할 수 있습니다.
           </motion.p>

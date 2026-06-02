@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
     link: "/#pipeline",
     subMenus: [
       {
-        title: "워크플로", // TODO(copy)
+        title: "워크플로",
         items: [
           { label: "기획", description: "브레인스토밍부터 카피까지", icon: MessageSquareText },
           { label: "디자인", description: "소재·포스터 자동 생성", icon: Sparkles },
@@ -46,7 +46,7 @@ const NAV_ITEMS: NavItem[] = [
     link: "/#apps",
     subMenus: [
       {
-        title: "커넥터", // TODO(copy)
+        title: "커넥터",
         items: [
           { label: "메신저", description: "알림톡·문자 발송 채널", icon: MessageSquareText },
           { label: "디자인 툴", description: "IMG.LY 에디터 연동", icon: Sparkles },

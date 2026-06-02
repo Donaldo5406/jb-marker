@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-// TODO(copy): 티어 카피·혜택 문구는 추후 확정. spec §3.3 골격.
 type Tier = {
   name: string;
   price: string;
@@ -30,7 +29,7 @@ const TIERS: Tier[] = [
   },
   {
     name: "Pro",
-    price: "$100",
+    price: "₩100,000",
     cadence: "/월",
     tagline: "Marker 모델 + DeployStudio Advisor 풀세트",
     featured: true,
@@ -77,13 +76,12 @@ export default function Pricing() {
         {/* 헤더 */}
         <div className="mx-auto mt-16 max-w-2xl text-center">
           <p className="mb-4 text-caption uppercase tracking-wider text-on-surface-variant">
-            요금제 {/* TODO(copy) */}
+            요금제
           </p>
           <h1 className="text-h1 leading-[1.05] tracking-[-0.03em] text-on-surface">
-            필요한 만큼만 {/* TODO(copy) */}
+            필요한 만큼만
           </h1>
           <p className="mx-auto mt-5 max-w-md text-body-lg text-on-surface-variant">
-            {/* TODO(copy) */}
             raw 모델로 무료로 시작하고, 마케팅에 특화된 Marker가 필요할 때 Pro로 전환하세요.
           </p>
         </div>
@@ -155,7 +153,6 @@ export default function Pricing() {
 
         {/* 보조 안내 */}
         <p className="mx-auto mt-10 max-w-md text-center text-caption text-on-surface-variant/80">
-          {/* TODO(copy) */}
           데모 환경에서는 실제 결제가 발생하지 않습니다. Pro 기능은 콕핏 Setting의
           엔타이틀먼트 토글로 체험할 수 있습니다.
         </p>
