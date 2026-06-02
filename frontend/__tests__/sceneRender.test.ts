@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// fabric v6 named import (StaticCanvas)을 mock
+// fabric named import을 mock: StaticCanvas(sceneRender) + FabricObject(fabricDefaults가
+// v7 origin 복원에 사용). vitest는 정의 안 된 export 접근만으로 throw하므로 둘 다 필요.
 vi.mock("fabric", () => ({
   StaticCanvas: vi.fn().mockImplementation(() => ({
     loadFromJSON: vi.fn(() => Promise.resolve()),
@@ -8,6 +9,7 @@ vi.mock("fabric", () => ({
     toDataURL: vi.fn(() => "data:image/png;base64,AAAA"),
     dispose: vi.fn(),
   })),
+  FabricObject: { ownDefaults: {} },
 }));
 
 import { renderSceneToPng, uploadRender, renderAndUploadAll } from "../lib/sceneRender";

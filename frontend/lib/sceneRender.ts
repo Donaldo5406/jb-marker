@@ -1,4 +1,5 @@
 import { StaticCanvas } from "fabric";
+import "./fabricDefaults"; // fabric v7 origin(center) → left/top 복원 (side-effect)
 
 /** Fabric scene JSON → composite PNG dataURL.
  *  임시 off-DOM StaticCanvas에 로드해 toDataURL("image/png")로 직렬화.

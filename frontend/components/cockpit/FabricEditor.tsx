@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Canvas, FabricImage, Textbox } from "fabric";
+import "@/lib/fabricDefaults"; // fabric v7 origin(center) → left/top 복원 (side-effect)
 
 export type FabricEditorProps = {
   scene: { objects: any[] } | null;
