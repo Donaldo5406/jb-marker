@@ -38,3 +38,51 @@ def test_critic_scores_pass():
 def test_placeholder_png_is_valid_png():
     png = F.placeholder_png()
     assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 100
+
+
+def _complete(system: str):
+    from app.providers.demo import DemoProvider
+    from app.providers.base import Message
+    return DemoProvider().complete([Message("user", "x")], model="demo", system=system)
+
+
+def test_detect_stage_a_returns_spec_ready():
+    r = json.loads(_complete("페르소나\n\n[Stage A] ... goal/target_segments ...").text)
+    assert r["ready"] is True and "goal:" in r["document"]
+
+
+def test_detect_stage_b_returns_plan_with_fields():
+    r = json.loads(_complete("페르소나\n\n[Stage B] ... plan.md ...").text)
+    assert r["ready"] is True and "creative_direction:" in r["document"]
+
+
+def test_detect_s1_returns_layout_spec():
+    r = json.loads(_complete("페르소나\n\n[S1 Rough] layout_spec ...").text)
+    assert "slots" in r["layout_spec"]
+
+
+def test_detect_s2b_returns_copy_4langs():
+    r = json.loads(_complete("페르소나\n\n[S2b 카피·타이포] ...").text)
+    assert set(r["copy"]) == {"ko", "en", "vi", "zh"}
+
+
+def test_detect_critic_returns_passing_scores():
+    r = json.loads(_complete("페르소나\n\n[자기-크리틱] hierarchy/grid ...").text)
+    assert set(r["scores"]) >= {"hierarchy", "brand"}
+
+
+def test_detect_review_b_returns_empty_findings():
+    r = json.loads(_complete("당신은 금융 마케팅 다국어 동등성 검토관입니다.").text)
+    assert r["findings"] == []
+
+
+def test_demo_generate_image_is_placeholder_png():
+    from app.providers.demo import DemoProvider
+    png = DemoProvider().generate_image("concept", aspect="1:1")
+    assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 1000  # 1x1보다 큼
+
+
+def test_demo_review_image_empty_findings():
+    from app.providers.demo import DemoProvider
+    resp = DemoProvider().review_image(b"x", "prompt")
+    assert json.loads(resp.text)["findings"] == []
