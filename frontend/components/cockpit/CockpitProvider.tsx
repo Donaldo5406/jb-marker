@@ -6,6 +6,7 @@ import { api, authedFetch, type AskPayload, type Manifest, type Provider, type V
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
+import { isImagePath } from "@/lib/fileType";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
 import { renderAndUploadAll } from "@/lib/sceneRender";
 
@@ -270,6 +271,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setLoadingPath(null);
       return;
     }
+    // 이미지(PNG 등)는 raw 바이트로 서빙되어 vfsGet(res.json())이 깨진다("... is not valid JSON").
+    // 텍스트 fetch를 건너뛰고 메타만 세팅 → EditorPane이 <ImageView>(useAuthedBlob)로 blob 표시.
+    if (isImagePath(path)) {
+      const of: OpenFile = { path, content: "", mime: null, dirty: false };
+      fileCacheRef.current.set(path, of);
+      setOpenFile(of);
+      setLoadingPath(null);
+      return;
+    }
     // 캐시 미스 → 클릭 즉시 로딩 표시(낙관적 피드백) 후 fetch.
     setLoadingPath(path);
     try {
@@ -375,9 +385,11 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     [],
   );
 
-  /** 검토 시작(spec §8.3): 모든 lang scene 로드 → composite PNG 업로드 → R0 호출.
-   *  성공한 lang만 vision 입력으로 사용(renderAndUploadAll graceful skip).
-   *  gateway studio="review", is_marker=true. response.meta.step·gate를 state에 반영. */
+  /** 검토 시작/계속(spec §8.3): composite PNG 업로드 후 백엔드 상태머신을 done까지 순차 완주.
+   *  백엔드 review는 gateway 호출 1번당 한 단계(R0→R1→R2→R3)만 전진하므로, 한 번의 사용자
+   *  액션으로 끝까지 돌도록 done(=R3 실행)까지 루프한다. 중간 단계에서 호출해도 백엔드 현재
+   *  step부터 이어서 완주(복구·resume). 각 단계 산출물은 refreshTree로 즉시 트리에 반영.
+   *  성공한 lang만 vision 입력으로 사용(renderAndUploadAll graceful skip). */
   const runReview = useCallback(async () => {
     const id = runIdRef.current;
     if (!id) return { text: "" };
@@ -398,25 +410,35 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     } catch { /* vfsList 실패 → 빈 scenes로 진입(백엔드는 vision_skipped로 흡수) */ }
     // 2) composite PNG 업로드 (lib/sceneRender — base64 round-trip, /api/vfs/.../review/_render/{lang}.png).
     await renderAndUploadAll(id, scenes);
-    // 3) R0 호출.
-    const res = await api.gatewayRun({
-      run_id: id, studio: "review", prompt: "검토 시작",
-      provider: "anthropic", is_marker: true, mock: mockModeRef.current,
-    });
-    // 4) manifest·트리 재조회 + state 진행.
-    await Promise.all([refreshTree(), loadManifest(id)]);
-    const st = res.meta?.step;
-    if (typeof st === "string") setReviewStage(st as ReviewStage);
-    else setReviewStage("R1");
-    const gate = (res.meta as any)?.gate;
-    if (gate && typeof gate === "object") {
+    // 3) R0→R3 순차 구동. STEP_GUARD = 정상 4단계 + 여유(무한루프 방지 안전캡).
+    const STEP_GUARD = 6;
+    const nextStage = (st: string): ReviewStage =>
+      st === "R0" ? "R1" : st === "R1" ? "R2" : "R3";
+    let lastText = "";
+    let gate: any = null;
+    for (let i = 0; i < STEP_GUARD; i++) {
+      const res = await api.gatewayRun({
+        run_id: id, studio: "review", prompt: i === 0 ? "검토 시작" : "계속",
+        provider: "anthropic", is_marker: true, mock: mockModeRef.current,
+      });
+      lastText = res.text ?? lastText;
+      const g = (res.meta as any)?.gate;
+      if (g && typeof g === "object") gate = g;
+      await refreshTree();                       // 단계 산출물(legal/·i18n/·report.md) 즉시 반영
+      const st = res.meta?.step;
+      if (st === "R3") { setReviewStage("done"); break; }   // R3=종단(state→done)
+      setReviewStage(nextStage(typeof st === "string" ? st : "R0"));   // 진행 표시
+    }
+    // 4) 게이트·manifest 반영.
+    if (gate) {
       setReviewGate({
         status: String(gate.status ?? ""),
         critical: Number(gate.critical ?? 0),
         warning: Number(gate.warning ?? 0),
       });
     }
-    return { text: res.text };
+    await loadManifest(id);
+    return { text: lastText };
   }, [refreshTree, loadManifest]);
 
   /** WARN ack(spec §8.3): backend acknowledged flag 갱신 + 클라이언트 플래그 set. */

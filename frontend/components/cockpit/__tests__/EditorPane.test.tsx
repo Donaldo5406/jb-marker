@@ -12,6 +12,9 @@ vi.mock("@/components/cockpit/MarkdownView", () => ({
 vi.mock("@/components/cockpit/FabricEditor", () => ({
   FabricEditor: () => <div data-testid="fabric">fabric</div>,
 }));
+vi.mock("@/components/cockpit/ImageView", () => ({
+  ImageView: ({ path }: { path: string }) => <div data-testid="imageview">img:{path}</div>,
+}));
 
 function mockCockpit(file: any, over: Partial<ctx.CockpitContextValue> = {}) {
   vi.spyOn(ctx, "useCockpit").mockReturnValue({
@@ -53,6 +56,16 @@ describe("EditorPane 코드 읽기/소스 토글", () => {
     render(<EditorPane />);
     expect(await screen.findByTestId("fabric")).toBeTruthy();
     expect(screen.queryByTestId("codeview")).toBeNull();
+  });
+  it(".png는 ImageView로 표시(코드뷰·저장·복사 비노출)", async () => {
+    const PNG = { path: "/r1/design/design-system/components/visual/v1.png", content: "", mime: null, dirty: false };
+    mockCockpit(PNG, { runId: "r1" });
+    render(<EditorPane />);
+    expect(await screen.findByTestId("imageview")).toBeTruthy();
+    // 이미지엔 코드뷰·저장·복사 도구를 노출하지 않는다(바이너리·비편집).
+    expect(screen.queryByTestId("codeview")).toBeNull();
+    expect(screen.queryByRole("button", { name: "내용 복사" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /저장/ })).toBeNull();
   });
   it("다른 코드 파일로 바뀌면 codeMode가 read로 리셋된다(CodeView 재표시)", async () => {
     mockCockpit(JSON_FILE);

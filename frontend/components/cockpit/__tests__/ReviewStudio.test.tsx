@@ -44,6 +44,20 @@ describe("ReviewStudio (M5 §8.1)", () => {
     expect(mockCtx.runReview).toHaveBeenCalledTimes(1);
   });
 
+  it("중간 단계(R1/R2/R3)에서 '검토 계속' 버튼이 runReview로 완주를 재개한다", () => {
+    mockCtx.reviewStage = "R2";   // 루프 중단 후 멈춘 상태 시뮬
+    render(<ReviewStudio />);
+    // R0 시작 버튼·done 재검토 버튼은 노출되지 않음
+    expect(screen.queryByTestId("run-review")).toBeNull();
+    expect(screen.queryByTestId("restart-review")).toBeNull();
+    // 진행 단계 active
+    expect(screen.getByTestId("review-step-R2").dataset.active).toBe("true");
+    // 계속 버튼 → runReview(resume) 호출
+    const cont = screen.getByTestId("continue-review");
+    fireEvent.click(cont);
+    expect(mockCtx.runReview).toHaveBeenCalledTimes(1);
+  });
+
   it("BLOCKED 상태에서 ack 버튼이 노출되지 않고 차단 안내가 표시된다", () => {
     mockCtx.reviewStage = "done";
     mockCtx.manifest = { ...mockCtx.manifest, step_status: { review: "BLOCKED" } };

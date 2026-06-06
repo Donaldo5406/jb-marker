@@ -49,8 +49,25 @@ def test_review_demo_reaches_pass(monkeypatch):
     _run(client, rid, "brainstorming", "정기예금 캠페인")
     bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
     _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
-    r = _run(client, rid, "review", "검토 시작")
-    assert r.status_code == 200
-    # 빈 findings → critical 0 → gate PASS(또는 WARN). BLOCK이 아니어야 deploy 진입 가능.
-    gate = (r.json().get("meta") or {}).get("gate") or {}
-    assert gate.get("status") in ("PASS", "WARN", "", None)
+    # review는 호출당 한 단계 전진(R0→R1→R2→R3). 프론트 자동 루프와 동일하게 done까지 구동.
+    gate: dict = {}
+    last_step = None
+    for _ in range(6):  # 정상 4단계 + 여유(무한루프 방지)
+        r = _run(client, rid, "review", "검토 시작")
+        assert r.status_code == 200
+        meta = r.json().get("meta") or {}
+        if meta.get("gate"):
+            gate = meta["gate"]
+        last_step = meta.get("step")
+        if last_step == "R3":
+            break
+    # R3 종단 도달 + 실제 게이트 산정. 빈 findings라 critical 0 → BLOCK이 아니어야
+    # deploy 진입 가능(백엔드 테스트는 composite 렌더 부재로 vision_skipped→WARN 강등).
+    assert last_step == "R3"
+    assert gate.get("status") in ("PASS", "WARN")
+    assert gate.get("critical_count", 0) == 0
+    # 검토 보고서 생성 + state done 확인.
+    report = client.get(f"/vfs/{rid}/review/report.md")
+    assert report.status_code == 200
+    state = client.get(f"/vfs/{rid}/review/_state.json")
+    assert state.status_code == 200 and '"step": "done"' in state.json()["content_text"]

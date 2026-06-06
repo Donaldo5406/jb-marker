@@ -4,7 +4,8 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { Code2, Copy, Eye, ImageIcon, Loader2, Save, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fileType } from "@/lib/fileType";
+import { fileType, isImagePath } from "@/lib/fileType";
+import { ImageView } from "./ImageView";
 import { useCockpit } from "./CockpitProvider";
 
 /** FabricEditor는 client-only(브라우저 canvas 의존) — SSR 비활성 lazy-load. */
@@ -86,10 +87,13 @@ export function EditorPane() {
 
   const isScene = file.path.endsWith(".scene");
   const isMd = file.path.endsWith(".md");
-  const isCode = !isScene && !isMd; // .json/.ts 등
+  const isImage = isImagePath(file.path);   // .png/.jpg 등 — blob 이미지
+  const isCode = !isScene && !isMd && !isImage; // .json/.ts 등
   const showPreview = isMd && mdMode === "preview";
   const showCodeRead = isCode && codeMode === "read";
   const ft = fileType(baseName(file.path));
+  // 텍스트 편집 도구(복사·저장)는 텍스트 파일에만. scene/이미지는 비대상.
+  const isText = !isScene && !isImage;
 
   const handleSave = async () => {
     setSaving(true);
@@ -152,7 +156,7 @@ export function EditorPane() {
             {showCodeRead ? "소스" : "읽기"}
           </button>
         )}
-        {!isScene && (
+        {isText && (
           <button
             type="button"
             onClick={() => void navigator.clipboard?.writeText(file.content)}
@@ -163,7 +167,7 @@ export function EditorPane() {
             <Copy className="h-3.5 w-3.5" aria-hidden />
           </button>
         )}
-        {!isScene && (
+        {isText && (
           <button
             type="button"
             onClick={handleSave}
@@ -195,6 +199,8 @@ export function EditorPane() {
           scene={parseScene(file.content)}
           onSave={(json) => c.saveSceneJson(JSON.stringify(json))}
         />
+      ) : isImage ? (
+        <ImageView runId={c.runId} path={file.path} />
       ) : showPreview ? (
         <MarkdownView content={file.content} />
       ) : showCodeRead ? (
