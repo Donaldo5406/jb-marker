@@ -118,7 +118,7 @@ cd frontend && npm run test && npm run typecheck && npm run build
 
 모델은 미지정 시 기본값 사용: `claude-sonnet-4-6` · `gpt-4o` · `gemini-2.0-flash`.
 
-> **Mock(데모) 모드**: 콕핏 Setting의 토글 ON → 전 스튜디오(텍스트·이미지·비전·advisor)가 무료·결정적 더미 응답(FakeProvider)으로 동작(시연 영상용, 요청 단위·라이브 안전). 실제 산출물 제작 시 OFF + 프로바이더 키 설정.
+> **Mock(데모) 모드**: 콕핏 Setting의 토글 ON → 전 스튜디오가 무료·결정적 더미 응답(`DemoProvider`)으로 **끝까지 완주**한다(정기예금 4언어 fixture·placeholder 비주얼). BrainStorming→Design→Review→Deploy가 실 LLM 호출·과금 없이 진행돼 시연 영상에 적합. 요청 단위 플래그(상태 비영속·라이브 안전). 실제 산출물 제작 시 OFF + 프로바이더 키 설정.
 
 ## 스택
 
