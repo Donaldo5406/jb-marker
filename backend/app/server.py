@@ -50,6 +50,7 @@ class GatewayRun(BaseModel):
     bypass: bool = False
     action: str | None = None
     bypass_map: dict | None = None
+    mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
 
 
 class PutText(BaseModel):
@@ -244,8 +245,9 @@ def create_app() -> FastAPI:
     @app.post("/gateway/run")
     async def gateway_run(body: GatewayRun, user_id: str = Depends(user_id_dep)) -> dict:
         require_owner(body.run_id, user_id)
+        provider_name = "fake" if body.mock else body.provider
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
-                             user_prompt=body.prompt, provider=body.provider,
+                             user_prompt=body.prompt, provider=provider_name,
                              is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
                              action=body.action, user_id=user_id,
                              bypass_map=body.bypass_map)
