@@ -9,6 +9,9 @@ from .fake import FakeProvider
 def get_provider(name: str, settings: Settings | None = None) -> Provider:
     if name == "fake":
         return FakeProvider()
+    if name == "demo":
+        from .demo import DemoProvider
+        return DemoProvider()
     if name == "anthropic":
         from .anthropic_client import AnthropicProvider
         return AnthropicProvider(
