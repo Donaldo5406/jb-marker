@@ -98,9 +98,10 @@ def test_design_no_mock_uses_google_image_provider(monkeypatch):
     monkeypatch.setattr(srv, "DesignHarness", SpyDesign)
     client = TestClient(srv.create_app())
     rid = client.post("/runs", json={}).json()["run_id"]
+    # provider=fake → text는 키 없이 동작(실 호출 회피). image_provider는 mock=false라 google이어야.
     client.post("/gateway/run", json={
         "run_id": rid, "studio": "design", "prompt": "x",
-        "provider": "anthropic", "is_marker": True,
+        "provider": "fake", "is_marker": True,
     })
     assert captured["img"].name == "google"
 
