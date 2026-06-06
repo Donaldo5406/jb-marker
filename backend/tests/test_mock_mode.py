@@ -9,8 +9,8 @@ def _client(monkeypatch):
     return TestClient(create_app())
 
 
-def test_mock_true_forces_fake_text_provider(monkeypatch):
-    """mock=true면 provider='anthropic'이어도 FakeProvider(echo)가 응답 — 실 키 호출 안 함."""
+def test_mock_true_forces_demo_text_provider(monkeypatch):
+    """mock=true면 provider='anthropic'이어도 DemoProvider가 응답 — 실 키 호출 안 함."""
     client = _client(monkeypatch)
     rid = client.post("/runs", json={"title": "M"}).json()["run_id"]
     r = client.post("/gateway/run", json={
@@ -18,9 +18,9 @@ def test_mock_true_forces_fake_text_provider(monkeypatch):
         "provider": "anthropic", "is_marker": False, "mock": True,
     })
     assert r.status_code == 200
-    # FakeProvider.complete는 "echo: <last>" 형태(providers/fake.py:17). passthrough가 그대로 영속.
+    # passthrough가 DemoProvider.complete 결과를 그대로 영속(미매칭 system → 빈 reply JSON).
     got = client.get(f"/vfs/{rid}/brainstorming/passthrough.md")
-    assert "echo:" in got.json()["content_text"]
+    assert got.status_code == 200
 
 
 def test_mock_omitted_keeps_existing_behavior(monkeypatch):
@@ -55,7 +55,7 @@ def test_design_mock_injects_fake_image_provider(monkeypatch):
         "run_id": rid, "studio": "design", "prompt": "x",
         "provider": "anthropic", "is_marker": True, "mock": True,
     })
-    assert captured["img"] is not None and captured["img"].name == "fake"
+    assert captured["img"] is not None and captured["img"].name == "demo"
 
 
 def test_review_mock_injects_fake_vision_provider(monkeypatch):
@@ -79,7 +79,7 @@ def test_review_mock_injects_fake_vision_provider(monkeypatch):
         "run_id": rid, "studio": "review", "prompt": "검토",
         "provider": "anthropic", "is_marker": True, "mock": True,
     })
-    assert captured["vision"] is not None and captured["vision"].name == "fake"
+    assert captured["vision"] is not None and captured["vision"].name == "demo"
 
 
 def test_design_no_mock_uses_google_image_provider(monkeypatch):

@@ -246,13 +246,13 @@ def create_app() -> FastAPI:
     @app.post("/gateway/run")
     async def gateway_run(body: GatewayRun, user_id: str = Depends(user_id_dep)) -> dict:
         require_owner(body.run_id, user_id)
-        provider_name = "fake" if body.mock else body.provider
+        provider_name = "demo" if body.mock else body.provider
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=provider_name,
                              is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
                              action=body.action, user_id=user_id,
                              bypass_map=body.bypass_map)
-        media_name = "fake" if body.mock else "google"
+        media_name = "demo" if body.mock else "google"
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:
