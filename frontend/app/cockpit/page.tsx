@@ -7,6 +7,7 @@ import { WorkspacePanel } from "@/components/cockpit/WorkspacePanel";
 import { RunList } from "@/components/cockpit/RunList";
 import { EntitlementPanel } from "@/components/cockpit/EntitlementPanel";
 import { AccountPanel } from "@/components/cockpit/AccountPanel";
+import { MockModePanel } from "@/components/cockpit/MockModePanel";
 import { UpsellModal } from "@/components/cockpit/UpsellModal";
 import { AskUserToast } from "@/components/cockpit/AskUserToast";
 
@@ -32,6 +33,7 @@ function CockpitInner() {
           <div className="flex-1 space-y-6 overflow-y-auto bg-surface px-6 py-8">
             <div className="mx-auto w-full max-w-3xl space-y-6">
               <AccountPanel />
+              <MockModePanel />
               <EntitlementPanel />
             </div>
           </div>
