@@ -103,3 +103,23 @@ def test_design_no_mock_uses_google_image_provider(monkeypatch):
         "provider": "anthropic", "is_marker": True,
     })
     assert captured["img"].name == "google"
+
+
+def test_advisor_mock_forces_scripted(monkeypatch):
+    """ADVISOR_MODE=live여도 mock=true면 scripted(LLM 없음) — 응답에 _usage 없음."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("ADVISOR_MODE", "live")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # live+빈키면 422 — mock 강제 전 실 호출 방지
+    import app.server as srv
+    client = TestClient(srv.create_app())
+    rid = client.post("/runs", json={}).json()["run_id"]
+    # advisor는 entitlement.check 직접 통과 필요(override 무관) → dev pass 설정.
+    client.put("/entitlement", json={"marker": True})
+    # package copy.meta.json 준비(ctx_raw). channel은 package_id 접두("sms").
+    client.put(f"/vfs/{rid}/deploy/packages/sms_ko/copy.meta.json",
+               json={"content": "{}"})
+    r = client.post(f"/runs/{rid}/deploy/advisor/chat", json={
+        "package_id": "sms_ko", "message": "짧게 줄여줘", "mock": True,
+    })
+    assert r.status_code == 200
+    assert "_usage" not in r.json()   # scripted는 usage 미노출(server.py:501 분기)

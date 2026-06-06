@@ -80,6 +80,7 @@ class DeployPackageBody(BaseModel):
 class AdvisorChatBody(BaseModel):
     package_id: str
     message: str
+    mock: bool = False   # 시연용 — true면 advisor를 scripted(LLM 없음)로 강제
 
 
 class DispatchBody(BaseModel):
@@ -469,11 +470,13 @@ def create_app() -> FastAPI:
                 "tool_calls": [],
             }
 
-    def _make_advisor_provider(ctx: dict, channel: str):
-        """advisor_mode 분기 — auto: 키 있으면 live, scripted: 강제 scripted, live: 키 필수.
+    def _make_advisor_provider(ctx: dict, channel: str, mock: bool = False):
+        """advisor_mode 분기 — mock: 강제 scripted, auto: 키 있으면 live, scripted: 강제 scripted, live: 키 필수.
 
         실LLM 배선 실패(SDK import / 호출 예외)는 호출부에서 잡아 422로 변환.
         """
+        if mock:
+            return _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
         mode = settings.advisor_mode
         has_key = bool(settings.anthropic_api_key)
         if mode == "live" or (mode == "auto" and has_key):
@@ -497,7 +500,7 @@ def create_app() -> FastAPI:
         ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
         ctx = json.loads(ctx_raw) if ctx_raw else {}
         channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
-        provider = _make_advisor_provider(ctx, channel)
+        provider = _make_advisor_provider(ctx, channel, mock=body.mock)
         h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
         result = h.handle_turn(package_id=body.package_id, user_message=body.message)
         # advisor live LLM이 usage 노출 시 영속(scripted는 _usage 없음 → skip).
