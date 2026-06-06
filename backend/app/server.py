@@ -50,6 +50,7 @@ class GatewayRun(BaseModel):
     bypass: bool = False
     action: str | None = None
     bypass_map: dict | None = None
+    mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
 
 
 class PutText(BaseModel):
@@ -79,6 +80,7 @@ class DeployPackageBody(BaseModel):
 class AdvisorChatBody(BaseModel):
     package_id: str
     message: str
+    mock: bool = False   # 시연용 — true면 advisor를 scripted(LLM 없음)로 강제
 
 
 class DispatchBody(BaseModel):
@@ -244,18 +246,20 @@ def create_app() -> FastAPI:
     @app.post("/gateway/run")
     async def gateway_run(body: GatewayRun, user_id: str = Depends(user_id_dep)) -> dict:
         require_owner(body.run_id, user_id)
+        provider_name = "fake" if body.mock else body.provider
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
-                             user_prompt=body.prompt, provider=body.provider,
+                             user_prompt=body.prompt, provider=provider_name,
                              is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
                              action=body.action, user_id=user_id,
                              bypass_map=body.bypass_map)
+        media_name = "fake" if body.mock else "google"
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:
-            harness = DesignHarness(image_provider=_ModelBoundProvider("google"))
+            harness = DesignHarness(image_provider=_ModelBoundProvider(media_name))
         elif body.studio == "review" and body.is_marker:
             from .gateway.harness_review import ReviewHarness
-            harness = ReviewHarness(vision_provider=_ModelBoundProvider("google"))
+            harness = ReviewHarness(vision_provider=_ModelBoundProvider(media_name))
         else:
             harness = PassthroughHarness()
         try:
@@ -466,11 +470,13 @@ def create_app() -> FastAPI:
                 "tool_calls": [],
             }
 
-    def _make_advisor_provider(ctx: dict, channel: str):
-        """advisor_mode 분기 — auto: 키 있으면 live, scripted: 강제 scripted, live: 키 필수.
+    def _make_advisor_provider(ctx: dict, channel: str, mock: bool = False):
+        """advisor_mode 분기 — mock: 강제 scripted, auto: 키 있으면 live, scripted: 강제 scripted, live: 키 필수.
 
         실LLM 배선 실패(SDK import / 호출 예외)는 호출부에서 잡아 422로 변환.
         """
+        if mock:
+            return _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
         mode = settings.advisor_mode
         has_key = bool(settings.anthropic_api_key)
         if mode == "live" or (mode == "auto" and has_key):
@@ -494,7 +500,7 @@ def create_app() -> FastAPI:
         ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
         ctx = json.loads(ctx_raw) if ctx_raw else {}
         channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
-        provider = _make_advisor_provider(ctx, channel)
+        provider = _make_advisor_provider(ctx, channel, mock=body.mock)
         h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
         result = h.handle_turn(package_id=body.package_id, user_message=body.message)
         # advisor live LLM이 usage 노출 시 영속(scripted는 _usage 없음 → skip).
