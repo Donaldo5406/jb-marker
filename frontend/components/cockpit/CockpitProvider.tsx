@@ -91,6 +91,9 @@ export type CockpitContextValue = {
   askAdvisor: (packageId: string, message: string) => Promise<AdvisorResult>;
   dispatchConfirm: () => Promise<DispatchResult>;
   payDemo: () => Promise<{ dev_pass: boolean }>;
+  // ---- mock(시연) 모드 ----
+  mockMode: boolean;
+  setMockMode: (on: boolean) => void;
 };
 
 const CockpitContext = createContext<CockpitContextValue | null>(null);
@@ -142,6 +145,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [devPass, setDevPass] = useState(false);
   // M7-B: history 목록 ↔ 상세 뷰 전환 — 선택된 run id(null=목록 표시).
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<string | null>(null);
+  // 시연용 Mock 모드 — 모든 백엔드 호출에 mock 플래그 동봉. ref로 콜백 재생성 없이 최신값 참조.
+  const [mockMode, setMockModeState] = useState(false);
+  const mockModeRef = useRef(false);
+  mockModeRef.current = mockMode;
+  const setMockMode = useCallback((on: boolean) => {
+    setMockModeState(on);
+    if (typeof window !== "undefined") window.localStorage.setItem("jbm_mock_mode", on ? "1" : "0");
+  }, []);
 
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
@@ -322,6 +333,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
           provider: p.provider, is_marker: p.isMarker, bypass: p.bypass ?? false,
+          mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
         setPendingAsk(res.ask ?? null);
@@ -347,6 +359,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       provider: "anthropic", is_marker: true, action,
       bypass: !!designBypass[designStep],   // 호환: 현재 step의 bypass 단일 플래그
       bypass_map: designBypass,             // 전체 맵 전송(백엔드 연쇄 전제)
+      mock: mockModeRef.current,
     });
     await refreshTree();
     const st = res.meta?.step;
@@ -388,7 +401,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     // 3) R0 호출.
     const res = await api.gatewayRun({
       run_id: id, studio: "review", prompt: "검토 시작",
-      provider: "anthropic", is_marker: true,
+      provider: "anthropic", is_marker: true, mock: mockModeRef.current,
     });
     // 4) manifest·트리 재조회 + state 진행.
     await Promise.all([refreshTree(), loadManifest(id)]);
@@ -412,7 +425,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     if (!id) return;
     await api.gatewayRun({
       run_id: id, studio: "review", prompt: "",
-      provider: "anthropic", is_marker: true, action: "ack",
+      provider: "anthropic", is_marker: true, action: "ack", mock: mockModeRef.current,
     });
     setReviewAcknowledged(true);
     await loadManifest(id);
@@ -424,7 +437,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     if (!id) return;
     await api.gatewayRun({
       run_id: id, studio: "review", prompt: "",
-      provider: "anthropic", is_marker: true, action: "restart",
+      provider: "anthropic", is_marker: true, action: "restart", mock: mockModeRef.current,
     });
     setReviewStage("R0");
     setReviewGate(null);
@@ -456,7 +469,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     try {
       const res = await api.gatewayRun({
         run_id: id, studio: "brainstorming", prompt: choice,
-        provider: "anthropic", is_marker: true, answer: choice,
+        provider: "anthropic", is_marker: true, answer: choice, mock: mockModeRef.current,
       });
       if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
       setPendingAsk(res.ask ?? null);
@@ -527,7 +540,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/advisor/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ package_id: packageId, message }),
+      body: JSON.stringify({ package_id: packageId, message, mock: mockModeRef.current }),
     });
     if (res.status === 402) {
       return { needsPayment: true };
@@ -567,6 +580,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       await ensureSession();
       if (cancelled) return;
       if (typeof window !== "undefined") {
+        const mm = window.localStorage.getItem("jbm_mock_mode");
+        if (mm !== null) setMockModeState(mm === "1");
         const fromUrl = new URL(window.location.href).searchParams.get("run");
         if (fromUrl) void openRun(fromUrl);
       }
@@ -657,6 +672,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     askAdvisor,
     dispatchConfirm,
     payDemo,
+    mockMode,
+    setMockMode,
   };
 
   return <CockpitContext.Provider value={value}>{children}</CockpitContext.Provider>;
