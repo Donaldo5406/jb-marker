@@ -36,3 +36,9 @@ const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", 
 export function isImagePath(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
 }
+
+/** 툴바 표시용 사람친화 이름. .scene는 확장자 대신 의미 라벨. */
+export function displayName(name: string): string {
+  if (extOf(name) === "scene") return "구조화 씬";
+  return name;
+}
