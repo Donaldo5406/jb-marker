@@ -373,7 +373,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_days_ago": 900
   },
   {
     "id": "c0004",
@@ -413,7 +414,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0009",
@@ -549,7 +551,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0026",
@@ -557,7 +560,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "c0027",
@@ -685,7 +689,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0043",
@@ -741,7 +746,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_days_ago": 900
   },
   {
     "id": "c0050",
@@ -821,7 +827,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0060",
@@ -925,7 +932,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_days_ago": 900
   },
   {
     "id": "c0073",
@@ -957,7 +965,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0077",
@@ -1093,7 +1102,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0094",
@@ -1109,7 +1119,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "c0096",
@@ -1229,7 +1240,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0111",
@@ -1293,7 +1305,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_days_ago": 900
   },
   {
     "id": "c0119",
@@ -1365,7 +1378,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0128",
@@ -1477,7 +1491,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_days_ago": 900
   },
   {
     "id": "c0142",
@@ -1501,7 +1516,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0145",
@@ -1637,7 +1653,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0162",
@@ -1661,7 +1678,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "c0165",
@@ -1773,7 +1791,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0179",
@@ -1845,7 +1864,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_days_ago": 900
   },
   {
     "id": "c0188",
@@ -1909,7 +1929,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0196",
@@ -2029,7 +2050,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_days_ago": 900
   },
   {
     "id": "c0211",
@@ -2045,7 +2067,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0213",
@@ -2181,7 +2204,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0230",
@@ -2213,7 +2237,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "c0234",
@@ -2317,7 +2342,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0247",
@@ -2397,7 +2423,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_days_ago": 900
   },
   {
     "id": "c0257",
@@ -2453,7 +2480,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0264",
@@ -2581,7 +2609,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_days_ago": 900
   },
   {
     "id": "c0280",
@@ -2589,7 +2618,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0281",
@@ -2725,7 +2755,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0298",
@@ -2765,7 +2796,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "c0303",
@@ -2861,7 +2893,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0315",
@@ -2949,7 +2982,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_days_ago": 900
   },
   {
     "id": "c0326",
@@ -2997,7 +3031,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0332",
@@ -3133,7 +3168,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "c0349",
@@ -3269,7 +3305,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_purpose": "service"
   },
   {
     "id": "c0366",
@@ -3317,7 +3354,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "c0372",
@@ -3405,7 +3443,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "c0383",
@@ -3501,7 +3540,8 @@
     "opt_out": false,
     "night_consent": false,
     "last_same_product_days": null,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_days_ago": 900
   },
   {
     "id": "c0395",
@@ -3541,7 +3581,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": null,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "d0000",
@@ -3949,7 +3990,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": 30,
-    "lang": "vi"
+    "lang": "vi",
+    "collected_purpose": "service"
   },
   {
     "id": "e0002",
@@ -4053,7 +4095,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": 30,
-    "lang": "zh"
+    "lang": "zh",
+    "collected_days_ago": 900
   },
   {
     "id": "e0015",
@@ -4085,7 +4128,8 @@
     "opt_out": false,
     "night_consent": true,
     "last_same_product_days": 30,
-    "lang": "ko"
+    "lang": "ko",
+    "collected_purpose": "service"
   },
   {
     "id": "e0019",

@@ -395,6 +395,7 @@ def create_app() -> FastAPI:
             "total": result["total"],
             "eligible_count": result["eligible_count"],
             "excluded_count": len(result["excluded"]),
+            "breakdown": result["breakdown"],   # 정책별(§50/§15·§16) 사유 분해
         }
 
     @app.post("/runs/{run_id}/deploy/packages")

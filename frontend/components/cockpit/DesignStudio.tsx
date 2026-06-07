@@ -10,7 +10,7 @@ import { DesignSettings } from "./DesignSettings";
 import { displayName, baseName } from "@/lib/fileType";
 import { cn } from "@/lib/utils";
 
-const LANGS = ["ko", "vi", "en"];
+const LANGS = ["ko", "en", "vi", "zh"];
 
 /** design 탭: col-span-2 단일 컨테이너.
  *  상단=PipelineRail(StepProgress+액션+⚙) / [⚙시 스킵 스코프 드롭다운] /

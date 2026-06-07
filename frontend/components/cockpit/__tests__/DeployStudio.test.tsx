@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let ctx: any;
@@ -26,6 +26,7 @@ function makeCtx(overrides: Partial<any> = {}) {
     askAdvisor: vi.fn(),
     dispatchConfirm: vi.fn(),
     payDemo: vi.fn(),
+    selectFile: vi.fn(),
     ...overrides,
   };
 }
@@ -53,5 +54,34 @@ describe("DeployStudio", () => {
   it("eligibility 없으면 D0 세그먼트가 active 상태다", () => {
     render(<DeployStudio />);
     expect(screen.getByTestId("step-seg-D0").dataset.state).toBe("active");
+  });
+
+  it("발송 확정 시 결과 패널([STUB] N명)과 Report 링크를 렌더한다 (T4)", async () => {
+    // 채널 선택 상태는 CockpitProvider(ctx)에서 옴 — selectedProviders로 발송 버튼 활성.
+    ctx = makeCtx({
+      selectedProviders: ["email"],
+      eligibility: { total: 10, eligible_count: 8, excluded_count: 2 },
+      dispatchConfirm: vi.fn().mockResolvedValue({
+        step_status: "dispatched",
+        simulation: [{ channel: "email", lang: "ko", status: "sent", recipients_count: 8 }],
+      }),
+    });
+    render(<DeployStudio />);
+    await act(async () => { fireEvent.click(screen.getByText("발송 확정 (시뮬)")); });
+    const panel = await screen.findByTestId("dispatch-result");
+    expect(panel.textContent).toContain("[STUB]");
+    expect(panel.textContent).toContain("8");
+    expect(screen.getByText("Deploy Report 보기")).toBeTruthy();
+  });
+
+  it("dispatchConfirm이 needsPayment면 결과 패널 대신 결제 모달을 연다", async () => {
+    ctx = makeCtx({
+      selectedProviders: ["email"],
+      eligibility: { total: 10, eligible_count: 8, excluded_count: 2 },
+      dispatchConfirm: vi.fn().mockResolvedValue({ needsPayment: true }),
+    });
+    render(<DeployStudio />);
+    await act(async () => { fireEvent.click(screen.getByText("발송 확정 (시뮬)")); });
+    expect(screen.queryByTestId("dispatch-result")).toBeNull();
   });
 });

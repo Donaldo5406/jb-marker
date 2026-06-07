@@ -1,4 +1,5 @@
 import json
+import re
 
 from app.gateway.harness import HarnessRequest
 from app.gateway.harness_design import DesignHarness
@@ -172,6 +173,24 @@ def test_s3_writes_metadata_and_marks_done(tmp_path):
     assert s.get_manifest("r1").step_status["design"] == "done"
 
 
+def test_s3_metadata_includes_body_key(tmp_path):
+    """metadata.md는 headline/body/cta를 모두 표기해야 한다(copy 키는 'body'이며 'sub' 아님).
+    기존 루프가 'sub'를 찾아 body가 누락됐다(spec T1)."""
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S3", "confirmed": {}, "bypass": {"S3": True}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"copy": {"ko": {"headline": "든든한 적금", "body": "12개월 만기 100만원부터", "cta": "가입하기"}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="confirm"), provider=FakeProvider(), store=s)
+    md = s.get("/r1/design/metadata.md").content_text
+    assert "든든한 적금" in md   # headline
+    assert "12개월 만기 100만원부터" in md   # body (회귀 방지: 'sub'면 누락됨)
+    assert "가입하기" in md   # cta
+
+
 def test_done_step_is_idempotent_no_error(tmp_path):
     s = _store(tmp_path)
     s.put("/r1/design/_state.json", json.dumps(
@@ -321,6 +340,34 @@ def test_s3_runs_and_records_critic_without_blocking(tmp_path):
 
 
 # --- Task 19 FIX D (I5): localized AI-generated notice per language ---
+
+
+def test_s2c_localizes_disclosure_and_stages_vi_zh_missing(tmp_path):
+    """T2: 법령 고지는 표시문(번역)이 있는 언어(ko·en)에만 부착, 없는 언어(vi·zh)는 누락.
+    → vi/zh 포스터 한글 0 + 예금자보호 고지 누락(spec §2 위반#4 스테이징). en엔 영문 고지."""
+    s = _store(tmp_path)
+    s.put("/r1/brainstorming/plan.md",
+          "---\ndisclosures: [예금자보호법에 따라 5천만원까지 보호]\n"
+          "languages: [ko, en, vi, zh]\n---\n본문",
+          source="marker", mime="text/markdown")
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2c", "confirmed": {}, "bypass": {},
+         "languages": ["ko", "en", "vi", "zh"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    ko = s.get("/r1/design/design-system/components/disclosure/ko.txt").content_text
+    en = s.get("/r1/design/design-system/components/disclosure/en.txt").content_text
+    vi = s.get("/r1/design/design-system/components/disclosure/vi.txt").content_text
+    zh = s.get("/r1/design/design-system/components/disclosure/zh.txt").content_text
+    assert "예금자보호" in ko                                  # ko: 한국어 법령 고지
+    assert "Protected up to" in en                            # en: 영문 법령 고지(표시문 보유)
+    assert "예금자보호" not in en                              # en에 한국어 미혼입
+    assert "Protected up to" not in vi and "Protected up to" not in zh  # vi/zh: 고지 누락(위반#4)
+    H = re.compile(r"[가-힣]")
+    assert not H.search(en), f"en 한글 혼입: {en!r}"
+    assert not H.search(vi), f"vi 한글 혼입: {vi!r}"            # vi 현지화 고지만(한글 0)
+    assert not H.search(zh), f"zh 한글 혼입: {zh!r}"            # zh 현지화 고지(zh NOTICE)
 
 
 def test_s2c_localizes_ai_notice_per_language(tmp_path):
