@@ -19,7 +19,7 @@ def test_create_run_and_list(client):
     lst = client.get(f"/vfs/{run_id}", params={"prefix": f"/{run_id}/brainstorming"})
     assert any(n["path"] == out_path for n in lst.json()["nodes"])
 
-    got = client.get(f"/vfs/{run_id}/brainstorming/passthrough.md")
+    got = client.get(f"/vfs/{run_id}/brainstorming/_passthrough.md")
     assert got.status_code == 200
     assert "아이디어" in got.json()["content_text"]
 
@@ -104,7 +104,7 @@ def test_free_brain_uses_passthrough():
     body = {"run_id": rid, "studio": "brainstorming", "prompt": "hi", "provider": "fake", "is_marker": False}
     r = client.post("/gateway/run", json=body)
     assert r.status_code == 200
-    assert r.json()["output_path"].endswith("/passthrough.md")
+    assert r.json()["output_path"].endswith("/_passthrough.md")
 
 
 def test_vfs_put_base64_decodes_to_bytes(client):
