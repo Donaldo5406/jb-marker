@@ -14,7 +14,7 @@ import { AskUserToast } from "@/components/cockpit/AskUserToast";
 function CockpitInner() {
   const c = useCockpit();
   return (
-    <div className="flex h-screen bg-background text-on-surface">
+    <div className="flex h-screen bg-surface text-on-surface">
       <Sidebar view={c.view} onView={c.setView} />
       <div className="flex flex-1 flex-col overflow-hidden">
         {c.view === "workspace" && (

@@ -98,7 +98,7 @@ export function WorkspacePanel() {
   // design/review/deploy(및 그 외): 좌측 FileTree 고정 + 스튜디오 콘텐츠(현행 3트랙 그리드 유지, 리사이즈 없음).
   // 스튜디오들은 col-span-2 / 2-자식 Fragment로 우측 2트랙(1fr·360px)을 채우므로 그리드 트랙을 보존한다.
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr_360px] overflow-hidden">
+    <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr_360px] overflow-hidden bg-surface">
       {/* 좌: FileTree(모든 스튜디오에서 유지) */}
       <div className="min-h-0 overflow-hidden border-r border-outline-variant">
         <FileTree />
