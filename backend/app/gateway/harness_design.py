@@ -17,7 +17,8 @@ import re
 import yaml
 
 from ..core.grounding import build_corpus, find_ungrounded
-from ..core.visual_rules import visual_compliance_summary
+from ..core.lang import normalize_languages
+from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
 from .harness import Harness, HarnessRequest, HarnessResult
 
@@ -104,6 +105,8 @@ class DesignHarness(Harness):
         if n and n.content_text:
             st = json.loads(n.content_text)
             st.setdefault("gate", None)   # 레거시 run 백필(spec §6)
+            # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
+            st["languages"] = normalize_languages(st.get("languages"))
             return st
         return {"step": "S0", "gate": None, "confirmed": {}, "bypass": {},
                 "languages": ["ko"], "pending_ask": None}
@@ -264,18 +267,28 @@ class DesignHarness(Harness):
         refs = self._load_references()
         sys = self.system_prompt() + (
             "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
-            "텍스트는 copy[lang][key]에, 슬롯은 role/bbox/z/copy_key로. "
-            "시각 적법성 검토를 위해 텍스트 슬롯(headline/body/cta/disclosure)에는 font_px(정수)와 "
-            "color(#RRGGBB)를, 최상위에는 bg_color(#RRGGBB, 배경 대표 톤)를 포함하세요. "
+            "slots에는 반드시 headline·body·cta·disclosure 4개 역할을 모두 포함하고, "
+            "각 슬롯은 role·bbox{x,y,w,h}·z·copy_key를 갖습니다. 텍스트는 copy[lang][key]에 둡니다. "
+            "시각 적법성 검토를 위해 각 텍스트 슬롯에 font_px(정수)와 color(#RRGGBB)를, "
+            "최상위에 bg_color(#RRGGBB, 배경 대표 톤)를 반드시 포함하세요. "
             "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
-            "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
-            'JSON 한 개만: {"reply":"...","layout_spec":{...},"ready":true/false}'
+            "분명하도록(명도대비 4.5:1 이상) 설정하세요. 정확한 출력 형식 예시:\n"
+            '{"reply":"...","ready":true,"layout_spec":{"aspect":"4:5","bg_color":"#F2EFE9",'
+            '"slots":['
+            '{"role":"headline","bbox":{"x":80,"y":120,"w":920,"h":180},"z":3,"copy_key":"headline","font_px":96,"color":"#0B1324"},'
+            '{"role":"body","bbox":{"x":80,"y":340,"w":900,"h":120},"z":2,"copy_key":"body","font_px":40,"color":"#1A2332"},'
+            '{"role":"cta","bbox":{"x":80,"y":980,"w":520,"h":96},"z":3,"copy_key":"cta","font_px":44,"color":"#FFFFFF"},'
+            '{"role":"disclosure","bbox":{"x":80,"y":1180,"w":920,"h":120},"z":1,"copy_key":"disclosure","font_px":30,"color":"#3A3A3A"}'
+            '],"copy":{"ko":{"headline":"...","body":"...","cta":"...","disclosure":"..."}}}}'
+            "\nJSON 한 개만 출력(코드펜스·주석 금지)."
             f"\n[tokens]\n{tokens.content_text if tokens else '{}'}"
             f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}")
         resp = provider.complete([Message("user", req.user_prompt or "러프 시작")],
                                  model=req.provider, system=sys)
         data = self._parse_json(resp.text)
         spec = data.get("layout_spec") or {}
+        # 실 LLM이 font_px를 생략해도 R-VIS-1(글자크기 비율)이 동작하도록 bbox 높이로 보강(결정론).
+        enrich_visual_metadata(spec)
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
@@ -290,18 +303,22 @@ class DesignHarness(Harness):
             (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
         concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
         aspect = spec.get("aspect", "1:1")
-        # M8: Nano Banana 실패(키 없음 등) → fake 폴백(턴 전체 500 방지, spec §9).
+        # M8: Nano Banana 실패(키 없음 등) → 보이는 그라데이션 placeholder 폴백(턴 전체 500 방지, spec §9).
+        # (이전엔 1×1 투명 PNG라 캔버스가 빈 것처럼 보였다 — 실모드 GOOGLE_API_KEY 부재 시 정체.)
         fallback = False
         try:
             png = self._image_provider.generate_image(concept, aspect=aspect)
         except Exception:
-            from ..providers.fake import FakeProvider
-            png = FakeProvider().generate_image(concept, aspect=aspect)
+            from ..core.placeholder_image import placeholder_png
+            png = placeholder_png(aspect)
             fallback = True
         path = f"{base}/design-system/components/visual/v1.png"
         store.put(path, png, source="gemini", mime="image/png",
                   meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
-        return HarnessResult(text="비주얼을 생성했습니다.", output_path=path,
+        text = ("비주얼을 생성했습니다." if not fallback else
+                "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
+                "실 이미지는 GOOGLE_API_KEY 설정이 필요합니다.")
+        return HarnessResult(text=text, output_path=path,
             meta={"source": "gemini", "step": "S2a", "image_fallback": fallback},
             events=[{"type": "artifact", "path": path}])
 
@@ -408,12 +425,14 @@ class DesignHarness(Harness):
         # 시각 적법성 메타데이터(결정론) — 글자크기·대비·고지 시인성 측정값을 기록해
         # Review가 비전 LLM 없이도 1차 판단(core/visual_rules와 동일 계산).
         vc = visual_compliance_summary(spec)
+        font_note = " (bbox 높이 기반 추정 — 다행 고지는 과대추정 가능)" if vc.get("font_px_estimated") else ""
         lines += ["", "## 시각 적법성(visual_compliance)",
                   f"- passed: {vc['passed']}",
-                  f"- disclosure_font_px: {vc['disclosure_font_px']}",
+                  f"- disclosure_font_px: {vc['disclosure_font_px']}{font_note}",
                   f"- max_text_font_px: {vc['max_text_font_px']}",
                   f"- disclosure_contrast: {vc['disclosure_contrast']}",
-                  f"- bg_color: {vc['bg_color']}"]
+                  f"- bg_color: {vc['bg_color']}",
+                  f"- font_px_estimated: {vc.get('font_px_estimated', False)}"]
         for v in vc["violations"]:
             lines.append(f"- 위반 {v['rule']}({v['severity']}): {v['evidence']}")
         store.put(f"{base}/metadata.md", "\n".join(lines),
@@ -453,7 +472,9 @@ class DesignHarness(Harness):
         store.put(f"{base}/_material_matrix.json",
                   json.dumps(fm.get("material_matrix", []), ensure_ascii=False),
                   source="marker", mime="application/json")
-        state["languages"] = fm.get("languages", ["ko"])
+        # 실 LLM은 languages를 객체 리스트([{code:...}])로 쓸 수 있어 문자열 코드로 정규화.
+        # (안 하면 _s2c_brand/_s3_final의 NOTICES.get/copy.get가 dict 키 → TypeError로 크래시.)
+        state["languages"] = normalize_languages(fm.get("languages"))
         return HarnessResult(
             text="디자인 토큰을 확정했습니다. Rough 단계로 진행합니다.",
             output_path=f"{base}/design-system/tokens.json",

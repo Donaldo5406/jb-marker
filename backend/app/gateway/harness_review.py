@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import yaml
 
+from ..core.lang import normalize_languages
 from ..core.legal_search import _parse_json, apply_whitelist, load_whitelist, search_and_filter
 from ..core.severity import (  # T7: import-only, 사용은 T11/T14
     DISCLOSURE_I18N,
@@ -88,7 +89,10 @@ class ReviewHarness(Harness):
     def _load_state(self, store, run_id: str) -> dict:
         n = store.get(f"{self._base(run_id)}/_state.json")
         if n and n.content_text:
-            return json.loads(n.content_text)
+            st = json.loads(n.content_text)
+            # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
+            st["languages"] = normalize_languages(st.get("languages"))
+            return st
         return {
             "step": "R0", "languages": ["ko"], "matrix": {},
             "bypass": {}, "acknowledged": False, "last_run_at": None,
@@ -152,7 +156,8 @@ class ReviewHarness(Harness):
         # plan.md frontmatter → languages·disclosures
         plan_node = store.get(f"/{run_id}/brainstorming/plan.md")
         fm = _frontmatter(plan_node.content_text if plan_node else "")
-        languages = fm.get("languages") or ["ko"]
+        # 실 LLM은 languages를 객체 리스트로 쓸 수 있어 문자열 코드로 정규화(경로/matrix 키 안전).
+        languages = normalize_languages(fm.get("languages"))
 
         # 멱등 cleanup (stale 제거)
         self._cleanup_review_tree(store, run_id)

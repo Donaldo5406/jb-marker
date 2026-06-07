@@ -461,3 +461,99 @@ def test_regenerate_with_no_gate_runs_pipeline(tmp_path):
     # 게이트 없음 + regenerate → (c) 루프 진입(S0→S1 게이트)
     st = json.loads(s.get("/r1/design/_state.json").content_text)
     assert st["step"] == "S1" and st["gate"] == "S1"
+
+
+# --- FIX A: 실 LLM의 객체 리스트 languages → 문자열 코드 정규화(unhashable 크래시 방지) ---
+
+_PLAN_OBJ_LANGS = (
+    "---\n"
+    "creative_direction:\n  palette: [\"#0A84FF\"]\n  font: Inter\n  aspect: \"1:1\"\n"
+    "factsheet:\n  rate: \"연 3.5%\"\n"
+    "disclosures:\n  - \"예금자보호법에 따라 5천만원까지 보호\"\n"
+    "material_matrix: [{channel: instagram, lang: ko}]\n"
+    "languages:\n"
+    "  - code: ko\n    label: 한국어\n    primary: true\n"
+    "  - code: en\n    label: English\n"
+    "---\n본문")
+
+
+def _bypass_all_req():
+    return HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                          provider="fake", is_marker=True, action="advance",
+                          bypass_map={s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")})
+
+
+def test_s0_normalizes_object_list_languages(tmp_path):
+    s = _store(tmp_path)
+    s.put("/r1/brainstorming/plan.md", _PLAN_OBJ_LANGS, source="marker", mime="text/markdown")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(), provider=FakeProvider(), store=s)
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["languages"] == ["ko", "en"]   # 객체 → 문자열 코드
+
+
+def test_object_list_languages_pipeline_does_not_crash(tmp_path):
+    # 회귀 가드: 실 Claude의 객체 리스트 languages가 S2c(NOTICES.get)·S3(copy.get)에서
+    # unhashable dict로 크래시하던 버그. 정규화 후 done까지 무사 완주해야 한다.
+    s = _store(tmp_path)
+    s.put("/r1/brainstorming/plan.md", _PLAN_OBJ_LANGS, source="marker", mime="text/markdown")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_bypass_all_req(), provider=FakeProvider(), store=s)
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "done"
+    # 언어별 고지 컴포넌트가 문자열 코드 경로로 생성됨(dict 경로 누수 없음).
+    assert s.get("/r1/design/design-system/components/disclosure/ko.txt") is not None
+    assert s.get("/r1/design/design-system/components/disclosure/en.txt") is not None
+    meta_md = s.get("/r1/design/metadata.md").content_text
+    assert "code" not in meta_md.split("# 디자인", 1)[0]  # frontmatter에 dict 누수 없음
+
+
+# --- FIX B: S1이 LLM의 bbox만으로 font_px를 보강해 R-VIS-1을 실효화 ---
+
+
+def test_s1_enriches_font_px_from_bbox_when_llm_omits(tmp_path):
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+
+    class BboxOnlyProvider(FakeProvider):
+        def complete(self, messages, *, model, system=None, tools=None, **kw):
+            from app.providers.base import ProviderResponse
+            doc = {"reply": "러프", "ready": True, "layout_spec": {"aspect": "1:1",
+                   "bg_color": "#FFFFFF", "slots": [
+                       {"role": "headline", "bbox": {"x": 0, "y": 0, "w": 900, "h": 120},
+                        "z": 2, "copy_key": "headline", "color": "#000000"},
+                       {"role": "disclosure", "bbox": {"x": 0, "y": 800, "w": 900, "h": 18},
+                        "z": 1, "copy_key": "disclosure", "color": "#000000"}],
+                   "copy": {"ko": {"headline": "X", "disclosure": "고지"}}}}
+            return ProviderResponse(text=json.dumps(doc, ensure_ascii=False), model=model)
+
+    h.handle_turn(_req(), provider=BboxOnlyProvider(), store=s)   # S0→S1
+    spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
+    fonts = {sl["role"]: sl.get("font_px") for sl in spec["slots"]}
+    assert fonts["headline"] == 120 and fonts["disclosure"] == 18   # bbox 높이로 보강
+
+
+# --- FIX C: 이미지 생성 실패 폴백이 1×1 빈 PNG가 아니라 보이는 placeholder ---
+
+
+def test_s2a_fallback_is_visible_placeholder_not_blank(tmp_path):
+    s = _store(tmp_path)
+
+    class BoomImageProvider(FakeProvider):
+        def generate_image(self, prompt, *, aspect="1:1"):
+            raise RuntimeError("no api key")
+
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"visual_concept": "블루", "aspect": "4:5"}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=BoomImageProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    png = s.get("/r1/design/design-system/components/visual/v1.png")
+    assert png is not None and len(png.blob) > 1000   # 1×1(약 70바이트) 아님
+    assert png.blob[:8] == b"\x89PNG\r\n\x1a\n"
+    assert res.meta.get("image_fallback") is True
+    assert "GOOGLE_API_KEY" in res.text
