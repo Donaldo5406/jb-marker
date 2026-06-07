@@ -7,7 +7,8 @@ import { FileContent } from "./FileContent";
 import { ChatPane } from "./ChatPane";
 import { PipelineRail } from "./PipelineRail";
 import { DesignSettings } from "./DesignSettings";
-import { displayName } from "@/lib/fileType";
+import { displayName, baseName } from "@/lib/fileType";
+import { cn } from "@/lib/utils";
 
 const LANGS = ["ko", "vi", "en"];
 
@@ -51,7 +52,7 @@ export function DesignStudio() {
           {sceneOpen && c.openFile ? (
             <>
               <div className="flex items-center gap-2 border-b border-outline-variant bg-surface-container-low px-3 py-2">
-                <span className="flex-1 truncate text-body-sm font-medium text-on-surface">{displayName("main.scene")}</span>
+                <span className="flex-1 truncate text-body-sm font-medium text-on-surface">{displayName(baseName(c.openFile.path))}</span>
                 <button type="button" onClick={c.closeFile} aria-label="씬 닫기" title="닫기"
                   className="inline-flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high">
                   <X className="h-4 w-4" aria-hidden />
@@ -75,7 +76,7 @@ export function DesignStudio() {
             <span className="mr-1 text-caption text-on-surface-variant">언어</span>
             {LANGS.map((l) => (
               <button key={l} type="button" onClick={() => void c.switchDesignLang(l)}
-                className={"rounded-full px-2.5 py-1 text-caption " + (c.designLang === l ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high")}>
+                className={cn("rounded-full px-2.5 py-1 text-caption", c.designLang === l ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high")}>
                 {l}
               </button>
             ))}
