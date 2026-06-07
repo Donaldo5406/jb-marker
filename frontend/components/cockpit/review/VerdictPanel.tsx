@@ -44,7 +44,7 @@ export function VerdictPanel({ status, gate, acknowledged, stage, busy, onRun, o
 
       {status === "WARN" && !acknowledged && (
         <button type="button" data-testid="ack-button" onClick={onAck}
-          className="w-full rounded-lg bg-severity-warning px-3 py-2 text-body-sm font-medium text-white hover:opacity-90">
+          className="w-full rounded-lg bg-severity-warning px-3 py-2 text-body-sm font-medium text-on-primary hover:opacity-90">
           경고 확인 후 진행
         </button>
       )}
