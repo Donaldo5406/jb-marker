@@ -9,6 +9,7 @@ import { EntitlementPanel } from "@/components/cockpit/EntitlementPanel";
 import { AccountPanel } from "@/components/cockpit/AccountPanel";
 import { MockModePanel } from "@/components/cockpit/MockModePanel";
 import { UpsellModal } from "@/components/cockpit/UpsellModal";
+import { FileViewerDrawer } from "@/components/cockpit/FileViewerDrawer";
 import { AskUserToast } from "@/components/cockpit/AskUserToast";
 
 function CockpitInner() {
@@ -40,6 +41,7 @@ function CockpitInner() {
         )}
       </div>
       <UpsellModal />
+      <FileViewerDrawer />
       <AskUserToast />
     </div>
   );
