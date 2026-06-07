@@ -45,6 +45,10 @@ export function FileContent({
     setCodeMode("read");
   }, [file.path]);
 
+  // scene 파싱을 내용 기준으로 메모이즈 — 무관한 리렌더(폴/토스트)마다 FabricEditor가
+  // 캔버스를 clear+재로딩하지 않도록 안정 참조를 전달한다.
+  const sceneObj = React.useMemo(() => parseScene(file.content), [file.content]);
+
   const isScene = file.path.endsWith(".scene");
   const isMd = file.path.endsWith(".md");
   const isImage = isImagePath(file.path);
@@ -73,7 +77,7 @@ export function FileContent({
         </div>
       )}
       {isScene ? (
-        <FabricEditor scene={parseScene(file.content)} onSave={(json) => onSaveScene(JSON.stringify(json))} />
+        <FabricEditor scene={sceneObj} onSave={(json) => onSaveScene(JSON.stringify(json))} />
       ) : isImage ? (
         <ImageView runId={runId} path={file.path} />
       ) : showPreview ? (
