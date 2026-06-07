@@ -169,6 +169,32 @@ def test_r1_legal_text_search_persists_verdicts(tmp_path, make_scripted):
     assert state["step"] == "R2"
 
 
+def test_r1_visual_violation_persists_legal_verdict(tmp_path):
+    """#3: R1의 결정론 시각 검사(core/visual_rules)가 layout.spec의 시각 위반을
+    legal verdict(kind=visual)로 영속 → 게이트에 합류. (텍스트 finding 없이도 검출.)"""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    # 고지 글자크기 위반(10px = 최대 72px의 14% < 30%). 고지 슬롯·카피는 존재(R-VIS-3 통과).
+    store.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "bg_color": "#FFFFFF",
+        "slots": [
+            {"role": "headline", "font_px": 72, "color": "#000000"},
+            {"role": "disclosure", "font_px": 10, "color": "#000000"},
+        ],
+        "copy": {"ko": {"disclosure": "예금자보호법에 따라 5천만원까지 보호"}},
+    }), source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)   # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)   # R1(텍스트 0건 + 결정론 시각 검사)
+    verdicts = h._load_all_verdicts(store, "r1")
+    visual = [v for v in verdicts if v.get("kind") == "visual"]
+    assert visual, f"시각 verdict 미검출: {verdicts}"
+    assert any(v["severity"] == "warning" for v in visual)
+    assert all(v["node"] == "legal" for v in visual)          # legal 노드로 합류
+
+
 def test_r1_legal_whitelist_drops_off_source(tmp_path, make_scripted):
     from app.providers.base import ProviderResponse
     store = make_local_store(tmp_path)

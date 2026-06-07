@@ -68,6 +68,8 @@ LAYOUT_SPEC = {
     # 4:5 세로형(인스타/카톡 피드 최적) — 사용자 제공 배경(1122×1402=4:5)을 꽉 채운다.
     # 프론트 assembleScene이 aspect로 캔버스 1080×1350을 산출 → 배경 클리핑 없음.
     "aspect": "4:5",
+    # 시각 적법성 룰(core/visual_rules) 입력 — 배경 대표 톤(밝은 포스터). 고지 대비 계산 근거.
+    "bg_color": "#F2EFE9",
     # bbox는 레퍼런스·실 LLM·프론트 assembleScene과 동일한 {x,y,w,h} 객체 형식.
     # (이전 배열 [x1,y1,x2,y2] 코너 형식은 프론트가 s.bbox.x로 읽어 좌표가 전부
     #  undefined가 되는 버그를 유발 → 텍스트가 원점에 겹치고 배경이 안 채워졌다.)
@@ -75,10 +77,11 @@ LAYOUT_SPEC = {
     "slots": [
         {"role": "background", "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1350}, "z": 0, "copy_key": None},
         {"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3, "copy_key": None},
-        {"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200}, "z": 1, "copy_key": "headline"},
-        {"role": "body", "bbox": {"x": 80, "y": 400, "w": 920, "h": 300}, "z": 1, "copy_key": "body"},
-        {"role": "cta", "bbox": {"x": 80, "y": 1150, "w": 460, "h": 110}, "z": 2, "copy_key": "cta"},
-        {"role": "disclosure", "bbox": {"x": 80, "y": 1276, "w": 920, "h": 58}, "z": 3, "copy_key": "disclosure"},
+        {"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200}, "z": 1, "copy_key": "headline", "font_px": 72, "color": "#0B1324"},
+        {"role": "body", "bbox": {"x": 80, "y": 400, "w": 920, "h": 300}, "z": 1, "copy_key": "body", "font_px": 34, "color": "#1A2332"},
+        {"role": "cta", "bbox": {"x": 80, "y": 1150, "w": 460, "h": 110}, "z": 2, "copy_key": "cta", "font_px": 30, "color": "#FFFFFF"},
+        # 고지 글자 26px = 최대(72)의 36% ≥ 30%(금투협 §5④), 대비 #3A3A3A/#F2EFE9 ≈ 9:1 ≥ 4.5(WCAG) → 적법.
+        {"role": "disclosure", "bbox": {"x": 80, "y": 1276, "w": 920, "h": 58}, "z": 3, "copy_key": "disclosure", "font_px": 26, "color": "#3A3A3A"},
     ],
     "copy": {},
 }

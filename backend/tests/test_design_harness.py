@@ -191,6 +191,30 @@ def test_s3_metadata_includes_body_key(tmp_path):
     assert "가입하기" in md   # cta
 
 
+def test_s3_metadata_includes_visual_compliance(tmp_path):
+    """#3: metadata.md에 시각 적법성 측정값(visual_compliance) 블록이 기록돼야 한다."""
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S3", "confirmed": {}, "bypass": {"S3": True}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "bg_color": "#F2EFE9",
+        "slots": [
+            {"role": "headline", "font_px": 72, "color": "#0B1324"},
+            {"role": "disclosure", "font_px": 26, "color": "#3A3A3A"},
+        ],
+        "copy": {"ko": {"headline": "h", "body": "b", "cta": "c",
+                        "disclosure": "예금자보호법에 따라 5천만원까지 보호"}},
+    }), source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="confirm"), provider=FakeProvider(), store=s)
+    md = s.get("/r1/design/metadata.md").content_text
+    assert "시각 적법성(visual_compliance)" in md
+    assert "disclosure_font_px: 26" in md
+    assert "disclosure_contrast:" in md
+    assert "passed: True" in md   # 적법 레이아웃(26/72=36% ≥ 30%, 대비 ≥ 4.5)
+
+
 def test_done_step_is_idempotent_no_error(tmp_path):
     s = _store(tmp_path)
     s.put("/r1/design/_state.json", json.dumps(
