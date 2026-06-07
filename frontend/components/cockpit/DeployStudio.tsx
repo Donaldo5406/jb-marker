@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Lock, X } from "lucide-react";
+import { Lock, X, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import Link from "next/link";
 import { useCockpit } from "@/components/cockpit/CockpitProvider";
 import { StepProgress, type Step } from "@/components/cockpit/StepProgress";
@@ -28,6 +28,9 @@ const STEPS: Step[] = [
   { id: "D3", label: "발송" },
 ];
 
+type DispatchCell = { channel: string; lang: string; status: string; message?: string; reason?: string; recipients_count?: number };
+type DispatchSim = { step_status?: string; simulation?: DispatchCell[] };
+
 function StepHeader({ id, title, desc }: { id: string; title: string; desc: string }) {
   return (
     <div className="space-y-0.5">
@@ -43,6 +46,8 @@ export function DeployStudio() {
   const [activeAdvisor, setActiveAdvisor] = React.useState<{ channel: string; lang: string } | null>(null);
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [calendar, setCalendar] = React.useState<{ hour: number; blocked: boolean }[]>([]);
+  const [dispatch, setDispatch] = React.useState<DispatchSim | null>(null);
+  const [dispatching, setDispatching] = React.useState(false);
 
   React.useEffect(() => {
     if (!activeAdvisor) return;
@@ -136,11 +141,67 @@ export function DeployStudio() {
               selectedCount={selected.length}
               devPass={c.devPass}
               onConfirm={async () => {
-                const res = await c.dispatchConfirm();
-                if (res.needsPayment) setPaymentOpen(true);
+                setDispatching(true);
+                try {
+                  const res = await c.dispatchConfirm();
+                  if (res.needsPayment) {
+                    setPaymentOpen(true);
+                    return;
+                  }
+                  setDispatch(res as DispatchSim);
+                } finally {
+                  setDispatching(false);
+                }
               }}
               onPayDemo={() => setPaymentOpen(true)}
             />
+
+            {dispatching && (
+              <p className="text-caption text-on-surface-variant" role="status" aria-live="polite">
+                발송을 처리하고 있습니다…
+              </p>
+            )}
+
+            {dispatch?.simulation && (
+              <div className="space-y-2 rounded-xl border border-outline-variant bg-surface-container-low p-4 animate-fade-in-up" data-testid="dispatch-result">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary" aria-hidden />
+                    <p className="text-body-sm font-semibold text-on-surface">발송 완료 (시뮬레이션)</p>
+                  </div>
+                  {c.runId && (
+                    <button
+                      type="button"
+                      onClick={() => void c.selectFile(`/${c.runId}/deploy/report.md`)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1 text-caption font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                    >
+                      <FileText className="h-3.5 w-3.5" aria-hidden />
+                      Deploy Report 보기
+                    </button>
+                  )}
+                </div>
+                <ul className="space-y-1.5">
+                  {dispatch.simulation.map((s, i) => (
+                    <li key={`${s.channel}_${s.lang}_${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                      <span className="text-caption font-medium text-on-surface">{s.channel} · {s.lang}</span>
+                      {s.status === "skipped" ? (
+                        <span className="inline-flex items-center gap-1.5 text-caption text-error">
+                          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                          건너뜀{s.reason ? ` — ${s.reason}` : ""}
+                        </span>
+                      ) : (
+                        <span className="text-caption text-on-surface-variant">
+                          [STUB] {s.recipients_count ?? 0}명 발송 · 시뮬레이션(실 연동 시 실제 발송)
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {dispatch.simulation.length === 0 && (
+                  <p className="text-caption text-on-surface-variant">발송 대상 패키지가 없습니다. 패키징을 먼저 실행하세요.</p>
+                )}
+              </div>
+            )}
           </section>
         )}
       </div>
