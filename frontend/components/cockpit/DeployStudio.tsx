@@ -50,6 +50,11 @@ export function DeployStudio() {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeAdvisor]);
 
+  // 검토 verdict 노드 경로 집합을 안정 키로 — 폴링(c.nodes 식별자 변동)마다 재페치하지 않도록.
+  const verdictKey = React.useMemo(
+    () => c.nodes.filter((n) => /\/review\/(legal|i18n)\/[^/]+\/verdict\.json$/.test(n.path)).map((n) => n.path).join("|"),
+    [c.nodes],
+  );
   React.useEffect(() => {
     if (!c.runId) return;
     let cancelled = false;
@@ -59,7 +64,9 @@ export function DeployStudio() {
     return () => {
       cancelled = true;
     };
-  }, [c.runId, c.nodes]);
+    // c.nodes는 verdictKey에 반영됨 — verdict 노드 변동 시에만 재로드.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.runId, verdictKey]);
 
   const languages: string[] = ["ko"];
   const matrix = selected.flatMap((ch) => languages.map((l) => ({ channel: ch, lang: l })));
