@@ -133,11 +133,6 @@ def _plan_json() -> str:
                        "ask": None, "ready": True}, ensure_ascii=False)
 
 
-# 하네스가 req.bypass일 때 system 프롬프트에 주입하는 마커(harness_brainstorming._BYPASS_DIRECTIVE와 짝).
-# 있으면 멀티턴 대화를 건너뛰고 전체 산출물을 즉시(ready) 반환 → bypass 패스트패스 보존.
-_BYPASS_MARK = "[빠른 진행]"
-
-
 def _count_user_turns(messages) -> int:
     """provider 입력 메시지에서 실제 user 턴 수(압축 요약 헤드 제외)."""
     n = 0
@@ -157,12 +152,10 @@ def _section_after(system: str, marker: str) -> str:
 
 
 def _stage_a_brainstorm(messages, system: str):
-    """Stage A — bypass면 전체 spec 즉시, 아니면 리서치+질문으로 점진 구체화.
+    """Stage A — 리서치+질문으로 점진 구체화(턴 기반). bypass 패스트패스는 제거됨.
 
     Returns: (response_text, citations). 1턴에 리서치 인용을 동반(파일 트리에 research 산출).
     """
-    if _BYPASS_MARK in (system or ""):
-        return _spec_json(), []
     turns = _count_user_turns(messages)
     if turns <= 1:
         # 리서치 후 첫 질문(타겟) — 인용 동반.
@@ -190,13 +183,11 @@ def _stage_a_brainstorm(messages, system: str):
 
 
 def _stage_b_brainstorm(system: str) -> str:
-    """Stage B — bypass면 완성 plan 즉시. 아니면 1차 누락 초안 → 보충 후 완성.
+    """Stage B — 1차 누락 초안 → 보충 후 완성(bypass 패스트패스는 제거됨).
 
     현재 plan.md(system의 '[현재 plan.md]' 구간)가 비어 있으면 1차(누락) 초안을,
     있으면(보충 단계) 완성 plan을 반환. 누락 초안은 하네스 critic이 'c'(보충)로 유도.
     """
-    if _BYPASS_MARK in (system or ""):
-        return _plan_json()
     cur = _section_after(system, "[현재 plan.md]")
     if not cur:
         return json.dumps({

@@ -18,9 +18,9 @@ def _store(tmp_path):
     return s
 
 
-def _req(action="advance", prompt="", bypass=False):
+def _req(action="advance", prompt=""):
     return HarnessRequest(run_id="r1", studio="design", user_prompt=prompt,
-                          provider="fake", is_marker=True, action=action, bypass=bypass)
+                          provider="fake", is_marker=True, action=action)
 
 
 def test_s0_parses_plan_into_tokens_and_state(tmp_path):

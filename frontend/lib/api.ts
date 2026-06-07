@@ -45,12 +45,12 @@ export const api = {
     return j(await authedFetch(`${BASE}/runs`));
   },
   async gatewayRun(p: { run_id: string; studio: string; prompt: string;
-    provider: Provider; is_marker: boolean; answer?: string | null; bypass?: boolean;
+    provider: Provider; is_marker: boolean; answer?: string | null;
     action?: string | null; bypass_map?: Record<string, boolean> | null;
     mock?: boolean }): Promise<GatewayResult> {
     return j(await authedFetch(`${BASE}/gateway/run`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...p, answer: p.answer ?? null, bypass: p.bypass ?? false,
+      body: JSON.stringify({ ...p, answer: p.answer ?? null,
         action: p.action ?? null, bypass_map: p.bypass_map ?? null, mock: p.mock ?? false }),
     }));
   },

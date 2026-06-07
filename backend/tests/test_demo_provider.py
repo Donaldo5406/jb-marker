@@ -80,13 +80,6 @@ def _complete_msgs(msgs, system: str):
         [Message(r, c) for r, c in msgs], model="demo", system=system)
 
 
-def test_detect_stage_a_bypass_returns_spec_ready():
-    """T5: bypass 마커가 있으면 멀티턴을 건너뛰고 전체 spec 즉시(ready)."""
-    r = json.loads(_complete(
-        "페르소나\n\n[Stage A] ... [빠른 진행] 즉시 완성 ...").text)
-    assert r["ready"] is True and "goal:" in r["document"]
-
-
 def test_detect_stage_a_turn1_is_interactive_with_research():
     """T5: bypass 없는 1턴 → spec 미작성·질문(a)·리서치 인용 동반."""
     resp = _complete("페르소나\n\n[Stage A] 대화로 정보 수집 ...")
@@ -103,13 +96,6 @@ def test_detect_stage_a_turn3_returns_full_spec():
             ("user", "2030"), ("assistant", "다국어?"), ("user", "영어 포함")]
     r = json.loads(_complete_msgs(msgs, "페르소나\n\n[Stage A] ...").text)
     assert r["ready"] is True and "goal:" in r["document"]
-
-
-def test_detect_stage_b_bypass_returns_full_plan():
-    """T5: bypass 마커 → 완성 plan 즉시(ready)."""
-    r = json.loads(_complete(
-        "페르소나\n\n[Stage B] ... [빠른 진행] ... [현재 plan.md]\n").text)
-    assert r["ready"] is True and "creative_direction:" in r["document"]
 
 
 def test_detect_stage_b_first_draft_is_partial():

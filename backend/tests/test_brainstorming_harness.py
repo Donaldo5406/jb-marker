@@ -99,7 +99,22 @@ def test_stage_a_parse_failure_falls_back_and_keeps_spec():
     assert s.get("/rb/brainstorming/spec.md").content_text == "---\ngoal: 기존\n---\n본문"  # 기존 spec 보존
 
 
-def test_stage_a_ready_proposes_b_when_not_bypass():
+def test_stage_a_ready_full_spec_proposes_b():
+    # 충분성 충족(전 필드) + ready → 확정(b) 제안. bypass 없이 사람 confirm 경유.
+    from app.gateway.harness_brainstorming import BrainstormingHarness, REQUIRED_SPEC_FIELDS
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    full_spec = "---\n" + "\n".join(f"{k}: v" for k in REQUIRED_SPEC_FIELDS) + "\n---\n본문"
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "정리했습니다.", "document": full_spec, "ask": None, "ready": True})}])
+    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="좋아 정리해줘", provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert res.ask is not None and res.ask.trigger == "b"
+    assert h._load_state(s, "rb")["stage"] == "A"  # 아직 전환 전(사용자 확정 대기)
+
+
+def test_stage_a_ready_missing_fields_asks_c():
+    # 충분성 게이트: ready여도 필수 필드가 빠지면 확정(b) 대신 보충(c)으로 유도.
     from app.gateway.harness_brainstorming import BrainstormingHarness
     from app.gateway.harness import HarnessRequest
     h = BrainstormingHarness(); s = _store()
@@ -107,8 +122,9 @@ def test_stage_a_ready_proposes_b_when_not_bypass():
         {"reply": "정리했습니다.", "document": "---\ngoal: x\n---\n본문", "ask": None, "ready": True})}])
     req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="좋아 정리해줘", provider="fake", is_marker=True)
     res = h.handle_turn(req, provider=stub, store=s)
-    assert res.ask is not None and res.ask.trigger == "b"
-    assert h._load_state(s, "rb")["stage"] == "A"  # 아직 전환 전(사용자 확정 대기)
+    assert res.ask is not None and res.ask.trigger == "c"      # 누락 → 보충
+    assert "target_segments" in res.ask.question               # 누락 필드 안내
+    assert h._load_state(s, "rb")["stage"] == "A"
 
 
 def _seed_stage_b(h, s):
@@ -161,18 +177,33 @@ def test_b_plan_lock_sets_step_done():
     assert s.get_manifest("rb").step_status["brainstorming"] == "done"
 
 
-def test_a_ready_bypass_runs_through_to_done():
-    # bypass 경로: Stage A ready → _stage_b(first=True) → plan 생성 → ready&bypass → done
-    from app.gateway.harness_brainstorming import BrainstormingHarness, REQUIRED_PLAN_FIELDS
+def test_a_to_done_via_confirm_no_bypass():
+    # bypass 제거 후 유일 경로: ready(full spec) → 확정(b) → Stage B → plan ready → 확정(b) → done.
+    from app.gateway.harness_brainstorming import BrainstormingHarness, REQUIRED_SPEC_FIELDS, REQUIRED_PLAN_FIELDS
     from app.gateway.harness import HarnessRequest
     h = BrainstormingHarness(); s = _store()
-    full = "---\n" + "\n".join(f"{k}: v" for k in REQUIRED_PLAN_FIELDS) + "\n---\n계획"
-    stub = StubProvider([
-        {"text": json.dumps({"reply": "spec 정리완료", "document": "---\ngoal: x\n---\n본문", "ask": None, "ready": True})},
-        {"text": json.dumps({"reply": "plan 초안", "document": full, "ask": None, "ready": True})},
-    ])
-    req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="끝까지 자동", provider="fake", is_marker=True, bypass=True)
-    res = h.handle_turn(req, provider=stub, store=s)
+    full_spec = "---\n" + "\n".join(f"{k}: v" for k in REQUIRED_SPEC_FIELDS) + "\n---\n본문"
+    full_plan = "---\n" + "\n".join(f"{k}: v" for k in REQUIRED_PLAN_FIELDS) + "\n---\n계획"
+
+    # 턴1: full spec + ready → 충분성 충족 → 확정(b) 제안
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="정리해줘",
+                                 provider="fake", is_marker=True),
+                  provider=StubProvider([{"text": json.dumps(
+                      {"reply": "spec 완료", "document": full_spec, "ask": None, "ready": True})}]), store=s)
+    assert h._load_state(s, "rb")["pending_ask"]["trigger"] == "b"
+
+    # 턴2: spec 확정(예) → Stage B 진입 → plan ready → plan 확정(b) 제안
+    r2 = h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="예",
+                                      provider="fake", is_marker=True, answer="예, plan으로"),
+                       provider=StubProvider([{"text": json.dumps(
+                           {"reply": "plan 완료", "document": full_plan, "ask": None, "ready": True})}]), store=s)
+    assert r2.ask is not None and r2.ask.trigger == "b"
+    assert h._load_state(s, "rb")["stage"] == "B"
+
+    # 턴3: plan 확정(예) → done (LLM 불필요)
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="예",
+                                 provider="fake", is_marker=True, answer="예, 확정"),
+                  provider=None, store=s)
     assert s.get("/rb/brainstorming/plan.md") is not None
     assert h._load_state(s, "rb")["stage"] == "done"
     assert s.get_manifest("rb").step_status["brainstorming"] == "done"
