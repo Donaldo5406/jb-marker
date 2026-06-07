@@ -70,4 +70,29 @@ describe("DeployStudio", () => {
       expect(screen.queryByTestId("demo-payment-modal")).not.toBeInTheDocument(),
     );
   });
+
+  it("keeps channel selection across studio remount", async () => {
+    function Switcher() {
+      const [show, setShow] = React.useState(true);
+      return (
+        <div>
+          <button onClick={() => setShow((s) => !s)}>toggle</button>
+          {show ? <DeployStudio /> : <div>away</div>}
+        </div>
+      );
+    }
+    render(
+      <CockpitProvider runId="r1">
+        <Switcher />
+      </CockpitProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("provider-email")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("provider-email"));
+    expect(screen.getByTestId("provider-email").dataset.selected).toBe("true");
+    fireEvent.click(screen.getByText("toggle"));                 // unmount DeployStudio
+    await waitFor(() => expect(screen.getByText("away")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("toggle"));                 // remount
+    await waitFor(() => expect(screen.getByTestId("provider-email")).toBeInTheDocument());
+    expect(screen.getByTestId("provider-email").dataset.selected).toBe("true"); // persisted
+  });
 });
