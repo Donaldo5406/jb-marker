@@ -224,17 +224,35 @@ class ReviewHarness(Harness):
         return vid
 
     def _collect_scene_copy(self, store, run_id: str, languages: list[str]) -> dict:
-        """모든 언어 scene의 copy 슬롯 모음."""
+        """모든 언어 scene의 copy 슬롯 모음.
+
+        프론트 어셈블러는 main.scene을 {version, objects}로 저장(copy 필드 없음) →
+        텍스트박스 objects에서 role→text로 카피를 복원한다. main.scene이 없거나 비면
+        백엔드가 생성한 layout.spec.json[copy][lang]로 폴백 → 검토가 실제 카피를 본다
+        (이 폴백이 없으면 scene_copy가 비어 R1/R2가 콘텐츠를 못 봐 오탐/무탐).
+        """
         out: dict = {}
         for lang in languages:
+            copy: dict = {}
             n = store.get(f"/{run_id}/design/final/{lang}/main.scene")
-            if not n:
-                continue
-            try:
-                spec = json.loads(n.content_text)
-            except Exception:
-                spec = {}
-            copy = (spec.get("copy") or {}).get(lang) or {}
+            if n:
+                try:
+                    spec = json.loads(n.content_text)
+                except Exception:
+                    spec = {}
+                copy = (spec.get("copy") or {}).get(lang) or {}
+                if not copy:
+                    copy = {o.get("role"): o.get("text", "")
+                            for o in spec.get("objects", [])
+                            if str(o.get("type", "")).lower() == "textbox" and o.get("role")}
+            if not copy:
+                ls = store.get(f"/{run_id}/design/rough/layout.spec.json")
+                if ls:
+                    try:
+                        spec = json.loads(ls.content_text)
+                        copy = (spec.get("copy") or {}).get(lang) or {}
+                    except Exception:
+                        copy = {}
             out[lang] = copy
         return out
 

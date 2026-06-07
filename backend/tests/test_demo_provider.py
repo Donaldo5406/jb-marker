@@ -113,3 +113,56 @@ def test_demo_review_image_empty_findings():
     from app.providers.demo import DemoProvider
     resp = DemoProvider().review_image(b"x", "prompt")
     assert json.loads(resp.text)["findings"] == []
+
+
+# --- T3: 콘텐츠 기반 R1 법률 findings / R3 reconcile ---
+
+_VIOLATING = {"ko": {"headline": "업계 최고 연 4.0% 적금",
+                     "body": "연 4.0%! 지금 가입하세요", "cta": "가입"}}
+
+
+def test_demo_legal_findings_detects_violations():
+    from app.providers.demo import legal_findings
+    fs = legal_findings(_VIOLATING)
+    sev = [f["severity"] for f in fs]
+    assert sev.count("critical") >= 2          # 과장광고 + 금리 불일치
+    assert "warning" in sev                     # 우대조건 단서 누락
+    assert fs and all(f["official_source_url"].startswith("https://www.law.go.kr") for f in fs)
+
+
+def test_demo_legal_findings_clean_fixture_copy_is_empty():
+    """데모 기본 카피(F.COPY, 교정본)는 R1 무위반 → 교정 후 PASS 경로 보장."""
+    from app.providers.demo import legal_findings
+    assert legal_findings(F.COPY) == []
+
+
+def test_demo_reconcile_summarizes_verdicts_and_resolves_conflict():
+    from app.providers.demo import reconcile
+    verdicts = [
+        {"node": "legal", "verdict_id": "a", "clause": "표시광고법 제3조", "lang": "ko",
+         "severity": "critical", "evidence": "과장", "asset_id": "x"},
+        {"node": "i18n", "verdict_id": "b", "kind": "missing_disclosure", "lang": "vi",
+         "severity": "critical", "evidence": "고지누락", "asset_id": "y"},
+    ]
+    out = reconcile(verdicts)
+    assert len(out["recommendations"]) == 2
+    assert out["recommendations"][0]["priority"] == 1   # critical 우선
+    assert out["conflicts_resolved"]                     # legal+i18n → 충돌조정 1건
+
+
+def test_demo_review_personas_route_correctly():
+    """demo.py:60 페르소나 충돌 해소 — R1(법률)/R2(동등성)/R3(reconciler) 분기."""
+    from app.providers.demo import DemoProvider
+    from app.providers.base import Message
+
+    def call(system, user_obj):
+        return json.loads(DemoProvider().complete(
+            [Message("user", json.dumps(user_obj, ensure_ascii=False))],
+            model="demo", system=system).text)
+
+    r1 = call("당신은 전문 법률 검토관입니다. 표시광고법 ...", {"scene_copy": _VIOLATING})
+    assert r1["findings"]                                 # R1 → 위반 적발
+    r2 = call("당신은 금융 마케팅 다국어 동등성 검토관입니다.", {"ko_copy": {}})
+    assert r2["findings"] == []                           # R2 → 안전망 위임(빈손)
+    r3 = call("당신은 ... 통합 reconciler입니다.", {"verdicts": []})
+    assert "recommendations" in r3                        # R3 → reconcile
