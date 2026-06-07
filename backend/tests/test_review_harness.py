@@ -58,6 +58,33 @@ def test_review_harness_initial_state(tmp_path):
     assert state["acknowledged"] is False
 
 
+def test_collect_scene_copy_reconstructs_from_objects(tmp_path):
+    """실 production 경로 회귀 가드: 프론트 sceneAssembler가 저장하는 main.scene은
+    top-level copy 없이 {version, objects:[{type:textbox, role, text, lang}], width, height}
+    형식이다 → 백엔드가 objects에서 role→text로 카피를 복원해야 R1/R2가 콘텐츠를 본다.
+    기존 백엔드 픽스처는 {copy:{lang:{...}}} 형식만 써서 이 재구성 분기를 한 번도 타지
+    않았다(테스트 위장). role/type 키명·케이싱이 깨지면 scene_copy가 비어 위반 무탐이
+    발생하므로 production 형식을 직접 검증한다."""
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko", "en"])
+    for lang, head, body in [("ko", "헤드라인", "본문 카피"), ("en", "Headline", "Body copy")]:
+        store.put(
+            f"/r1/design/final/{lang}/main.scene",
+            json.dumps({
+                "version": "6.0.0", "width": 1080, "height": 1350,
+                "objects": [
+                    {"type": "textbox", "role": "headline", "text": head, "lang": lang},
+                    {"type": "textbox", "role": "body", "text": body, "lang": lang},
+                    {"type": "image", "role": "background", "src": "x"},  # image는 제외돼야
+                ],
+            }),
+            source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    out = h._collect_scene_copy(store, "r1", ["ko", "en"])
+    assert out["ko"] == {"headline": "헤드라인", "body": "본문 카피"}
+    assert out["en"] == {"headline": "Headline", "body": "Body copy"}
+
+
 def test_r0_setup_creates_matrix_and_sets_in_progress(tmp_path):
     store = make_local_store(tmp_path)
     _setup_run(store, languages=["ko", "en"])

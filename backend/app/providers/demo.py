@@ -23,8 +23,10 @@ _EXAGGERATION_KO = ("업계 최고", "최고 금리", "최고의", "무조건", 
 _RATE = re.compile(r"\d+(?:\.\d+)?\s*%")
 # 우대조건 단서 키워드(언어 무관 부분문자열). 있으면 단서 충족, 없으면 누락(금소법 §22).
 _PREFERENTIAL = ("세전", "우대", "pre-tax", "preferential", "trước thuế", "ưu đãi", "税前", "优惠")
-# S2b 교정 신호 — 사용자가 보강/수정/교정을 요청하면 위반 카피 대신 clean 카피로 재생성.
-_REMEDIATION_SIGNAL = ("보강", "수정", "교정", "정정", "고지", "준법", "법률", "fix", "comply")
+# S2b 교정 신호 — 사용자가 위반 카피의 보강/교정을 요청하면 clean 카피로 재생성.
+# 일반 디자인 챗에 흔한 광범위 단어(수정·법률·고지)는 false-positive(위반 카피 조기 소거)를
+# 유발해 제외 — 교정 의도가 분명한 토큰만 유지(예: "카피 수정해줘"는 더 이상 발동하지 않음).
+_REMEDIATION_SIGNAL = ("보강", "교정", "정정", "준법", "fix", "comply")
 # 화이트리스트(law.go.kr) 실 deep-link.
 _LAW_ADVERTISING = "https://www.law.go.kr/법령/표시ㆍ광고의공정화에관한법률/제3조"
 _LAW_CONSUMER = "https://www.law.go.kr/법령/금융소비자보호에관한법률/제22조"

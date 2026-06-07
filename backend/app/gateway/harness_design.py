@@ -346,13 +346,18 @@ class DesignHarness(Harness):
         notices = {}
         for lang in langs:
             notice = self.NOTICES.get(lang, self.NOTICES["ko"])
-            # 법령 고지는 해당 언어 표시문(번역)이 있을 때만 부착. 없으면 누락 →
-            # 외국어 포스터에 한국어 법령문이 새지 않고, 검토(R2)가 누락을 잡아 교정 유도.
+            # 법령 고지 부착 규칙:
+            #  - 표시문(번역) 매핑이 있으면 그 언어로 부착(ko·en 등).
+            #  - ko는 매핑이 없어도 원문 고지(한국어)가 그대로 유효 → 원문 부착.
+            #    (실 캠페인 plan.md의 임의 disclosures가 ko 포스터에서 통째 사라지는 것 방지.)
+            #  - 그 외 언어는 무번역 누락 → 외국어 포스터에 한글이 새지 않고, R2가 누락을 잡아 교정 유도.
             parts = [notice]
             for disc in disclosures:
                 localized = self.DISCLOSURE_DISPLAY.get(disc, {}).get(lang)
                 if localized:
                     parts.append(localized)
+                elif lang == "ko":
+                    parts.append(disc)
             text = " ".join(parts)
             notices[lang] = text
             store.put(f"{base}/design-system/components/disclosure/{lang}.txt",

@@ -465,10 +465,12 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
     // 4) 게이트·manifest 반영.
     if (gate) {
+      // 백엔드 compute_gate는 critical_count/warning_count로 내보낸다(severity.py:91).
+      // 과거 critical/warning만 읽어 롤업이 항상 0이던 버그 → wire 키 우선 폴백.
       setReviewGate({
         status: String(gate.status ?? ""),
-        critical: Number(gate.critical ?? 0),
-        warning: Number(gate.warning ?? 0),
+        critical: Number(gate.critical_count ?? gate.critical ?? 0),
+        warning: Number(gate.warning_count ?? gate.warning ?? 0),
       });
     }
     await loadManifest(id);

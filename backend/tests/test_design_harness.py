@@ -370,6 +370,27 @@ def test_s2c_localizes_disclosure_and_stages_vi_zh_missing(tmp_path):
     assert not H.search(zh), f"zh 한글 혼입: {zh!r}"            # zh 현지화 고지(zh NOTICE)
 
 
+def test_s2c_ko_keeps_disclosure_without_display_mapping(tmp_path):
+    """실 캠페인 회귀 가드: plan.md의 disclosure가 DISCLOSURE_DISPLAY 매핑에 없어도
+    ko 포스터에는 원문 고지가 부착돼야 한다. (표시문 정확일치에 묶여 임의 disclosure가
+    ko 포스터에서 통째 사라지던 위험 차단.) 외국어는 무번역 누락 유지 → R2가 잡는다."""
+    s = _store(tmp_path)
+    s.put("/r1/brainstorming/plan.md",
+          "---\ndisclosures: [투자원금 손실이 발생할 수 있습니다]\n"
+          "languages: [ko, en]\n---\n본문",
+          source="marker", mime="text/markdown")
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2c", "confirmed": {}, "bypass": {},
+         "languages": ["ko", "en"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    ko = s.get("/r1/design/design-system/components/disclosure/ko.txt").content_text
+    en = s.get("/r1/design/design-system/components/disclosure/en.txt").content_text
+    assert "투자원금 손실" in ko                 # ko: 매핑 없어도 원문 고지 부착
+    assert "투자원금" not in en                   # en: 무번역 → 누락(R2 검출 대상)
+
+
 def test_s2c_localizes_ai_notice_per_language(tmp_path):
     s = _store(tmp_path)
     s.put("/r1/design/_state.json", json.dumps(
