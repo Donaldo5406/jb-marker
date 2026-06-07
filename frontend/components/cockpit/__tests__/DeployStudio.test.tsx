@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let ctx: any;
 vi.mock("../CockpitProvider", () => ({ useCockpit: () => ctx }));
+vi.mock("@/lib/reviewArtifacts", () => ({ loadReviewVerdicts: () => Promise.resolve([]) }));
 
 import { DeployStudio } from "../DeployStudio";
 
@@ -13,6 +14,12 @@ function makeCtx(overrides: Partial<any> = {}) {
     packages: {},
     devPass: false,
     runId: "r",
+    selectedProviders: [],
+    setSelectedProviders: vi.fn(),
+    nodes: [],
+    manifest: null,
+    designStep: "S0",
+    reviewGate: null,
     setupDeploy: vi.fn(),
     runEligibility: vi.fn(),
     runPackagingCell: vi.fn(),
@@ -50,7 +57,9 @@ describe("DeployStudio", () => {
   });
 
   it("발송 확정 시 결과 패널([STUB] N명)과 Report 링크를 렌더한다 (T4)", async () => {
+    // 채널 선택 상태는 CockpitProvider(ctx)에서 옴 — selectedProviders로 발송 버튼 활성.
     ctx = makeCtx({
+      selectedProviders: ["email"],
       eligibility: { total: 10, eligible_count: 8, excluded_count: 2 },
       dispatchConfirm: vi.fn().mockResolvedValue({
         step_status: "dispatched",
@@ -58,7 +67,6 @@ describe("DeployStudio", () => {
       }),
     });
     render(<DeployStudio />);
-    fireEvent.click(screen.getByTestId("provider-email"));   // 채널 선택 → 확정 활성
     await act(async () => { fireEvent.click(screen.getByText("발송 확정 (시뮬)")); });
     const panel = await screen.findByTestId("dispatch-result");
     expect(panel.textContent).toContain("[STUB]");
@@ -68,11 +76,11 @@ describe("DeployStudio", () => {
 
   it("dispatchConfirm이 needsPayment면 결과 패널 대신 결제 모달을 연다", async () => {
     ctx = makeCtx({
+      selectedProviders: ["email"],
       eligibility: { total: 10, eligible_count: 8, excluded_count: 2 },
       dispatchConfirm: vi.fn().mockResolvedValue({ needsPayment: true }),
     });
     render(<DeployStudio />);
-    fireEvent.click(screen.getByTestId("provider-email"));
     await act(async () => { fireEvent.click(screen.getByText("발송 확정 (시뮬)")); });
     expect(screen.queryByTestId("dispatch-result")).toBeNull();
   });

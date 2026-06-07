@@ -72,6 +72,8 @@ export type CockpitContextValue = {
   eligibility: EligibilityResult | null;
   packages: Record<string, PackageInfo>;
   devPass: boolean;
+  selectedProviders: string[];
+  setSelectedProviders: (next: string[]) => void;
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -156,6 +158,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [eligibility, setEligibility] = useState<EligibilityResult | null>(null);
   const [packages, setPackages] = useState<Record<string, PackageInfo>>({});
   const [devPass, setDevPass] = useState(false);
+  // 발송 채널 선택 — DeployStudio 로컬 대신 provider 소유(리마운트 생존). run 전환 시에만 리셋.
+  const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
   // M7-B: history 목록 ↔ 상세 뷰 전환 — 선택된 run id(null=목록 표시).
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<string | null>(null);
   // 시연용 Mock 모드 — 모든 백엔드 호출에 mock 플래그 동봉. ref로 콜백 재생성 없이 최신값 참조.
@@ -247,7 +251,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새로 연 run은 stale design 게이트 없이 시작.
       // M6 T19: deploy state 리셋(이전 run 잔여 차단).
-      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false);
+      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
       syncRunQuery(id);
       await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id),
         api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
@@ -267,7 +271,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setMessages([]); setPendingAsk(null); setBrainStage("A");
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
-      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false);
+      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
       syncRunQuery(run_id);
     },
     [syncRunQuery],
@@ -568,7 +572,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ selected_providers: selected, languages }),
     });
-    return res.json();
+    const data = await res.json();
+    // 응답으로 deploy 상태 동기화(이전: 미갱신 버그). 선택값은 인자를 권위로 보존.
+    setDeployState((prev) => ({
+      step_status: typeof data.step_status === "string" ? data.step_status : prev?.step_status ?? "in_progress",
+      selected_providers: selected,
+      matrix: Array.isArray(data.matrix) ? data.matrix : [],
+      dev_pass: prev?.dev_pass ?? false,
+    }));
+    return data;
   }, []);
 
   const runEligibility = useCallback(async () => {
@@ -707,6 +719,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     eligibility,
     packages,
     devPass,
+    selectedProviders,
+    setSelectedProviders,
     startRun,
     openRun,
     refreshTree,
