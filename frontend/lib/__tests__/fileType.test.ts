@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extOf, fileType } from "@/lib/fileType";
+import { extOf, fileType, isImagePath } from "@/lib/fileType";
 
 describe("fileType", () => {
   it("extOf는 마지막 확장자를 소문자로", () => {
@@ -17,5 +17,13 @@ describe("fileType", () => {
   });
   it("미지정 확장자는 기본(plaintext)", () => {
     expect(fileType("data.bin").lang).toBe("plaintext");
+  });
+  it("isImagePath는 래스터 이미지만 true(대소문자 무관)", () => {
+    expect(isImagePath("design/visual/v1.png")).toBe(true);
+    expect(isImagePath("photo.JPG")).toBe(true);
+    expect(isImagePath("anim.webp")).toBe(true);
+    expect(isImagePath("layout.spec.json")).toBe(false);
+    expect(isImagePath("main.scene")).toBe(false);
+    expect(isImagePath("report.md")).toBe(false);
   });
 });

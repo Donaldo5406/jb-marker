@@ -125,6 +125,18 @@ export function ReviewStudio() {
             검토 시작
           </button>
         )}
+        {(stage === "R1" || stage === "R2" || stage === "R3") && (
+          // 정상 흐름에선 runReview가 done까지 자동 완주하므로 이 단계는 일시적이지만,
+          // 루프가 네트워크 오류 등으로 중단되면 여기서 백엔드 현재 step부터 재개(복구).
+          <button
+            type="button"
+            data-testid="continue-review"
+            className="px-4 py-2 rounded bg-on-surface text-surface text-sm hover:opacity-90"
+            onClick={() => void c.runReview()}
+          >
+            검토 계속
+          </button>
+        )}
         {stage === "done" && (
           <button
             type="button"

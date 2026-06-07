@@ -28,3 +28,11 @@ export function extOf(name: string): string {
 export function fileType(name: string): FileTypeInfo {
   return MAP[extOf(name)] ?? DEFAULT;
 }
+
+/** 백엔드가 raw 바이트(blob)로 서빙하는 래스터 이미지 확장자.
+ *  이런 파일은 텍스트로 fetch(res.json())하면 깨지므로 <img>(useAuthedBlob)로 표시한다. */
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico"]);
+
+export function isImagePath(name: string): boolean {
+  return IMAGE_EXTS.has(extOf(name));
+}

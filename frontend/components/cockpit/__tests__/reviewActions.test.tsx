@@ -17,9 +17,13 @@ class NoopWS {
   constructor(public url: string) {}
 }
 
-/** vfsList → 2 lang scene 파일을 가진 트리, vfsGet → 빈 scene JSON, gateway → meta.step 반환. */
+/** vfsList → 2 lang scene 파일을 가진 트리, vfsGet → 빈 scene JSON,
+ *  gateway(review 무액션) → 호출마다 R0→R1→R2→R3 단계 진행(백엔드 상태머신 미러). */
 function installFetch() {
   const gatewayCalls: any[] = [];
+  // review 자동 루프: 무액션 review 호출이 백엔드 1단계 전진을 시뮬(meta.step=방금 실행한 단계).
+  const REVIEW_STEPS = ["R0", "R1", "R2", "R3"];
+  let reviewStep = 0;
   const fetchMock = vi.fn(async (input: any, init?: any) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -50,14 +54,16 @@ function installFetch() {
     // gateway POST → meta.step/gate 응답
     if (url.endsWith("/gateway/run") && method === "POST") {
       gatewayCalls.push(body);
-      // ack/restart 액션은 단순 OK, runReview는 R1로 진입.
+      // ack/restart 액션은 단순 OK.
       if (body?.action === "ack" || body?.action === "restart") {
         return ok({ output_path: "", text: "ok", meta: { step: body.action === "restart" ? "R0" : "R1" } });
       }
-      return ok({
-        output_path: "", text: "검토 시작",
-        meta: { step: "R1", gate: { status: "PASS", critical: 0, warning: 0 } },
-      });
+      // 무액션 review 호출: 호출마다 한 단계 전진. R3에서 gate 포함(종단).
+      const st = REVIEW_STEPS[Math.min(reviewStep, REVIEW_STEPS.length - 1)];
+      reviewStep += 1;
+      const meta: any = { step: st };
+      if (st === "R3") meta.gate = { status: "PASS", critical: 0, warning: 0 };
+      return ok({ output_path: "", text: `${st} 완료`, meta });
     }
     return ok({});
   });
@@ -80,7 +86,7 @@ describe("CockpitProvider review actions (M5 §8.3)", () => {
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("runReview: renderAndUploadAll 호출 + gateway studio=review is_marker=true", async () => {
+  it("runReview: renderAndUploadAll 1회 + R0→R3 전 단계 자동 완주 → done·gate", async () => {
     const { gatewayCalls } = installFetch();
     render(
       <CockpitProvider>
@@ -90,18 +96,20 @@ describe("CockpitProvider review actions (M5 §8.3)", () => {
     await act(async () => { await captured!.openRun("r1"); });
     await act(async () => { await captured!.runReview(); });
 
+    // composite 업로드는 진입 시 1회만(루프 안에서 반복하지 않음)
     expect(renderAndUploadAllMock).toHaveBeenCalledTimes(1);
     const [runId, scenes] = renderAndUploadAllMock.mock.calls[0];
     expect(runId).toBe("r1");
     expect(Object.keys(scenes).sort()).toEqual(["en", "ko"]);
 
-    const gw = gatewayCalls.find((c) => c.studio === "review" && !c.action);
-    expect(gw).toBeTruthy();
-    expect(gw.is_marker).toBe(true);
-    expect(gw.provider).toBe("anthropic");
+    // 무액션 review gateway 호출이 4회(R0·R1·R2·R3) — 한 클릭으로 끝까지 구동
+    const reviewCalls = gatewayCalls.filter((c) => c.studio === "review" && !c.action);
+    expect(reviewCalls.length).toBe(4);
+    expect(reviewCalls[0].is_marker).toBe(true);
+    expect(reviewCalls[0].provider).toBe("anthropic");
 
-    // state 진행
-    expect(captured!.reviewStage).toBe("R1");
+    // 종단 상태: done + R3 gate 반영
+    expect(captured!.reviewStage).toBe("done");
     expect(captured!.reviewGate?.status).toBe("PASS");
   });
 
