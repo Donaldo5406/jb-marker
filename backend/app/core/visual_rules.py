@@ -75,6 +75,49 @@ def _max_text_font(slots: dict) -> int | None:
     return max(fonts) if fonts else None
 
 
+def _bbox_height(slot: dict) -> float | None:
+    """슬롯 bbox에서 높이 추출 — dict({h}/{height}) 또는 list([x,y,w,h]) 형식 지원."""
+    bb = slot.get("bbox")
+    if isinstance(bb, dict):
+        for k in ("h", "height"):
+            v = bb.get(k)
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
+    if isinstance(bb, (list, tuple)) and len(bb) >= 4:
+        v = bb[3]
+        if isinstance(v, (int, float)) and v > 0:
+            return float(v)
+    return None
+
+
+_ENRICH_ROLES = ("headline", "body", "cta", "disclosure")
+
+
+def enrich_visual_metadata(spec: dict) -> dict:
+    """layout.spec 텍스트 슬롯에 font_px가 없으면 bbox 높이로 보강(결정론·in-place).
+
+    실 LLM이 font_px를 생략해도 R-VIS-1(고지 글자크기 비율)이 '동작은 하도록' 하는 best-effort
+    보강이다. 보강값에는 ``font_px_estimated=True``를 달아 추정치임을 표시한다.
+
+    ⚠ 한계(중요): bbox 높이는 '여러 줄로 줄바꿈된 텍스트 블록 전체 높이'라 단일행 글자크기를
+       과대추정한다. 특히 다행 고지(fine-print)는 글자크기가 실제보다 크게 추정돼 R-VIS-1이
+       작은 고지를 '놓칠' 수 있다(false negative, under-flag). 따라서 이 결정론 룰은 비차단
+       warning 수준의 1차 신호이며, 정확한 시각 판정은 비전 LLM 검토(R1 vision)가 보완한다.
+       색/대비(R-VIS-2)는 선언값이 없으면 fabricate하지 않고 graceful skip한다(오탐 방지).
+    """
+    if not isinstance(spec, dict):
+        return spec
+    for s in spec.get("slots", []) or []:
+        if not isinstance(s, dict):
+            continue
+        if s.get("role") in _ENRICH_ROLES and not isinstance(s.get("font_px"), (int, float)):
+            h = _bbox_height(s)
+            if h:
+                s["font_px"] = int(round(h))
+                s["font_px_estimated"] = True   # 추정치 표식(metadata가 측정값과 구분)
+    return spec
+
+
 def evaluate_visual_compliance(spec: dict) -> list[dict]:
     """layout.spec(slots + copy + bg_color)를 3룰로 검사 → 위반 finding 리스트.
 
@@ -141,12 +184,16 @@ def visual_compliance_summary(spec: dict) -> dict:
     slots = _slots_by_role(spec)
     disc = slots.get("disclosure") or {}
     findings = evaluate_visual_compliance(spec)
+    # 글자크기가 bbox 높이 기반 추정치인지(LLM 선언값 아님) — metadata에서 측정값과 구분.
+    estimated = any(bool(slots[r].get("font_px_estimated"))
+                    for r in (*_TEXT_ROLES, "disclosure") if r in slots)
     return {
         "disclosure_font_px": disc.get("font_px"),
         "max_text_font_px": _max_text_font(slots),
         "disclosure_color": disc.get("color"),
         "bg_color": spec.get("bg_color"),
         "disclosure_contrast": contrast_ratio(disc.get("color"), spec.get("bg_color")),
+        "font_px_estimated": estimated,
         "violations": [{"rule": f["rule"], "severity": f["severity"],
                         "evidence": f["evidence"]} for f in findings],
         "passed": not findings,

@@ -101,6 +101,32 @@ def test_r0_setup_creates_matrix_and_sets_in_progress(tmp_path):
     assert m.step_status.get("review") == "in_progress"
 
 
+def test_r0_normalizes_object_list_languages(tmp_path):
+    """FIX A: 실 Claude plan.md의 객체 리스트 languages → 문자열 코드로 정규화.
+
+    정규화 안 하면 matrix[dict] / 경로 `.../{dict}/main.scene` 에서 unhashable·깨진 경로로
+    R0가 크래시한다. 정규화 후 matrix는 문자열 키, 언어 수 정상.
+    """
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko", "en"])
+    plan_md = (
+        "---\n"
+        "languages:\n"
+        "  - code: ko\n    label: 한국어\n    primary: true\n"
+        "  - code: en\n    label: English\n"
+        "factsheet:\n  rate: 5.2\n"
+        "disclosures:\n  - 미래 수익 보장 아님\n"
+        "---\n# Plan\n")
+    store.put("/r1/brainstorming/plan.md", plan_md, source="marker", mime="text/markdown")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="검토",
+                         provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["languages"] == ["ko", "en"]
+    assert set(state["matrix"]) >= {"ko", "en", "components"}
+
+
 def test_r0_idempotent_cleanup(tmp_path):
     """R0 진입 시 legal/, i18n/, revise/, report.md 전부 삭제."""
     store = make_local_store(tmp_path)
