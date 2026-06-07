@@ -93,6 +93,35 @@ def test_detect_s2b_returns_copy_4langs():
     assert set(r["copy"]) == {"ko", "en", "vi", "zh"}
 
 
+def test_detect_s2b_default_returns_violating_copy():
+    """T7: 교정 신호 없는 1차 S2b → 위반 카피(과장 headline + 4.0% body) 반환."""
+    r = json.loads(_complete("페르소나\n\n[S2b 카피·타이포] ...").text)
+    assert "업계 최고" in r["copy"]["ko"]["headline"]      # 과장광고
+    assert "4.0%" in r["copy"]["ko"]["body"]               # 금리 불일치
+    # en/vi/zh는 clean(위반은 ko에 집중)
+    assert r["copy"]["en"] == F.COPY["en"]
+
+
+def test_detect_s2b_remediation_returns_clean_copy():
+    """T7: 사용자가 '보강/교정'을 요청하면(디자인 챗 보조 경로) clean 카피로 재생성."""
+    from app.providers.base import Message
+    from app.providers.demo import DemoProvider
+    r = json.loads(DemoProvider().complete(
+        [Message("user", "고지 문구를 보강하고 금리를 교정해줘")],
+        model="demo", system="페르소나\n\n[S2b 카피·타이포] ...").text)
+    assert r["copy"] == F.COPY
+
+
+def test_copy_violating_is_caught_by_legal_findings():
+    """T7: 위반 카피 → R1 콘텐츠 기반 적발 critical 2(과장+금리) + warning 1(우대단서), ko 한정."""
+    from app.providers.demo import legal_findings
+    fs = legal_findings(F.COPY_VIOLATING)
+    sev = [f["severity"] for f in fs]
+    assert sev.count("critical") >= 2
+    assert "warning" in sev
+    assert all(f["location"]["lang"] == "ko" for f in fs)
+
+
 def test_detect_critic_returns_passing_scores():
     r = json.loads(_complete("페르소나\n\n[자기-크리틱] hierarchy/grid ...").text)
     assert set(r["scores"]) >= {"hierarchy", "brand"}

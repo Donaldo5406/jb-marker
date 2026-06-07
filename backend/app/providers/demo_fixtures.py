@@ -89,6 +89,22 @@ COPY = {
     "zh": {"headline": "JB定期存款 3.5%", "body": "12个月期限，100万韩元起。", "cta": "立即开户"},
 }
 
+# 시연 핵심 — Design 1차 산출에 의도적으로 끼우는 위반 카피(ko만).
+#   headline = 과장광고(업계 최고/최고 금리, 객관적 근거 없는 최상급) → 표시광고법 §3
+#   body     = 금리 불일치(연 4.0% ≠ 마스터 3.5%) + 우대조건 단서(세전/우대) 누락
+# R1 법률 검토가 콘텐츠 기반으로 적발(critical 2 + warning 1) → 검토 BLOCKED.
+# en/vi/zh는 clean(COPY와 동일) — 위반은 ko에 집중하고, #4(vi/zh 예금자보호 고지
+# 누락)는 harness_design.DISCLOSURE_DISPLAY로 별도 스테이징한다.
+# 교정(FabricEditor 씬 수동 편집)으로 위반 토큰이 사라지면 재검토 PASS(위반→교정 루프).
+COPY_VIOLATING = {
+    "ko": {"headline": "업계 최고 금리 JB 정기예금",
+           "body": "연 4.0% 12개월 만기, 100만원부터 시작하세요.",
+           "cta": "지금 가입하기"},
+    "en": dict(COPY["en"]),
+    "vi": dict(COPY["vi"]),
+    "zh": dict(COPY["zh"]),
+}
+
 CRITIC_SCORES = {
     "hierarchy": 4, "grid": 4, "whitespace": 4, "cta": 4,
     "compliance": 5, "copy_visual": 4, "brand": 4,

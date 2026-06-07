@@ -23,6 +23,8 @@ _EXAGGERATION_KO = ("업계 최고", "최고 금리", "최고의", "무조건", 
 _RATE = re.compile(r"\d+(?:\.\d+)?\s*%")
 # 우대조건 단서 키워드(언어 무관 부분문자열). 있으면 단서 충족, 없으면 누락(금소법 §22).
 _PREFERENTIAL = ("세전", "우대", "pre-tax", "preferential", "trước thuế", "ưu đãi", "税前", "优惠")
+# S2b 교정 신호 — 사용자가 보강/수정/교정을 요청하면 위반 카피 대신 clean 카피로 재생성.
+_REMEDIATION_SIGNAL = ("보강", "수정", "교정", "정정", "고지", "준법", "법률", "fix", "comply")
 # 화이트리스트(law.go.kr) 실 deep-link.
 _LAW_ADVERTISING = "https://www.law.go.kr/법령/표시ㆍ광고의공정화에관한법률/제3조"
 _LAW_CONSUMER = "https://www.law.go.kr/법령/금융소비자보호에관한법률/제22조"
@@ -134,8 +136,15 @@ def _layout_json() -> str:
                       ensure_ascii=False)
 
 
-def _copy_json() -> str:
-    return json.dumps({"copy": F.COPY}, ensure_ascii=False)
+def _copy_json(messages=None) -> str:
+    """S2b 카피. 기본은 위반 카피(시연용 적발 대상), 교정 신호가 있으면 clean 카피.
+
+    stateless DemoProvider에서 위반→교정 루프를 성립시키는 콘텐츠 기반 분기(spec §0).
+    주 교정 경로는 FabricEditor 씬 수동 편집이며, 이 분기는 디자인 챗 재생성(보강 지시)용 보조 경로.
+    """
+    user = _user_text(messages).lower()
+    copy = F.COPY if any(sig in user for sig in _REMEDIATION_SIGNAL) else F.COPY_VIOLATING
+    return json.dumps({"copy": copy}, ensure_ascii=False)
 
 
 def _critic_json() -> str:
@@ -184,7 +193,7 @@ def _detect(system: str, messages=None) -> str:
     if "[S1 Rough]" in s:
         return _layout_json()
     if "[S2b" in s:
-        return _copy_json()
+        return _copy_json(messages)
     if "[자기-크리틱]" in s:
         return _critic_json()
     if "reconciler" in s:                       # Review R3 (PERSONA_C)

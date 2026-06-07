@@ -1,4 +1,7 @@
 """demo(mock)로 BrainStorming→Design→Review 전 구간 완주 — 끝까지 도는 mock 검증."""
+import base64
+import json
+
 from fastapi.testclient import TestClient
 
 
@@ -73,3 +76,67 @@ def test_review_demo_blocks_on_staged_violations(monkeypatch):
     assert report.status_code == 200
     state = client.get(f"/vfs/{rid}/review/_state.json")
     assert state.status_code == 200 and '"step": "done"' in state.json()["content_text"]
+
+
+# 교정된 4언어 카피 — 위반 토큰 제거 + vi/zh 예금자보호 고지 현지화 키워드 포함.
+# (FabricEditor 씬 수동 편집 = 결정 A안의 결과물을 백엔드 테스트에서 재현)
+_REMEDIATED = {
+    "ko": {"headline": "연 3.5% JB 정기예금", "body": "12개월 만기, 100만원부터 시작하세요.",
+           "cta": "지금 가입하기", "disclosure": "예금자보호법에 따라 5천만원까지 보호"},
+    "en": {"headline": "JB Term Deposit at 3.5%", "body": "12-month term. Open online in minutes.",
+           "cta": "Open now", "disclosure": "Protected up to KRW 50M under the Depositor Protection Act."},
+    "vi": {"headline": "JB Tiết kiệm 3.5%", "body": "Kỳ hạn 12 tháng, từ 100 vạn won.",
+           "cta": "Mở ngay", "disclosure": "Được bảo hiểm tiền gửi tới 50 triệu KRW theo luật."},
+    "zh": {"headline": "JB定期存款 3.5%", "body": "12个月期限，100万韩元起。",
+           "cta": "立即开户", "disclosure": "根据存款保护法，最高保护5000万韩元。"},
+}
+
+
+def _drive_review(client, rid, restart_first=False):
+    """review를 R3 종단까지 구동하고 (last_step, gate) 반환.
+
+    restart_first=True면 첫 호출에 restart(done→R0 멱등 재구축, 재검토용)."""
+    gate: dict = {}
+    last_step = None
+    for i in range(6):
+        kw = {"action": "restart"} if (restart_first and i == 0) else {}
+        r = _run(client, rid, "review", "검토 시작", **kw)
+        assert r.status_code == 200
+        meta = r.json().get("meta") or {}
+        if meta.get("gate"):
+            gate = meta["gate"]
+        last_step = meta.get("step")
+        if last_step == "R3":
+            break
+    return last_step, gate
+
+
+def test_review_demo_passes_after_remediation(monkeypatch):
+    """위반→교정 루프의 PASS 종단: 사용자가 씬을 교정(위반 카피 제거 + vi/zh 고지 현지화)하면
+    재검토가 무위반 → PASS. 결정 A안(FabricEditor 수동 편집)을 main.scene 직접 작성으로 재현한다."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _run(client, rid, "brainstorming", "정기예금 캠페인")
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+
+    # 1차 검토 → 스테이징 위반으로 BLOCKED 확인
+    last_step, gate = _drive_review(client, rid)
+    assert last_step == "R3" and gate.get("status") == "BLOCKED"
+
+    # 교정: 4언어 main.scene을 clean 카피로 덮어쓴다(=씬 수동 편집). scene_copy가
+    # layout.spec.json 폴백보다 우선되어 검토가 교정본을 본다.
+    png_b64 = base64.b64encode(b"\x89PNG\r\n\x1a\n\x00demo").decode()
+    for lang, copy in _REMEDIATED.items():
+        client.put(f"/vfs/{rid}/design/final/{lang}/main.scene",
+                   json={"content": json.dumps({"copy": {lang: copy}}, ensure_ascii=False),
+                         "mime": "application/json"})
+        # 합성 렌더 시드 — 없으면 vision_skipped가 PASS를 WARN으로 강등.
+        client.put(f"/vfs/{rid}/review/_render/{lang}.png",
+                   json={"content": png_b64, "content_encoding": "base64", "mime": "image/png"})
+
+    # 재검토(restart=R0부터 멱등 재구축) → 무위반 PASS
+    last_step, gate = _drive_review(client, rid, restart_first=True)
+    assert last_step == "R3"
+    assert gate.get("status") == "PASS", f"교정 후 PASS 기대, 실제 {gate}"
+    assert gate.get("critical_count") == 0
