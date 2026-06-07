@@ -73,14 +73,59 @@ def _complete(system: str):
     return DemoProvider().complete([Message("user", "x")], model="demo", system=system)
 
 
-def test_detect_stage_a_returns_spec_ready():
-    r = json.loads(_complete("페르소나\n\n[Stage A] ... goal/target_segments ...").text)
+def _complete_msgs(msgs, system: str):
+    from app.providers.base import Message
+    from app.providers.demo import DemoProvider
+    return DemoProvider().complete(
+        [Message(r, c) for r, c in msgs], model="demo", system=system)
+
+
+def test_detect_stage_a_bypass_returns_spec_ready():
+    """T5: bypass 마커가 있으면 멀티턴을 건너뛰고 전체 spec 즉시(ready)."""
+    r = json.loads(_complete(
+        "페르소나\n\n[Stage A] ... [빠른 진행] 즉시 완성 ...").text)
     assert r["ready"] is True and "goal:" in r["document"]
 
 
-def test_detect_stage_b_returns_plan_with_fields():
-    r = json.loads(_complete("페르소나\n\n[Stage B] ... plan.md ...").text)
+def test_detect_stage_a_turn1_is_interactive_with_research():
+    """T5: bypass 없는 1턴 → spec 미작성·질문(a)·리서치 인용 동반."""
+    resp = _complete("페르소나\n\n[Stage A] 대화로 정보 수집 ...")
+    r = json.loads(resp.text)
+    assert r["ready"] is False and r["document"] == ""
+    assert r["ask"]["trigger"] == "a"
+    assert len(resp.citations) >= 1            # 리서치 인용 동반
+    assert resp.citations[0]["url"].startswith("http")
+
+
+def test_detect_stage_a_turn3_returns_full_spec():
+    """T5: 충분한 대화(3턴) 후 전체 spec(ready)."""
+    msgs = [("user", "정기예금 캠페인"), ("assistant", "타겟은?"),
+            ("user", "2030"), ("assistant", "다국어?"), ("user", "영어 포함")]
+    r = json.loads(_complete_msgs(msgs, "페르소나\n\n[Stage A] ...").text)
+    assert r["ready"] is True and "goal:" in r["document"]
+
+
+def test_detect_stage_b_bypass_returns_full_plan():
+    """T5: bypass 마커 → 완성 plan 즉시(ready)."""
+    r = json.loads(_complete(
+        "페르소나\n\n[Stage B] ... [빠른 진행] ... [현재 plan.md]\n").text)
     assert r["ready"] is True and "creative_direction:" in r["document"]
+
+
+def test_detect_stage_b_first_draft_is_partial():
+    """T5: 현재 plan 비어있음(1차) → 누락 초안(disclosures/slots 빠짐, ready=false)."""
+    r = json.loads(_complete("페르소나\n\n[Stage B] ... [현재 plan.md]\n").text)
+    assert r["ready"] is False
+    assert "disclosures:" not in r["document"] and "slots:" not in r["document"]
+    assert "creative_direction:" in r["document"]
+
+
+def test_detect_stage_b_after_partial_completes():
+    """T5: 현재 plan 존재(보충 단계) → 완성 plan(disclosures/slots 포함, ready)."""
+    r = json.loads(_complete(
+        "페르소나\n\n[Stage B] ... [현재 plan.md]\n---\ncreative_direction: x\n---\n초안").text)
+    assert r["ready"] is True
+    assert "disclosures:" in r["document"] and "slots:" in r["document"]
 
 
 def test_detect_s1_returns_layout_spec():

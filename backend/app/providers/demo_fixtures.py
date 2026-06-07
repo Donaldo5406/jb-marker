@@ -110,6 +110,49 @@ CRITIC_SCORES = {
     "compliance": 5, "copy_visual": 4, "brand": 4,
 }
 
+# Stage A 1턴 리서치 인용 — 캠페인 의사결정 근거(공식 출처). 하네스 _save_research가
+# assets/research/article/src_N.md로 저장 → 파일 트리에 리서치 산출물로 노출.
+# 스니펫은 이후 단계의 핵심(3.5% 금리·예금자보호 5천만원·우대/세전 고지)과 연결된다.
+RESEARCH_CITATIONS = [
+    {"url": "https://www.bok.or.kr/portal/main/main.do",
+     "title": "한국은행 예금금리 동향",
+     "snippet": "2030 세대의 정기예금 신규 가입이 증가세이며 금리 민감도가 높음. "
+                "모바일·비대면 채널 비중이 큼."},
+    {"url": "https://www.kdic.or.kr/protect/protect_system.do",
+     "title": "예금자보호제도 — 예금보험공사",
+     "snippet": "예금자보호법에 따라 1인당 원금과 이자를 합하여 5천만원까지 보호된다. "
+                "금융 광고에 보호 한도 고지 권장."},
+    {"url": "https://www.fsc.go.kr/po040301",
+     "title": "금융광고 규제 가이드 — 금융위원회",
+     "snippet": "금리·수익률 표시 시 세전 여부와 우대조건을 명확히 고지해야 하며, "
+                "객관적 근거 없는 '업계 최고' 등 최상급 표현은 표시광고법 위반 소지."},
+]
+
+# Stage B 1차 plan 초안 — 필수 요소 중 disclosures·slots가 빠진 미완성본(의도적).
+# 하네스 critic이 누락을 적발 → 'c' 보충 질문 → 사용자가 보강하면 PLAN_MD(완성)로 교체.
+# (인터랙티브 기획: 1차 누락 → 2차 완성 흐름을 시연)
+PLAN_MD_PARTIAL = """---
+creative_direction:
+  palette: ["#00857C", "#0B2B5B", "#FFFFFF"]
+  font: Pretendard
+  grid: 12col
+  aspect: "1:1"
+material_matrix: [{channel: instagram, format: square}, {channel: email, format: banner}]
+image_concept: 밝은 톤의 추상적 금융 성장 이미지
+copy_themes: [높은 금리, 간편 가입, 신뢰]
+multinational: true
+languages: [ko, en, vi, zh]
+factsheet:
+  product: JB 정기예금
+  interest_rate: 3.5%
+  term: 12개월
+  min_amount: 100만원
+---
+# 구현 계획 (초안)
+
+레이아웃·카피·비주얼 방향을 잡았습니다. 컴플라이언스 고지와 슬롯 정의를 보강해야 합니다.
+"""
+
 
 def _png_chunk(typ: bytes, data: bytes) -> bytes:
     body = typ + data

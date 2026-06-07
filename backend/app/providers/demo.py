@@ -131,6 +131,82 @@ def _plan_json() -> str:
                        "ask": None, "ready": True}, ensure_ascii=False)
 
 
+# 하네스가 req.bypass일 때 system 프롬프트에 주입하는 마커(harness_brainstorming._BYPASS_DIRECTIVE와 짝).
+# 있으면 멀티턴 대화를 건너뛰고 전체 산출물을 즉시(ready) 반환 → bypass 패스트패스 보존.
+_BYPASS_MARK = "[빠른 진행]"
+
+
+def _count_user_turns(messages) -> int:
+    """provider 입력 메시지에서 실제 user 턴 수(압축 요약 헤드 제외)."""
+    n = 0
+    for m in (messages or []):
+        if getattr(m, "role", None) != "user":
+            continue
+        if (m.content or "").startswith("[이전 대화 요약]"):
+            continue   # _window_for_provider가 끼운 요약 헤드는 턴 아님
+        n += 1
+    return n
+
+
+def _section_after(system: str, marker: str) -> str:
+    """system 프롬프트에서 marker 뒤 구간(예: '[현재 plan.md]' 뒤 현재 plan 내용)."""
+    i = (system or "").find(marker)
+    return (system[i + len(marker):]).strip() if i >= 0 else ""
+
+
+def _stage_a_brainstorm(messages, system: str):
+    """Stage A — bypass면 전체 spec 즉시, 아니면 리서치+질문으로 점진 구체화.
+
+    Returns: (response_text, citations). 1턴에 리서치 인용을 동반(파일 트리에 research 산출).
+    """
+    if _BYPASS_MARK in (system or ""):
+        return _spec_json(), []
+    turns = _count_user_turns(messages)
+    if turns <= 1:
+        # 리서치 후 첫 질문(타겟) — 인용 동반.
+        return json.dumps({
+            "reply": ("정기예금 캠페인이군요. 시장을 빠르게 살펴봤어요 — 2030 세대의 정기예금 "
+                      "가입이 늘고 금리 민감도가 높으며 모바일 채널 비중이 큽니다. 먼저 핵심 "
+                      "타겟을 누구로 잡을까요?"),
+            "document": "",
+            "ask": {"trigger": "a", "question": "핵심 타겟 세그먼트는?",
+                    "options": ["2030 사회초년생", "3040 자산형성기", "전 연령 일반"]},
+            "ready": False,
+        }, ensure_ascii=False), F.RESEARCH_CITATIONS
+    if turns == 2:
+        # 두 번째 질문(다국어 범위) — 리서치 근거 환기.
+        return json.dumps({
+            "reply": ("좋아요, 2030 사회초년생으로 잡겠습니다. 외국인 고객까지 넓히면 다국어 "
+                      "소재가 필요해요. 어느 범위로 제작할까요?"),
+            "document": "",
+            "ask": {"trigger": "a", "question": "다국어 제작 범위는?",
+                    "options": ["국문만", "영어 포함", "영어+베트남어+중국어"]},
+            "ready": False,
+        }, ensure_ascii=False), []
+    # 정보 충분 → 전체 spec 작성(ready).
+    return _spec_json(), []
+
+
+def _stage_b_brainstorm(system: str) -> str:
+    """Stage B — bypass면 완성 plan 즉시. 아니면 1차 누락 초안 → 보충 후 완성.
+
+    현재 plan.md(system의 '[현재 plan.md]' 구간)가 비어 있으면 1차(누락) 초안을,
+    있으면(보충 단계) 완성 plan을 반환. 누락 초안은 하네스 critic이 'c'(보충)로 유도.
+    """
+    if _BYPASS_MARK in (system or ""):
+        return _plan_json()
+    cur = _section_after(system, "[현재 plan.md]")
+    if not cur:
+        return json.dumps({
+            "reply": "계획 초안을 잡았어요. 다만 컴플라이언스 고지와 슬롯 정의를 더 채워야 합니다.",
+            "document": F.PLAN_MD_PARTIAL, "ask": None, "ready": False,
+        }, ensure_ascii=False)
+    return json.dumps({
+        "reply": "빠졌던 예금자보호 고지와 레이아웃 슬롯을 보강했습니다. 계획이 완성되었어요.",
+        "document": F.PLAN_MD, "ask": None, "ready": True,
+    }, ensure_ascii=False)
+
+
 def _layout_json() -> str:
     return json.dumps({"reply": "러프 완성", "layout_spec": F.LAYOUT_SPEC, "ready": True},
                       ensure_ascii=False)
@@ -184,12 +260,11 @@ def _reconcile_json(messages) -> str:
 
 
 def _detect(system: str, messages=None) -> str:
-    """system 마커로 단계 판별 → 해당 fixture/콘텐츠. 미매칭은 안전 기본."""
+    """system 마커로 단계 판별 → 해당 fixture/콘텐츠. 미매칭은 안전 기본.
+
+    Stage A/B(브레인스토밍)는 인용/턴 인식이 필요해 complete()가 직접 라우팅한다.
+    """
     s = system or ""
-    if "[Stage A]" in s:
-        return _spec_json()
-    if "[Stage B]" in s:
-        return _plan_json()
     if "[S1 Rough]" in s:
         return _layout_json()
     if "[S2b" in s:
@@ -211,7 +286,13 @@ class DemoProvider(Provider):
     name = "demo"
 
     def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
-        return ProviderResponse(text=_detect(system or "", messages), model="demo", raw=None)
+        s = system or ""
+        if "[Stage A]" in s:                      # 브레인스토밍 Stage A — 리서치+멀티턴
+            text, citations = _stage_a_brainstorm(messages, s)
+            return ProviderResponse(text=text, model="demo", citations=citations)
+        if "[Stage B]" in s:                      # 브레인스토밍 Stage B — 1차 누락→보충 완성
+            return ProviderResponse(text=_stage_b_brainstorm(s), model="demo")
+        return ProviderResponse(text=_detect(s, messages), model="demo", raw=None)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
         # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.

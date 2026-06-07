@@ -37,6 +37,13 @@ _PROTOCOL = (
     '"ready": true/false}'
 )
 
+# bypass(빠른 진행) 시 system에 주입 — 대화 없이 즉시 전체 산출. demo._BYPASS_MARK와 짝.
+# (실 LLM에도 의미 있음: bypass=질문 생략·즉시 완성. 평소 멀티턴 대화 흐름은 보존.)
+_BYPASS_DIRECTIVE = (
+    "\n\n[빠른 진행] 사용자가 즉시 진행을 원합니다. 추가 질문(ask) 없이 지금까지의 정보로 "
+    "document를 완성하고 ready=true로 표시하세요."
+)
+
 
 def _parse_json(text: str) -> dict:
     """LLM 출력에서 첫 JSON 객체를 견고하게 추출."""
@@ -210,6 +217,8 @@ class BrainstormingHarness(Harness):
             "YAML frontmatter로 담고, 작성을 마치면 ready=true로 표시합니다. "
             "외부 사실이 꼭 필요하면 그 사실을 사용자에게 질문해 확인하세요(자동 웹검색은 하지 않습니다)." + _PROTOCOL +
             f"\n\n[현재 spec.md]\n{cur}")
+        if req.bypass:
+            sys += _BYPASS_DIRECTIVE
         # 웹서치 OFF(B): 한 줄 프롬프트에 아티클을 자동 수집하지 않음 — 대화-우선.
         resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
                                  model=req.provider, system=sys)
@@ -293,6 +302,8 @@ class BrainstormingHarness(Harness):
             "\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. plan.md의 YAML frontmatter에 반드시 "
             f"다음 키를 포함하세요: {sorted(REQUIRED_PLAN_FIELDS)}. " + _PROTOCOL +
             f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}\n\n[현재 plan.md]\n{cur_plan}")
+        if req.bypass:
+            sys += _BYPASS_DIRECTIVE
         resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
                                  model=req.provider, system=sys)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)

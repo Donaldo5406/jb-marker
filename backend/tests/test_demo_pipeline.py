@@ -32,6 +32,57 @@ def test_brainstorming_demo_produces_spec_and_plan(monkeypatch):
     assert plan.status_code == 200 and "creative_direction:" in plan.json()["content_text"]
 
 
+def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
+    """T5: bypass 없는 멀티턴 — 리서치+질문(a) → spec(b) → plan 1차 누락(c) →
+    보충 후 완성(b) → 확정(done). 인터랙티브 기획 흐름 전 구간 시연."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+
+    def turn(prompt, answer=None):
+        body = {"run_id": rid, "studio": "brainstorming", "prompt": prompt,
+                "provider": "anthropic", "is_marker": True, "mock": True, "bypass": False}
+        if answer is not None:
+            body["answer"] = answer
+        r = client.post("/gateway/run", json=body)
+        assert r.status_code == 200
+        return r.json()
+
+    # 턴1: 리서치 + 첫 질문(a). spec 아직 미작성.
+    r1 = turn("정기예금 캠페인 기획하자")
+    assert (r1.get("ask") or {}).get("trigger") == "a"
+    assert client.get(f"/vfs/{rid}/brainstorming/spec.md").status_code == 404
+    # 리서치 산출물 저장 확인
+    src = client.get(f"/vfs/{rid}/brainstorming/assets/research/article/src_0.md")
+    assert src.status_code == 200
+
+    # 턴2: 두 번째 질문(a).
+    r2 = turn("2030 사회초년생", answer="2030 사회초년생")
+    assert (r2.get("ask") or {}).get("trigger") == "a"
+
+    # 턴3: 전체 spec + spec-lock 질문(b).
+    r3 = turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
+    assert (r3.get("ask") or {}).get("trigger") == "b"
+    spec = client.get(f"/vfs/{rid}/brainstorming/spec.md")
+    assert spec.status_code == 200 and "goal:" in spec.json()["content_text"]
+
+    # 턴4: spec 확정 → plan 1차 초안(누락) + 보충 질문(c).
+    r4 = turn("예, plan으로", answer="예, plan으로")
+    assert (r4.get("ask") or {}).get("trigger") == "c"
+    plan_partial = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
+    assert "disclosures:" not in plan_partial   # 1차 누락
+
+    # 턴5: 보충 → 완성 plan + plan-lock 질문(b).
+    r5 = turn("보충하기", answer="보충하기")
+    assert (r5.get("ask") or {}).get("trigger") == "b"
+    plan_full = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
+    assert "creative_direction:" in plan_full and "disclosures:" in plan_full
+
+    # 턴6: plan 확정 → done.
+    turn("예, 확정", answer="예, 확정")
+    state = client.get(f"/vfs/{rid}/brainstorming/_state.json").json()["content_text"]
+    assert '"stage": "done"' in state
+
+
 def test_design_demo_produces_layout_and_visual(monkeypatch):
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
