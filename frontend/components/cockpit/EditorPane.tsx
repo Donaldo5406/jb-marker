@@ -3,14 +3,9 @@
 import * as React from "react";
 import { Copy, ImageIcon, Loader2, Save, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fileType, displayName } from "@/lib/fileType";
+import { fileType, displayName, baseName, isImagePath } from "@/lib/fileType";
 import { FileContent } from "./FileContent";
 import { useCockpit } from "./CockpitProvider";
-
-function baseName(path: string): string {
-  const segs = path.split("/").filter(Boolean);
-  return segs[segs.length - 1] ?? path;
-}
 
 /** brainstorming 중앙 인라인 표면: 파일 액션 툴바 + FileContent. */
 export function EditorPane() {
@@ -42,7 +37,7 @@ export function EditorPane() {
   }
 
   const isScene = file.path.endsWith(".scene");
-  const isText = !isScene && !file.path.match(/\.(png|jpe?g|gif|webp|avif|bmp|ico)$/i);
+  const isText = !isScene && !isImagePath(file.path);
   const ft = fileType(baseName(file.path));
   const handleSave = async () => {
     setSaving(true);

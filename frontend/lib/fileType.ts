@@ -25,6 +25,12 @@ export function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
+/** 경로에서 마지막 세그먼트(파일명). 트리/툴바/드로어 표시 공용. */
+export function baseName(path: string): string {
+  const segs = path.split("/").filter(Boolean);
+  return segs[segs.length - 1] ?? path;
+}
+
 export function fileType(name: string): FileTypeInfo {
   return MAP[extOf(name)] ?? DEFAULT;
 }

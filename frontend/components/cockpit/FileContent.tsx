@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { Code2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isImagePath } from "@/lib/fileType";
+import { isImagePath, baseName } from "@/lib/fileType";
 import { ImageView } from "./ImageView";
 import type { OpenFile } from "./CockpitProvider";
 
@@ -16,10 +16,6 @@ const CodeView = dynamic(() => import("./CodeView").then((m) => m.CodeView), {
   loading: () => <div className="flex-1 bg-surface" />,
 });
 
-function baseName(path: string): string {
-  const segs = path.split("/").filter(Boolean);
-  return segs[segs.length - 1] ?? path;
-}
 function parseScene(content: string): { objects: any[] } | null {
   if (!content) return null;
   try {
@@ -67,6 +63,8 @@ export function FileContent({
                 ? setMdMode((m) => (m === "preview" ? "source" : "preview"))
                 : setCodeMode((m) => (m === "read" ? "source" : "read"))
             }
+            aria-label={isMd ? (showPreview ? "소스 보기" : "미리보기") : showCodeRead ? "소스 보기" : "읽기"}
+            title={isMd ? (showPreview ? "소스 보기" : "미리보기") : showCodeRead ? "소스 보기" : "읽기"}
             className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1 text-caption font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
           >
             {showPreview || showCodeRead ? <Code2 className="h-3.5 w-3.5" aria-hidden /> : <Eye className="h-3.5 w-3.5" aria-hidden />}
