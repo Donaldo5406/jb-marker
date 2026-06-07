@@ -54,14 +54,17 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
                     </span>
                   ))}
                 </div>
-                {g.citation && (
+                {g.citation?.quote && (
+                  <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">{g.citation.quote}</p>
+                )}
+                {g.citation?.source_url && (
                   <a
-                    href={g.citation}
+                    href={g.citation.source_url}
                     target="_blank"
                     rel="noreferrer"
                     className="mt-1 inline-block text-[11px] text-primary underline underline-offset-2 break-all"
                   >
-                    {g.citation}
+                    {[g.citation.law, g.citation.article].filter(Boolean).join(" ") || g.citation.source_url} ↗
                   </a>
                 )}
               </div>

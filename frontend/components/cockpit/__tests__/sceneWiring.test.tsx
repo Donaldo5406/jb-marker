@@ -19,7 +19,10 @@ const LAYOUT_SPEC = {
     { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1080 }, z: 0 },
     { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 200 }, z: 2, copy_key: "headline" },
   ],
-  copy: { ko: { headline: "든든한 적금" }, en: { headline: "Solid Savings" } },
+  copy: {
+    ko: { headline: "든든한 적금" }, en: { headline: "Solid Savings" },
+    vi: { headline: "Tiết kiệm vững" }, zh: { headline: "稳健储蓄" },
+  },
 };
 
 type Recorded = { url: string; method: string; body: any };
@@ -146,11 +149,22 @@ describe("scene-assembly wiring (C1/I4)", () => {
     );
     await act(async () => { await captured!.openRun("run3"); });
     await act(async () => { await captured!.runDesign("advance"); });
-    // 4언어 모두 main.scene PUT 되어야 함(R2 동등성 검토 입력).
+    // 4언어 모두 main.scene PUT + 언어별로 올바른 카피/lang가 조립돼야 함(R2 동등성 입력).
+    const EXPECT: Record<string, string> = {
+      ko: "든든한 적금", en: "Solid Savings", vi: "Tiết kiệm vững", zh: "稳健储蓄",
+    };
+    const headlines: string[] = [];
     for (const lang of LANGS) {
-      expect(puts.find((p) => p.url.includes(`design/final/${lang}/main.scene`)),
-        `final/${lang}/main.scene PUT 누락`).toBeTruthy();
+      const put = puts.find((p) => p.url.includes(`design/final/${lang}/main.scene`));
+      expect(put, `final/${lang}/main.scene PUT 누락`).toBeTruthy();
+      const scene = JSON.parse(put!.body.content);
+      const hl = scene.objects.find((o: any) => o.role === "headline");
+      expect(hl.lang, `${lang} headline.lang 불일치`).toBe(lang);
+      expect(hl.text, `${lang} headline 카피 불일치`).toBe(EXPECT[lang]);
+      headlines.push(hl.text);
     }
+    // 잘못된 단일 언어 일괄 조립(예: 전부 langs[0]) 회귀 가드 — 4개 텍스트가 모두 달라야 함.
+    expect(new Set(headlines).size).toBe(LANGS.length);
   });
 
   it("rough spec이 없으면 scene을 만들지 않는다(no-op)", async () => {

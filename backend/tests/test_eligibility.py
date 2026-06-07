@@ -57,6 +57,11 @@ def test_breakdown_sums_to_excluded_and_is_policy_ordered(ledger, policies):
     for g in bd:
         assert g["policy"] in {"infomatics", "pipa"}
         assert g["label"] and ("§50" in g["label"] or "§15" in g["label"])
-        assert "law" in g["citation"]
+        # citation 계약(프론트 EligibilityPanel이 의존): 객체 {law, article, source_url, quote},
+        # source_url은 클릭 가능한 URL. (문자열 아님 — dict 렌더링 가정을 핀으로 고정)
+        cit = g["citation"]
+        assert isinstance(cit, dict), f"citation은 dict여야 함(프론트가 객체로 렌더): {cit!r}"
+        assert cit["law"] and cit["article"]
+        assert cit["source_url"].startswith("http")
         assert sum(r["count"] for r in g["reasons"]) == g["count"]
         assert all(r["label"] for r in g["reasons"])

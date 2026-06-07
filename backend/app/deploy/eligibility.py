@@ -32,7 +32,9 @@ def _build_breakdown(excluded: list[dict]) -> list[dict]:
         g = groups.setdefault(pol, {
             "policy": pol,
             "label": POLICY_LABELS.get(pol, pol),
-            "citation": ex.get("citation", ""),
+            # citation은 정책 yaml의 매핑 {law, article, source_url, quote}. 누락 시에도
+            # dict로 통일(프론트가 객체로 렌더 — 문자열/객체 혼합으로 인한 크래시 방지).
+            "citation": ex.get("citation") or {},
             "count": 0,
             "_reasons": {},
         })

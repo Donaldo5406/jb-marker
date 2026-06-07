@@ -27,8 +27,12 @@ export type DeployStateLike = {
   dev_pass: boolean;
 };
 export type EligibilityReason = { status: string; label: string; count: number };
+// 법령 인용 — 정책 yaml의 매핑(백엔드가 객체로 반환). 필드는 방어적으로 옵셔널.
+export type EligibilityCitation = {
+  law?: string; article?: string; source_url?: string; quote?: string;
+};
 export type EligibilityBreakdownItem = {
-  policy: string; label: string; citation: string; count: number; reasons: EligibilityReason[];
+  policy: string; label: string; citation: EligibilityCitation; count: number; reasons: EligibilityReason[];
 };
 export type EligibilityResult = {
   total: number; eligible_count: number; excluded_count: number;
