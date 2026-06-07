@@ -172,6 +172,24 @@ def test_s3_writes_metadata_and_marks_done(tmp_path):
     assert s.get_manifest("r1").step_status["design"] == "done"
 
 
+def test_s3_metadata_includes_body_key(tmp_path):
+    """metadata.md는 headline/body/cta를 모두 표기해야 한다(copy 키는 'body'이며 'sub' 아님).
+    기존 루프가 'sub'를 찾아 body가 누락됐다(spec T1)."""
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S3", "confirmed": {}, "bypass": {"S3": True}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"copy": {"ko": {"headline": "든든한 적금", "body": "12개월 만기 100만원부터", "cta": "가입하기"}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="confirm"), provider=FakeProvider(), store=s)
+    md = s.get("/r1/design/metadata.md").content_text
+    assert "든든한 적금" in md   # headline
+    assert "12개월 만기 100만원부터" in md   # body (회귀 방지: 'sub'면 누락됨)
+    assert "가입하기" in md   # cta
+
+
 def test_done_step_is_idempotent_no_error(tmp_path):
     s = _store(tmp_path)
     s.put("/r1/design/_state.json", json.dumps(

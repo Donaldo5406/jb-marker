@@ -20,6 +20,15 @@ def test_layout_spec_shape():
     assert all({"role", "copy_key"} <= set(s) for s in ls["slots"])
 
 
+def test_layout_spec_bbox_is_object_form():
+    """bbox는 레퍼런스·실 LLM·프론트 assembleScene과 동일한 {x,y,w,h} 객체 형식이어야 한다.
+    배열([x,y,w,h])이면 프론트가 s.bbox.x로 읽어 좌표·크기가 전부 undefined가 되어
+    텍스트가 원점에 겹치고 배경 이미지 scaleToWidth가 죽는다."""
+    for s in F.LAYOUT_SPEC["slots"]:
+        assert isinstance(s["bbox"], dict), f"{s['role']} bbox는 dict여야 함(배열 금지)"
+        assert {"x", "y", "w", "h"} <= set(s["bbox"]), f"{s['role']} bbox에 x/y/w/h 필요"
+
+
 def test_copy_numbers_are_grounded_in_factsheet():
     """copy의 모든 수치 토큰이 factsheet corpus에 있어야 grounding 통과."""
     from app.core.grounding import build_corpus, find_ungrounded

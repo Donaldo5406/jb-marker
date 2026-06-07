@@ -368,7 +368,7 @@ class DesignHarness(Harness):
         for lang in langs:
             c = copy.get(lang, {})
             lines.append(f"## {lang}")
-            for k in ("headline", "sub", "cta"):
+            for k in ("headline", "body", "cta"):   # copy 키는 body (이전 'sub'는 항상 누락)
                 if c.get(k):
                     lines.append(f"- {k}: {c[k]}")
         lines += ["", "## 크리틱",
