@@ -36,19 +36,23 @@ export function ProviderGrid({ providers, selected, onChange }: Props) {
               onClick={() => toggle(p.id)}
               className={
                 "border rounded p-3 flex flex-col items-center gap-2 transition-colors " +
-                (isSel ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:bg-gray-50")
+                (isSel
+                  ? "border-primary bg-surface-container"
+                  : "border-outline-variant hover:bg-surface-container-high")
               }
             >
               <img src={p.logo_path} alt={p.name} className="w-12 h-12" />
               <div className="text-sm font-medium">{p.name}</div>
               <div className="flex gap-1 text-xs">
-                <span className="px-1 bg-gray-100 rounded">{p.channel_type}</span>
+                <span className="px-1 rounded bg-surface-container-high text-on-surface-variant">
+                  {p.channel_type}
+                </span>
                 <span
                   className={
                     "px-1 rounded " +
                     (p.adapter_status === "stub"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : "bg-green-100 text-green-800")
+                      ? "bg-severity-warning-bg text-severity-warning-fg"
+                      : "bg-severity-ok-bg text-severity-ok-fg")
                   }
                 >
                   {p.adapter_status}
