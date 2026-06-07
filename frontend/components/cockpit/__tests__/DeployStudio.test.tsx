@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let ctx: any;
 vi.mock("../CockpitProvider", () => ({ useCockpit: () => ctx }));
+vi.mock("@/lib/reviewArtifacts", () => ({ loadReviewVerdicts: () => Promise.resolve([]) }));
 
 import { DeployStudio } from "../DeployStudio";
 
@@ -13,6 +14,12 @@ function makeCtx(overrides: Partial<any> = {}) {
     packages: {},
     devPass: false,
     runId: "r",
+    selectedProviders: [],
+    setSelectedProviders: vi.fn(),
+    nodes: [],
+    manifest: null,
+    designStep: "S0",
+    reviewGate: null,
     setupDeploy: vi.fn(),
     runEligibility: vi.fn(),
     runPackagingCell: vi.fn(),
