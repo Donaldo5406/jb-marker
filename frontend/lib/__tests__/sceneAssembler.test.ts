@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assembleScene, swapLanguage } from "../sceneAssembler";
+import { assembleScene, swapLanguage, aspectToDims } from "../sceneAssembler";
 
 const SPEC = {
   aspect: "1:1",
@@ -75,5 +75,24 @@ describe("assembleScene", () => {
     expect(enHl.text).toBe("Solid Savings");
     expect(enHl.left).toBe(koHl.left);    // bbox 보존
     expect(enHl.lang).toBe("en");
+  });
+
+  it("aspect로 캔버스 width/height를 산출한다(4:5→1080×1350)", () => {
+    const scene = assembleScene({ ...SPEC, aspect: "4:5" } as any, "ko", (r) => r);
+    expect(scene.width).toBe(1080);
+    expect(scene.height).toBe(1350);
+  });
+});
+
+describe("aspectToDims", () => {
+  it("W:H 비율로 높이를 산출(폭 1080 고정)", () => {
+    expect(aspectToDims("4:5")).toEqual({ width: 1080, height: 1350 });
+    expect(aspectToDims("1:1")).toEqual({ width: 1080, height: 1080 });
+    expect(aspectToDims("16:9")).toEqual({ width: 1080, height: 608 });
+  });
+  it("미지정/이상값은 정사각 폴백", () => {
+    expect(aspectToDims(undefined)).toEqual({ width: 1080, height: 1080 });
+    expect(aspectToDims("abc")).toEqual({ width: 1080, height: 1080 });
+    expect(aspectToDims("0:5")).toEqual({ width: 1080, height: 1080 });
   });
 });

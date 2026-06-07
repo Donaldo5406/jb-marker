@@ -13,9 +13,25 @@ export type LayoutSpec = {
   slots: Slot[];
   copy?: Record<string, Record<string, string>>;
 };
-export type FabricScene = { version: string; objects: any[]; background?: string };
+export type FabricScene = {
+  version: string; objects: any[]; background?: string;
+  width?: number; height?: number;   // aspect 기반 캔버스 치수(FabricEditor 캔버스 크기)
+};
 
 const IMAGE_ROLES = new Set(["background", "logo"]);
+
+const BASE_WIDTH = 1080;
+
+/** aspect("W:H") → 캔버스 치수. 폭 고정(1080), 높이는 비율로 산출. 미지정/이상값은 정사각.
+ *  예: "4:5"→{1080,1350}, "1:1"→{1080,1080}, "16:9"→{1080,608}. */
+export function aspectToDims(aspect?: string): { width: number; height: number } {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(aspect ?? "");
+  if (!m) return { width: BASE_WIDTH, height: BASE_WIDTH };
+  const w = parseFloat(m[1]);
+  const h = parseFloat(m[2]);
+  if (!(w > 0) || !(h > 0)) return { width: BASE_WIDTH, height: BASE_WIDTH };
+  return { width: BASE_WIDTH, height: Math.round((BASE_WIDTH * h) / w) };
+}
 
 /** bbox를 객체({x,y,w,h})·배열([x,y,w,h]) 양식 모두 받아 숫자로 정규화.
  *  배열에 .x로 접근하면 undefined → 모든 슬롯의 left/top/width가 undefined가 되어
@@ -52,7 +68,8 @@ export function assembleScene(
         text: (key && copy[key]) || "",
         fontSize: 48, fill: "#0b1324" };
     });
-  return { version: "6.0.0", objects };
+  const { width, height } = aspectToDims(spec.aspect);
+  return { version: "6.0.0", objects, width, height };
 }
 
 /** 텍스트 객체 콘텐츠만 언어 교체(레이아웃·비주얼 보존). */

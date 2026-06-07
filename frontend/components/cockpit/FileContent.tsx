@@ -16,10 +16,10 @@ const CodeView = dynamic(() => import("./CodeView").then((m) => m.CodeView), {
   loading: () => <div className="flex-1 bg-surface" />,
 });
 
-function parseScene(content: string): { objects: any[] } | null {
+function parseScene(content: string): { objects: any[]; width?: number; height?: number } | null {
   if (!content) return null;
   try {
-    return JSON.parse(content) as { objects: any[] };
+    return JSON.parse(content) as { objects: any[]; width?: number; height?: number };
   } catch {
     return null;
   }
@@ -77,7 +77,7 @@ export function FileContent({
         </div>
       )}
       {isScene ? (
-        <FabricEditor scene={sceneObj} onSave={(json) => onSaveScene(JSON.stringify(json))} />
+        <FabricEditor scene={sceneObj} width={sceneObj?.width} height={sceneObj?.height} onSave={(json) => onSaveScene(JSON.stringify(json))} />
       ) : isImage ? (
         <ImageView runId={runId} path={file.path} />
       ) : showPreview ? (

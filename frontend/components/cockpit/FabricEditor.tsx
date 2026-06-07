@@ -90,7 +90,9 @@ export function FabricEditor({ scene, onSave, width = 1080, height = 1080 }: Fab
     try {
       // fabric v6+: toJSON()은 인자를 받지 않음. 커스텀 prop 직렬화는 toObject([...]) 사용
       // (loadFromJSON이 소비하는 {version,objects,...} 동일 형태).
-      await onSave(canvas.toObject(["role", "lang", "slotId"]));
+      // 캔버스 치수(aspect)는 toObject에 없으므로 명시 보존 — 편집 후 재오픈 시 4:5가 정사각으로
+      // 되돌아가지 않도록(parseScene→FabricEditor width/height 라운드트립).
+      await onSave({ ...canvas.toObject(["role", "lang", "slotId"]), width, height });
     } finally {
       setSaving(false);
     }

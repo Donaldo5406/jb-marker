@@ -44,7 +44,7 @@ creative_direction:
   palette: ["#00857C", "#0B2B5B", "#FFFFFF"]
   font: Pretendard
   grid: 12col
-  aspect: "1:1"
+  aspect: "4:5"
 material_matrix: [{channel: instagram, format: square}, {channel: email, format: banner}]
 image_concept: 밝은 톤의 추상적 금융 성장 이미지
 copy_themes: [높은 금리, 간편 가입, 신뢰]
@@ -65,17 +65,20 @@ disclosures: [예금자보호법에 따라 5천만원까지 보호]
 
 LAYOUT_SPEC = {
     "visual_concept": "밝은 톤의 추상적 금융 성장 이미지",
-    "aspect": "1:1",
+    # 4:5 세로형(인스타/카톡 피드 최적) — 사용자 제공 배경(1122×1402=4:5)을 꽉 채운다.
+    # 프론트 assembleScene이 aspect로 캔버스 1080×1350을 산출 → 배경 클리핑 없음.
+    "aspect": "4:5",
     # bbox는 레퍼런스·실 LLM·프론트 assembleScene과 동일한 {x,y,w,h} 객체 형식.
     # (이전 배열 [x1,y1,x2,y2] 코너 형식은 프론트가 s.bbox.x로 읽어 좌표가 전부
     #  undefined가 되는 버그를 유발 → 텍스트가 원점에 겹치고 배경이 안 채워졌다.)
+    # 좌표는 1080×1350 캔버스 기준(헤드라인/바디=상단, CTA/고지=하단).
     "slots": [
-        {"role": "background", "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1080}, "z": 0, "copy_key": None},
+        {"role": "background", "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1350}, "z": 0, "copy_key": None},
         {"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3, "copy_key": None},
-        {"role": "headline", "bbox": {"x": 80, "y": 140, "w": 840, "h": 180}, "z": 1, "copy_key": "headline"},
-        {"role": "body", "bbox": {"x": 80, "y": 360, "w": 840, "h": 260}, "z": 1, "copy_key": "body"},
-        {"role": "cta", "bbox": {"x": 80, "y": 880, "w": 440, "h": 100}, "z": 2, "copy_key": "cta"},
-        {"role": "disclosure", "bbox": {"x": 80, "y": 1004, "w": 920, "h": 56}, "z": 3, "copy_key": "disclosure"},
+        {"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200}, "z": 1, "copy_key": "headline"},
+        {"role": "body", "bbox": {"x": 80, "y": 400, "w": 920, "h": 300}, "z": 1, "copy_key": "body"},
+        {"role": "cta", "bbox": {"x": 80, "y": 1150, "w": 460, "h": 110}, "z": 2, "copy_key": "cta"},
+        {"role": "disclosure", "bbox": {"x": 80, "y": 1276, "w": 920, "h": 58}, "z": 3, "copy_key": "disclosure"},
     ],
     "copy": {},
 }
@@ -136,7 +139,7 @@ creative_direction:
   palette: ["#00857C", "#0B2B5B", "#FFFFFF"]
   font: Pretendard
   grid: 12col
-  aspect: "1:1"
+  aspect: "4:5"
 material_matrix: [{channel: instagram, format: square}, {channel: email, format: banner}]
 image_concept: 밝은 톤의 추상적 금융 성장 이미지
 copy_themes: [높은 금리, 간편 가입, 신뢰]
