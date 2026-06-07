@@ -110,6 +110,49 @@ describe("scene-assembly wiring (C1/I4)", () => {
     expect(captured!.designLang).toBe("en");
   });
 
+  it("runDesign done은 plan 전체 언어의 final/{lang}/main.scene를 일괄 조립한다(R2 4언어)", async () => {
+    const puts: Recorded[] = [];
+    const LANGS = ["ko", "en", "vi", "zh"];
+    const fetchMock = vi.fn(async (input: any, init?: any) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      const body = init?.body ? JSON.parse(init.body) : undefined;
+      if (method === "PUT") puts.push({ url, method, body });
+      const ok = (json: any) => ({ ok: true, status: 200, json: async () => json });
+      if (url.endsWith("/runs") && method === "GET") return ok({ runs: [] });
+      if (url.endsWith("/entitlement")) return ok({ marker: false });
+      // design 파이프라인 1턴 → done
+      if (url.includes("/gateway/run") && method === "POST")
+        return ok({ text: "디자인 확정", meta: { step: "done" } });
+      if (/\/vfs\/[^/]+$/.test(url) && method === "GET") return ok({ nodes: [] });
+      // _state.json → plan 언어 4개(정본)
+      if (url.includes("design/_state.json") && method === "GET")
+        return ok({ content_text: JSON.stringify({ languages: LANGS }) });
+      if (url.includes("design/rough/layout.spec.json") && method === "GET")
+        return ok({ content_text: JSON.stringify(LAYOUT_SPEC) });
+      if (url.includes("brainstorming/") && method === "GET")
+        return { ok: false, status: 404, json: async () => ({}) };
+      if (method === "PUT")
+        return ok({ path: url, mime: body?.mime ?? null, content_text: body?.content ?? "" });
+      if (method === "GET")
+        return ok({ path: url, mime: "application/json", content_text: "{}" });
+      return ok({});
+    });
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    render(
+      <CockpitProvider>
+        <Capture />
+      </CockpitProvider>,
+    );
+    await act(async () => { await captured!.openRun("run3"); });
+    await act(async () => { await captured!.runDesign("advance"); });
+    // 4언어 모두 main.scene PUT 되어야 함(R2 동등성 검토 입력).
+    for (const lang of LANGS) {
+      expect(puts.find((p) => p.url.includes(`design/final/${lang}/main.scene`)),
+        `final/${lang}/main.scene PUT 누락`).toBeTruthy();
+    }
+  });
+
   it("rough spec이 없으면 scene을 만들지 않는다(no-op)", async () => {
     const puts: Recorded[] = [];
     const fetchMock = vi.fn(async (input: any, init?: any) => {
