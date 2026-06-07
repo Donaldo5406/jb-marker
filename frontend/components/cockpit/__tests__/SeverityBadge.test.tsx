@@ -15,4 +15,9 @@ describe("SeverityBadge", () => {
     rerender(<SeverityBadge level="ok">통과</SeverityBadge>);
     expect(screen.getByText("통과").className).toContain("bg-severity-ok-bg");
   });
+  it("info 레벨도 info 토큰을 단다", () => {
+    render(<SeverityBadge level="info">안내</SeverityBadge>);
+    expect(screen.getByText("안내").className).toContain("bg-severity-info-bg");
+    expect(screen.getByText("안내").className).toContain("text-severity-info-fg");
+  });
 });
