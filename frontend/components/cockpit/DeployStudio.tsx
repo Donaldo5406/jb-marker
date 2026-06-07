@@ -44,6 +44,15 @@ export function DeployStudio() {
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [calendar, setCalendar] = React.useState<{ hour: number; blocked: boolean }[]>([]);
 
+  React.useEffect(() => {
+    if (!activeAdvisor) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActiveAdvisor(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeAdvisor]);
+
   const languages: string[] = ["ko"];
   const matrix = selected.flatMap((ch) => languages.map((l) => ({ channel: ch, lang: l })));
   const currentStep = !c.eligibility ? "D0" : Object.keys(c.packages).length === 0 ? "D1" : "D2";

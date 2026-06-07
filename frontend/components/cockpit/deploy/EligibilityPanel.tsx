@@ -17,12 +17,12 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
           <span className="font-bold text-lg">{total}</span>
         </div>
         <div>
-          <span className="text-green-700 text-sm">발송대상</span>{" "}
-          <span className="font-bold text-lg text-green-700">{eligibleCount}</span>
+          <span className="text-severity-ok-fg text-sm">발송대상</span>{" "}
+          <span className="font-bold text-lg text-severity-ok-fg">{eligibleCount}</span>
         </div>
         <div>
-          <span className="text-red-700 text-sm">제외</span>{" "}
-          <span className="font-bold text-lg text-red-700">{excludedCount}</span>
+          <span className="text-severity-critical-fg text-sm">제외</span>{" "}
+          <span className="font-bold text-lg text-severity-critical-fg">{excludedCount}</span>
         </div>
       </div>
       <div>
@@ -34,7 +34,7 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
               data-blocked={c.blocked}
               className={
                 "h-6 text-[10px] text-center leading-6 " +
-                (c.blocked ? "bg-gray-400 text-white" : "bg-green-200")
+                (c.blocked ? "bg-outline text-on-surface" : "bg-severity-ok-bg")
               }
             >
               {c.hour}

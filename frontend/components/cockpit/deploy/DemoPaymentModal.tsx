@@ -15,9 +15,14 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
       data-testid="demo-payment-modal"
     >
-      <div className="bg-white rounded p-6 w-96 space-y-3">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="결제"
+        className="bg-surface rounded p-6 w-96 space-y-3"
+      >
         <h2 className="text-lg font-bold">Pro 구독 (월 $100)</h2>
-        <p className="text-sm text-gray-600">Marker 모델 + Advisor 챗 이용권.</p>
+        <p className="text-sm text-on-surface-variant">Marker 모델 + Advisor 챗 이용권.</p>
         <button
           type="button"
           disabled
@@ -31,7 +36,7 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
             onPayDemo();
             onClose();
           }}
-          className="w-full py-2 bg-green-500 text-white rounded text-sm"
+          className="w-full py-2 bg-primary text-on-primary rounded text-sm"
           data-testid="demo-pay-btn"
         >
           데모 결제 (즉시 통과)

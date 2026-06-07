@@ -14,16 +14,16 @@ export function PackageMatrix({ cells, onAskAdvisor }: Props) {
         const id = `${c.channel}_${c.lang}`;
         const tone =
           c.status === "ok"
-            ? "bg-green-50 border-green-300"
+            ? "bg-severity-ok-bg border-severity-ok"
             : c.status === "needs_advisor"
-            ? "bg-yellow-50 border-yellow-300"
-            : "bg-gray-50 border-gray-300";
+            ? "bg-severity-warning-bg border-severity-warning"
+            : "bg-surface-container-low border-outline-variant";
         return (
           <div key={id} data-testid={`cell-${id}`} className={"border border-outline-variant rounded p-3 " + tone}>
             <div className="text-sm font-medium">
               {c.channel} / {c.lang}
             </div>
-            <div className="text-xs text-gray-600">{c.status || "—"}</div>
+            <div className="text-xs text-on-surface-variant">{c.status || "—"}</div>
             {c.status === "needs_advisor" && (
               <button
                 type="button"

@@ -32,7 +32,7 @@ export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-            <span className="inline-block px-2 py-1 rounded bg-surface-container-high text-sm">{m.content}</span>
+            <span className="inline-block px-2 py-1 rounded bg-surface-container-high text-body-sm">{m.content}</span>
           </div>
         ))}
       </div>
