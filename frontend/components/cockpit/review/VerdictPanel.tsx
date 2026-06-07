@@ -18,7 +18,7 @@ const LEVEL: Record<string, SeverityLevel> = { PASS: "ok", WARN: "warning", BLOC
 
 /** 우측 심의 판정 패널 — 게이트 배지·카운트·액션(검토/경고확인/재검토/복귀). */
 export function VerdictPanel({ status, gate, acknowledged, stage, busy, onRun, onAck, onRestart, onBackToDesign }: VerdictPanelProps) {
-  const level = (status && LEVEL[status]) ?? "info";
+  const level: SeverityLevel = (status && LEVEL[status]) || "info";
   return (
     <div className="space-y-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
       <h3 className="text-body-sm font-medium text-on-surface">심의 판정</h3>
