@@ -19,33 +19,46 @@ const TIERS: Tier[] = [
   {
     name: "Free",
     price: "₩0",
-    tagline: "raw 모델로 가볍게 시작하기",
+    tagline: "raw 모델로 가볍게 시작",
     features: [
       "Claude · GPT · Gemini 직접 호출",
-      "콕핏 워크스페이스 IDE 3분할",
-      "가상 폴더 산출물 편집·저장",
-      "기획(brainstorming) 스튜디오 체험",
+      "콕핏 IDE 3분할 워크스페이스",
+      "가상폴더 산출물 편집·저장",
+      "brainstorming 스튜디오 체험",
     ],
   },
   {
-    name: "Pro",
+    name: "Marker Pro",
     price: "₩100,000",
     cadence: "/월",
-    tagline: "Marker 모델 + DeployStudio Advisor 풀세트",
+    tagline: "Marker 하네스 + 제작·검토",
     featured: true,
     features: [
       "Free의 모든 기능 포함",
       "Marker 전용 마케팅 모델",
-      "DeployStudio Advisor (발송 자동 검토)",
-      "디자인 · 검토 · 발송 스튜디오 (순차 제공)",
-      "우선 지원",
+      "Design 스튜디오 (제작·다국어)",
+      "Review 스튜디오 (준법·동등성)",
+      "파일뷰어 레이오버 풀세트",
+    ],
+  },
+  {
+    name: "Marker Pro + Deploy",
+    price: "₩150,000",
+    cadence: "/월",
+    tagline: "발송까지 끝내는 풀 파이프라인",
+    features: [
+      "Marker Pro의 모든 기능 포함",
+      "Deploy 스튜디오 (채널 발송)",
+      "§50 발송 적법성 + 야간 캘린더",
+      "발송 어드바이저 챗",
+      "채널×언어 패키징 export",
     ],
   },
 ];
 
 function handleSubscribe() {
   // Pro 구독은 데모 stub — 실 PG 청구 없음(Deferral D4).
-  alert("데모: 콕핏 Setting에서 엔타이틀먼트를 토글하세요");
+  alert("데모: 콕핏 Setting에서 엔타이틀먼트(Marker/Deploy)를 토글하세요");
 }
 
 export default function Pricing() {
@@ -87,7 +100,7 @@ export default function Pricing() {
         </div>
 
         {/* 티어 카드 */}
-        <div className="mx-auto mt-14 grid max-w-4xl gap-6 md:grid-cols-2">
+        <div className="mx-auto mt-14 grid max-w-6xl gap-6 md:grid-cols-3">
           {TIERS.map((tier) => (
             <Card
               key={tier.name}
@@ -138,6 +151,10 @@ export default function Pricing() {
                 {tier.featured ? (
                   <Button size="lg" className="w-full" onClick={handleSubscribe}>
                     Pro 구독하기
+                  </Button>
+                ) : tier.name === "Marker Pro + Deploy" ? (
+                  <Button variant="secondary" size="lg" className="w-full" onClick={handleSubscribe}>
+                    Deploy까지 구독
                   </Button>
                 ) : (
                   <Link href="/cockpit" className="block">
