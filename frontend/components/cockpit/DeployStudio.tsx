@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Lock, X, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import Link from "next/link";
+import { api } from "@/lib/api";
 import { useCockpit } from "@/components/cockpit/CockpitProvider";
 import { StepProgress, type Step } from "@/components/cockpit/StepProgress";
 import { ProviderGrid, type ProviderEntry } from "@/components/cockpit/deploy/ProviderGrid";
@@ -48,6 +49,9 @@ export function DeployStudio() {
   const [calendar, setCalendar] = React.useState<{ hour: number; blocked: boolean }[]>([]);
   const [dispatch, setDispatch] = React.useState<DispatchSim | null>(null);
   const [dispatching, setDispatching] = React.useState(false);
+  // T9: Design 산출(layout.spec.json)의 실제 4언어 카피를 패키징 입력으로 사용(더미 제거).
+  const [languages, setLanguages] = React.useState<string[]>(["ko"]);
+  const [designCopy, setDesignCopy] = React.useState<Record<string, Record<string, string>>>({});
 
   React.useEffect(() => {
     if (!activeAdvisor) return;
@@ -58,7 +62,29 @@ export function DeployStudio() {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeAdvisor]);
 
-  const languages: string[] = ["ko"];
+  // T9: Design 산출 layout.spec.json에서 실제 언어셋·카피 로드(없으면 ko 기본 유지).
+  React.useEffect(() => {
+    if (!c.runId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const node = await api.vfsGet(c.runId!, "design/rough/layout.spec.json");
+        const spec = JSON.parse(node.content_text ?? "{}");
+        const copy = (spec.copy ?? {}) as Record<string, Record<string, string>>;
+        const langs = Object.keys(copy);
+        if (!cancelled && langs.length > 0) {
+          setDesignCopy(copy);
+          setLanguages(langs);
+        }
+      } catch {
+        /* design 미완 — ko 기본 유지 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [c.runId]);
+
   const matrix = selected.flatMap((ch) => languages.map((l) => ({ channel: ch, lang: l })));
   const currentStep = !c.eligibility ? "D0" : Object.keys(c.packages).length === 0 ? "D1" : "D2";
 
@@ -119,7 +145,9 @@ export function DeployStudio() {
               type="button"
               onClick={async () => {
                 for (const cell of matrix) {
-                  await c.runPackagingCell(cell.channel, cell.lang, "demo copy " + cell.channel, `/runs/${c.runId}/deploy/packages/${cell.channel}_${cell.lang}/visual.png`);
+                  const cp = designCopy[cell.lang] ?? {};
+                  const copyText = [cp.headline, cp.body, cp.cta].filter(Boolean).join(" ").trim() || `demo copy ${cell.channel}`;
+                  await c.runPackagingCell(cell.channel, cell.lang, copyText, `/runs/${c.runId}/deploy/packages/${cell.channel}_${cell.lang}/visual.png`);
                 }
               }}
               className="rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container"
