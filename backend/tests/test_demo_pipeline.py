@@ -43,7 +43,10 @@ def test_design_demo_produces_layout_and_visual(monkeypatch):
     assert png.status_code == 200
 
 
-def test_review_demo_reaches_pass(monkeypatch):
+def test_review_demo_blocks_on_staged_violations(monkeypatch):
+    """데모는 의도적으로 위반을 스테이징한다(vi/zh 예금자보호 고지 누락) → 검토가
+    이를 잡아 critical → BLOCKED(위반 적발 시연, spec §1③). 검토는 R3까지 완주하고
+    보고서·done 상태는 정상 기록된다. 교정 후 PASS 경로는 T7에서 별도 검증."""
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
     _run(client, rid, "brainstorming", "정기예금 캠페인")
@@ -61,12 +64,11 @@ def test_review_demo_reaches_pass(monkeypatch):
         last_step = meta.get("step")
         if last_step == "R3":
             break
-    # R3 종단 도달 + 실제 게이트 산정. 빈 findings라 critical 0 → BLOCK이 아니어야
-    # deploy 진입 가능(백엔드 테스트는 composite 렌더 부재로 vision_skipped→WARN 강등).
+    # R3 종단 도달 + 스테이징 위반 적발 → BLOCKED(critical ≥ 1).
     assert last_step == "R3"
-    assert gate.get("status") in ("PASS", "WARN")
-    assert gate.get("critical_count", 0) == 0
-    # 검토 보고서 생성 + state done 확인.
+    assert gate.get("status") == "BLOCKED"
+    assert gate.get("critical_count", 0) >= 1
+    # 검토 보고서 생성 + state done 확인(BLOCKED여도 검토 단계 자체는 완주).
     report = client.get(f"/vfs/{rid}/review/report.md")
     assert report.status_code == 200
     state = client.get(f"/vfs/{rid}/review/_state.json")

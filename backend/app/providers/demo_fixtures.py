@@ -70,19 +70,22 @@ LAYOUT_SPEC = {
     #  undefined가 되는 버그를 유발 → 텍스트가 원점에 겹치고 배경이 안 채워졌다.)
     "slots": [
         {"role": "background", "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1080}, "z": 0, "copy_key": None},
-        {"role": "headline", "bbox": {"x": 80, "y": 120, "w": 840, "h": 180}, "z": 1, "copy_key": "headline"},
-        {"role": "body", "bbox": {"x": 80, "y": 340, "w": 840, "h": 260}, "z": 1, "copy_key": "body"},
-        {"role": "cta", "bbox": {"x": 80, "y": 900, "w": 440, "h": 100}, "z": 2, "copy_key": "cta"},
+        {"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3, "copy_key": None},
+        {"role": "headline", "bbox": {"x": 80, "y": 140, "w": 840, "h": 180}, "z": 1, "copy_key": "headline"},
+        {"role": "body", "bbox": {"x": 80, "y": 360, "w": 840, "h": 260}, "z": 1, "copy_key": "body"},
+        {"role": "cta", "bbox": {"x": 80, "y": 880, "w": 440, "h": 100}, "z": 2, "copy_key": "cta"},
+        {"role": "disclosure", "bbox": {"x": 80, "y": 1004, "w": 920, "h": 56}, "z": 3, "copy_key": "disclosure"},
     ],
     "copy": {},
 }
 
 # 모든 수치(3.5 / 12 / 100)는 FACTSHEET에 존재 → grounding 통과.
+# en/vi/zh는 한글 0(단위어 현지화: 개월→months/tháng/个月, 만원→vạn won/万韩元). 숫자만 유지.
 COPY = {
     "ko": {"headline": "연 3.5% JB 정기예금", "body": "12개월 만기, 100만원부터 시작하세요.", "cta": "지금 가입하기"},
-    "en": {"headline": "JB Deposit at 3.5%", "body": "12-month term, from 100만원.", "cta": "Open now"},
-    "vi": {"headline": "JB tiết kiệm 3.5%", "body": "Kỳ hạn 12개월, từ 100만원.", "cta": "Mở ngay"},
-    "zh": {"headline": "JB定期存款 3.5%", "body": "12개월 期限, 100만원 起.", "cta": "立即开户"},
+    "en": {"headline": "JB Term Deposit at 3.5%", "body": "12-month term. Open online in minutes.", "cta": "Open now"},
+    "vi": {"headline": "JB Tiết kiệm 3.5%", "body": "Kỳ hạn 12 tháng, từ 100 vạn won.", "cta": "Mở ngay"},
+    "zh": {"headline": "JB定期存款 3.5%", "body": "12个月期限，100万韩元起。", "cta": "立即开户"},
 }
 
 CRITIC_SCORES = {

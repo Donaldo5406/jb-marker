@@ -1,5 +1,9 @@
 import json
+import re
+
 from app.providers import demo_fixtures as F
+
+_HANGUL = re.compile(r"[가-힣]")
 
 
 def test_spec_md_has_required_frontmatter():
@@ -27,6 +31,20 @@ def test_layout_spec_bbox_is_object_form():
     for s in F.LAYOUT_SPEC["slots"]:
         assert isinstance(s["bbox"], dict), f"{s['role']} bbox는 dict여야 함(배열 금지)"
         assert {"x", "y", "w", "h"} <= set(s["bbox"]), f"{s['role']} bbox에 x/y/w/h 필요"
+
+
+def test_vi_zh_copy_has_no_hangul():
+    """vi/zh 포스터 한글 토큰 0 (spec T2). 숫자(3.5/12/100)는 유지하되 단위어는 현지화."""
+    for lang in ("vi", "zh"):
+        for role in ("headline", "body", "cta"):
+            val = F.COPY[lang][role]
+            assert not _HANGUL.search(val), f"{lang}.{role}에 한글 혼입: {val!r}"
+
+
+def test_layout_spec_has_logo_and_disclosure_slots():
+    """T2: 좌상단 logo + 최하단 disclosure 슬롯 추가."""
+    roles = {s["role"] for s in F.LAYOUT_SPEC["slots"]}
+    assert {"logo", "disclosure"} <= roles, f"누락 슬롯: {{'logo','disclosure'}} - {roles}"
 
 
 def test_copy_numbers_are_grounded_in_factsheet():
