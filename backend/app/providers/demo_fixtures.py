@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import os
 import struct
 import zlib
 
@@ -100,10 +101,26 @@ def _png_chunk(typ: bytes, data: bytes) -> bytes:
 
 
 def placeholder_png(width: int = 512, height: int = 512, rgb: tuple = (0, 133, 124)) -> bytes:
-    """의존 없이 단색(JB 그린) PNG 생성 — 시연 비주얼 placeholder(1x1 더미 대체)."""
+    """의존 없이 단색(JB 그린) PNG 생성 — 배경 에셋 부재 시 폴백."""
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)  # 8-bit RGB
     row = b"\x00" + bytes(rgb) * width
     raw = row * height
     idat = zlib.compress(raw, 9)
     return sig + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+
+
+_POSTER_BG = os.path.join(os.path.dirname(__file__), "..", "references", "design", "poster_bg.png")
+
+
+def load_poster_bg() -> bytes:
+    """시연용 배경 비주얼(사용자 제공, 텍스트-free 4:5 금융 배경) 바이트.
+
+    Design S2a가 배경으로 사용 → Fabric 씬에서 헤드라인/바디/CTA/고지가 레이어로 얹힌다.
+    파일 부재 시 그라데이션 placeholder로 graceful 폴백(키 없이도 안전).
+    """
+    try:
+        with open(_POSTER_BG, "rb") as f:
+            return f.read()
+    except OSError:
+        return placeholder_png()

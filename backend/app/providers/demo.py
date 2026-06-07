@@ -205,7 +205,8 @@ class DemoProvider(Provider):
         return ProviderResponse(text=_detect(system or "", messages), model="demo", raw=None)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
-        return F.placeholder_png()
+        # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.
+        return F.load_poster_bg()
 
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
         return ProviderResponse(text=_empty_findings(), model="demo")
