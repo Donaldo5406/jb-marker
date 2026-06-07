@@ -22,19 +22,19 @@ const DOT_TONE: Record<NavStatus, string> = {
 /** review 셀 raw step_status(BLOCKED/WARN/PASS/in_progress) → 색 클래스(M5 §8.1).
  *  review는 일반 NavStatus(done/active/blocked/pending)와 다른 어휘를 갖는다 — 별도 매핑. */
 function reviewColorClass(s: string | undefined): string {
-  if (s === "BLOCKED") return "bg-red-100 text-red-700 border-red-300";
-  if (s === "WARN") return "bg-amber-100 text-amber-700 border-amber-300";
-  if (s === "PASS") return "bg-green-100 text-green-700 border-green-300";
-  if (s === "in_progress") return "bg-blue-100 text-blue-700 border-blue-300 animate-pulse";
+  if (s === "BLOCKED") return "bg-severity-critical-bg text-severity-critical-fg border-severity-critical";
+  if (s === "WARN") return "bg-severity-warning-bg text-severity-warning-fg border-severity-warning";
+  if (s === "PASS") return "bg-severity-ok-bg text-severity-ok-fg border-severity-ok";
+  if (s === "in_progress") return "bg-severity-info-bg text-severity-info-fg border-severity-info animate-pulse";
   return "";
 }
 
 /** deploy 셀 raw step_status → 색 클래스(M6 T22). review와 동일한 어휘를 공유한다. */
 function deployColorClass(s: string | undefined): string {
-  if (s === "BLOCKED") return "bg-red-100 text-red-700 border-red-300";
-  if (s === "WARN") return "bg-amber-100 text-amber-700 border-amber-300";
-  if (s === "PASS") return "bg-green-100 text-green-700 border-green-300";
-  if (s === "in_progress") return "bg-blue-100 text-blue-700 border-blue-300 animate-pulse";
+  if (s === "BLOCKED") return "bg-severity-critical-bg text-severity-critical-fg border-severity-critical";
+  if (s === "WARN") return "bg-severity-warning-bg text-severity-warning-fg border-severity-warning";
+  if (s === "PASS") return "bg-severity-ok-bg text-severity-ok-fg border-severity-ok";
+  if (s === "in_progress") return "bg-severity-info-bg text-severity-info-fg border-severity-info animate-pulse";
   return "";
 }
 

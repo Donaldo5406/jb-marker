@@ -21,14 +21,14 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
         aria-label="결제"
         className="bg-surface rounded p-6 w-96 space-y-3"
       >
-        <h2 className="text-lg font-bold">Pro 구독 (월 $100)</h2>
-        <p className="text-sm text-on-surface-variant">Marker 모델 + Advisor 챗 이용권.</p>
+        <h2 className="text-lg font-bold">Pro+ 구독 (월 ₩150,000)</h2>
+        <p className="text-sm text-on-surface-variant">Deploy 스튜디오 · 발송 어드바이저 이용권.</p>
         <button
           type="button"
           disabled
           className="w-full py-2 bg-surface-container text-on-surface-variant rounded text-sm"
         >
-          결제하기 (M7 활성)
+          실 결제 (준비 중)
         </button>
         <button
           type="button"

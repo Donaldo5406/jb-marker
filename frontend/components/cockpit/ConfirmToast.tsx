@@ -25,10 +25,10 @@ export function ConfirmToastView({
       <div
         role="alertdialog"
         aria-labelledby="confirm-toast-msg"
-        className="pointer-events-auto w-full max-w-md rounded-2xl border border-amber-400 bg-surface-container-lowest p-4 shadow-ambient animate-fade-in-up"
+        className="pointer-events-auto w-full max-w-md rounded-2xl border border-severity-warning bg-surface-container-lowest p-4 shadow-ambient animate-fade-in-up"
       >
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-severity-warning" aria-hidden />
           <p id="confirm-toast-msg" className="flex-1 text-body-sm font-medium text-on-surface">
             {message}
           </p>
