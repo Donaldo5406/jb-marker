@@ -26,7 +26,14 @@ export type DeployStateLike = {
   matrix: { channel: string; lang: string }[];
   dev_pass: boolean;
 };
-export type EligibilityResult = { total: number; eligible_count: number; excluded_count: number };
+export type EligibilityReason = { status: string; label: string; count: number };
+export type EligibilityBreakdownItem = {
+  policy: string; label: string; citation: string; count: number; reasons: EligibilityReason[];
+};
+export type EligibilityResult = {
+  total: number; eligible_count: number; excluded_count: number;
+  breakdown?: EligibilityBreakdownItem[];   // 정책별(§50/§15·§16) 제외 사유 분해
+};
 export type PackageInfo = { status: string; reason?: string };
 export type AdvisorResult = { text?: string; tool_results?: unknown[]; needsPayment?: boolean };
 export type DispatchResult = { needsPayment?: boolean; report_path?: string } & Record<string, unknown>;
@@ -562,7 +569,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const runEligibility = useCallback(async () => {
     const id = runIdRef.current;
-    if (!id) return { total: 0, eligible_count: 0, excluded_count: 0 };
+    if (!id) return { total: 0, eligible_count: 0, excluded_count: 0, breakdown: [] };
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, { method: "POST" });
     const data = await res.json();
     setEligibility(data);

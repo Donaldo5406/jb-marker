@@ -42,3 +42,21 @@ def test_send_hour_22_increases_night_blocks(ledger, policies):
     day = build_eligibility(ledger, policies, send_hour=10)
     night = build_eligibility(ledger, policies, send_hour=22)
     assert night["eligible_count"] <= day["eligible_count"]
+
+
+def test_breakdown_sums_to_excluded_and_is_policy_ordered(ledger, policies):
+    """T10-UI: 사유 분해가 §50(정보통신망법)→§15·§16(개인정보보호법) 순으로,
+    primary policy별 1회 집계 → count 합 = 제외 총수, reasons 합 = 정책 count."""
+    out = build_eligibility(ledger, policies)
+    bd = out["breakdown"]
+    assert sum(g["count"] for g in bd) == len(out["excluded"])
+    seen = [g["policy"] for g in bd]
+    # 두 정책이 모두 있으면 infomatics가 pipa보다 앞.
+    if "infomatics" in seen and "pipa" in seen:
+        assert seen.index("infomatics") < seen.index("pipa")
+    for g in bd:
+        assert g["policy"] in {"infomatics", "pipa"}
+        assert g["label"] and ("§50" in g["label"] or "§15" in g["label"])
+        assert "law" in g["citation"]
+        assert sum(r["count"] for r in g["reasons"]) == g["count"]
+        assert all(r["label"] for r in g["reasons"])

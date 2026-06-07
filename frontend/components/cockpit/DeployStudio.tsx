@@ -133,8 +133,8 @@ export function DeployStudio() {
 
         {c.eligibility && (
           <section className="space-y-2">
-            <StepHeader id="D1" title="발송 적법성 (정보통신망법 §50)" desc="수신자별 동의·야간(21~08)·옵트아웃을 판정해 발송대상/제외를 가립니다." />
-            <EligibilityPanel total={c.eligibility.total} eligibleCount={c.eligibility.eligible_count} excludedCount={c.eligibility.excluded_count} calendar={calendar} />
+            <StepHeader id="D1" title="발송 적법성 (정보통신망법 §50 · 개인정보보호법 §15·§16)" desc="수신자별 동의·야간(21~08)·옵트아웃(§50)과 수집목적·보유기간(§15·§16)을 판정해 발송대상/제외를 가립니다." />
+            <EligibilityPanel total={c.eligibility.total} eligibleCount={c.eligibility.eligible_count} excludedCount={c.eligibility.excluded_count} calendar={calendar} breakdown={c.eligibility.breakdown} />
           </section>
         )}
 
