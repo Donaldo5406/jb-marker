@@ -34,6 +34,8 @@ function setupFetchMock() {
 beforeEach(() => {
   (global as any).WebSocket = NoopWS as any;
   setupFetchMock();
+  // Deploy 스튜디오는 Pro+ 엔타이틀먼트 게이트 뒤에 있다 — 통합 흐름 검증을 위해 켠다.
+  window.localStorage.setItem("jbm_deploy_entitlement", "1");
 });
 
 describe("DeployStudio", () => {
@@ -43,6 +45,7 @@ describe("DeployStudio", () => {
         <DeployStudio />
       </CockpitProvider>,
     );
+    await waitFor(() => expect(screen.getByTestId("provider-email")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("provider-email"));
     fireEvent.click(screen.getByText("적법성 검사 실행"));
     await waitFor(() => expect(screen.getByTestId("eligibility-panel")).toBeInTheDocument());
@@ -56,6 +59,7 @@ describe("DeployStudio", () => {
         <DeployStudio />
       </CockpitProvider>,
     );
+    await waitFor(() => expect(screen.getByTestId("provider-email")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("provider-email"));
     fireEvent.click(screen.getByText("적법성 검사 실행"));
     await waitFor(() => screen.getByTestId("eligibility-panel"));

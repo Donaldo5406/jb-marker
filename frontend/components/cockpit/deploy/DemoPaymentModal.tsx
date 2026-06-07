@@ -21,7 +21,7 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
         <button
           type="button"
           disabled
-          className="w-full py-2 bg-gray-200 text-gray-500 rounded text-sm"
+          className="w-full py-2 bg-surface-container text-on-surface-variant rounded text-sm"
         >
           결제하기 (M7 활성)
         </button>
@@ -39,7 +39,7 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
         <button
           type="button"
           onClick={onClose}
-          className="w-full py-1 text-xs text-gray-500"
+          className="w-full py-1 text-xs text-on-surface-variant"
         >
           취소
         </button>

@@ -19,7 +19,7 @@ export function PackageMatrix({ cells, onAskAdvisor }: Props) {
             ? "bg-yellow-50 border-yellow-300"
             : "bg-gray-50 border-gray-300";
         return (
-          <div key={id} data-testid={`cell-${id}`} className={"border rounded p-3 " + tone}>
+          <div key={id} data-testid={`cell-${id}`} className={"border border-outline-variant rounded p-3 " + tone}>
             <div className="text-sm font-medium">
               {c.channel} / {c.lang}
             </div>

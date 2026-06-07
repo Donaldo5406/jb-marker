@@ -13,7 +13,7 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
     <div className="space-y-3" data-testid="eligibility-panel">
       <div className="flex gap-4">
         <div>
-          <span className="text-gray-500 text-sm">총</span>{" "}
+          <span className="text-on-surface-variant text-sm">총</span>{" "}
           <span className="font-bold text-lg">{total}</span>
         </div>
         <div>
@@ -26,7 +26,7 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
         </div>
       </div>
       <div>
-        <div className="text-xs text-gray-500 mb-1">24시간 캘린더 (회색=차단)</div>
+        <div className="text-xs text-on-surface-variant mb-1">24시간 캘린더 (회색=차단)</div>
         <div className="grid grid-cols-12 sm:grid-cols-24 gap-px">
           {calendar.map((c) => (
             <div

@@ -27,12 +27,12 @@ export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
   }
 
   return (
-    <div className="border rounded p-3 flex flex-col gap-2" data-testid="advisor-chat">
-      <div className="text-xs text-gray-500">advisor · package={packageId}</div>
+    <div className="border border-outline-variant rounded p-3 flex flex-col gap-2" data-testid="advisor-chat">
+      <div className="text-xs text-on-surface-variant">advisor · package={packageId}</div>
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-            <span className="inline-block px-2 py-1 rounded bg-gray-100 text-sm">{m.content}</span>
+            <span className="inline-block px-2 py-1 rounded bg-surface-container-high text-sm">{m.content}</span>
           </div>
         ))}
       </div>
@@ -40,13 +40,13 @@ export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="flex-1 border rounded px-2 text-sm"
+          className="flex-1 border border-outline-variant rounded px-2 text-sm"
           data-testid="advisor-input"
         />
         <button
           type="button"
           onClick={send}
-          className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
+          className="px-3 py-1 bg-primary text-on-primary rounded text-sm"
         >
           전송
         </button>

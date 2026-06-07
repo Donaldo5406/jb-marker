@@ -21,7 +21,7 @@ export function DispatchConfirm({
   // 따라서 dispatch 클릭 가능 여부는 eligible+selected만 본다.
   const canDispatch = eligibleCount > 0 && selectedCount > 0;
   return (
-    <div className="border rounded p-4 space-y-2" data-testid="dispatch-confirm">
+    <div className="border border-outline-variant rounded p-4 space-y-2" data-testid="dispatch-confirm">
       <div className="text-sm">
         발송대상 <b>{eligibleCount}</b>명 · 채널 <b>{selectedCount}</b>개
       </div>
@@ -29,7 +29,7 @@ export function DispatchConfirm({
         <button
           type="button"
           onClick={onPayDemo}
-          className="text-xs underline text-blue-600"
+          className="text-xs underline text-primary"
         >
           결제 필요 — 데모 결제로 진행
         </button>
@@ -40,7 +40,7 @@ export function DispatchConfirm({
         onClick={onConfirm}
         className={
           "w-full py-2 rounded " +
-          (canDispatch ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500")
+          (canDispatch ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant")
         }
       >
         발송 확정 (시뮬)
