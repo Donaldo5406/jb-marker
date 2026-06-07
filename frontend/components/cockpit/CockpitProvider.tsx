@@ -82,7 +82,7 @@ export type CockpitContextValue = {
   setOpenFileContent: (text: string) => void;
   closeFile: () => void;
   saveFile: () => Promise<void>;
-  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean })
+  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean })
     => Promise<{ text?: string; ask?: AskPayload | null } | null>;
   runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
   runReview: () => Promise<{ text: string }>;
@@ -359,14 +359,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   }, [openFile, refreshTree]);
 
   const sendChat = useCallback(
-    async (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean }) => {
+    async (p: { prompt: string; provider: Provider; isMarker: boolean }) => {
       const id = runIdRef.current;
       if (!id) return null;
       setMessages((m) => [...m, { role: "user", content: p.prompt }]);
       try {
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
-          provider: p.provider, is_marker: p.isMarker, bypass: p.bypass ?? false,
+          provider: p.provider, is_marker: p.isMarker,
           mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
@@ -391,8 +391,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const res = await api.gatewayRun({
       run_id: id, studio: "design", prompt,
       provider: "anthropic", is_marker: true, action,
-      bypass: !!designBypass[designStep],   // 호환: 현재 step의 bypass 단일 플래그
-      bypass_map: designBypass,             // 전체 맵 전송(백엔드 연쇄 전제)
+      bypass_map: designBypass,             // design 단계별 게이트 OFF 맵(백엔드 연쇄 전제)
       mock: mockModeRef.current,
     });
     await refreshTree();
@@ -465,10 +464,12 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
     // 4) 게이트·manifest 반영.
     if (gate) {
+      // 백엔드 compute_gate는 critical_count/warning_count로 내보낸다(severity.py:91).
+      // 과거 critical/warning만 읽어 롤업이 항상 0이던 버그 → wire 키 우선 폴백.
       setReviewGate({
         status: String(gate.status ?? ""),
-        critical: Number(gate.critical ?? 0),
-        warning: Number(gate.warning ?? 0),
+        critical: Number(gate.critical_count ?? gate.critical ?? 0),
+        warning: Number(gate.warning_count ?? gate.warning ?? 0),
       });
     }
     await loadManifest(id);

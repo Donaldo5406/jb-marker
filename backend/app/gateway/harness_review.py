@@ -22,6 +22,7 @@ from ..core.severity import (  # T7: import-only, 사용은 T11/T14
     detect_exaggeration,
     find_missing_disclosures,
 )
+from ..core.visual_rules import evaluate_visual_compliance
 from ..providers.base import Message, Provider
 from .harness import Harness, HarnessRequest, HarnessResult
 
@@ -264,6 +265,25 @@ class ReviewHarness(Harness):
         meta_node = store.get(f"/{req.run_id}/design/metadata.md")
         metadata_md = meta_node.content_text if meta_node else ""
         whitelist = load_whitelist()
+
+        # 호출 0(결정론): 시각 적법성 룰 — layout.spec의 시각 메타데이터(글자크기·대비·고지)를
+        # 비전 LLM 무관하게 검사(core/visual_rules). findings는 legal verdict로 영속돼 게이트 합류.
+        visual_n = store.get(f"/{req.run_id}/design/rough/layout.spec.json")
+        if visual_n:
+            try:
+                vspec = json.loads(visual_n.content_text)
+            except Exception:
+                vspec = {}
+            for f in evaluate_visual_compliance(vspec):
+                self._persist_verdict(
+                    store, req.run_id, node="legal",
+                    asset_id="design/rough/layout.spec.json", lang=None,
+                    severity=f.get("severity", "warning"),
+                    location={"slot": f.get("slot", "visual"), "lang": None},
+                    evidence=f.get("evidence", ""),
+                    clause=f.get("clause"),
+                    official_source_url=f.get("official_source_url"),
+                    kind="visual")
 
         # 호출 1: 텍스트+서칭
         kept, dropped, meta_flags = search_and_filter(

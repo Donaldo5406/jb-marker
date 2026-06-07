@@ -89,7 +89,9 @@ export async function renderAndUploadAll(
   const uploaded: string[] = [];
   for (const [lang, scene] of Object.entries(scenes)) {
     try {
-      const url = await renderSceneToPng(scene);
+      // scene의 width/height(4:5=1080×1350 등)를 렌더러에 전달 — 미전달 시 항상 1080² 정사각으로
+      // 렌더돼 4:5 합성 PNG 하단이 클리핑되던 버그(sceneAssembler가 aspect 기반 치수를 저장).
+      const url = await renderSceneToPng(scene, { width: scene?.width, height: scene?.height });
       const blob = await dataUrlToBlob(url);
       await uploadRender(runId, lang, blob, baseUrl);
       uploaded.push(lang);

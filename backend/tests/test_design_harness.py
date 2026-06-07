@@ -18,9 +18,9 @@ def _store(tmp_path):
     return s
 
 
-def _req(action="advance", prompt="", bypass=False):
+def _req(action="advance", prompt=""):
     return HarnessRequest(run_id="r1", studio="design", user_prompt=prompt,
-                          provider="fake", is_marker=True, action=action, bypass=bypass)
+                          provider="fake", is_marker=True, action=action)
 
 
 def test_s0_parses_plan_into_tokens_and_state(tmp_path):
@@ -189,6 +189,30 @@ def test_s3_metadata_includes_body_key(tmp_path):
     assert "든든한 적금" in md   # headline
     assert "12개월 만기 100만원부터" in md   # body (회귀 방지: 'sub'면 누락됨)
     assert "가입하기" in md   # cta
+
+
+def test_s3_metadata_includes_visual_compliance(tmp_path):
+    """#3: metadata.md에 시각 적법성 측정값(visual_compliance) 블록이 기록돼야 한다."""
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S3", "confirmed": {}, "bypass": {"S3": True}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "bg_color": "#F2EFE9",
+        "slots": [
+            {"role": "headline", "font_px": 72, "color": "#0B1324"},
+            {"role": "disclosure", "font_px": 26, "color": "#3A3A3A"},
+        ],
+        "copy": {"ko": {"headline": "h", "body": "b", "cta": "c",
+                        "disclosure": "예금자보호법에 따라 5천만원까지 보호"}},
+    }), source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="confirm"), provider=FakeProvider(), store=s)
+    md = s.get("/r1/design/metadata.md").content_text
+    assert "시각 적법성(visual_compliance)" in md
+    assert "disclosure_font_px: 26" in md
+    assert "disclosure_contrast:" in md
+    assert "passed: True" in md   # 적법 레이아웃(26/72=36% ≥ 30%, 대비 ≥ 4.5)
 
 
 def test_done_step_is_idempotent_no_error(tmp_path):
@@ -368,6 +392,27 @@ def test_s2c_localizes_disclosure_and_stages_vi_zh_missing(tmp_path):
     assert not H.search(en), f"en 한글 혼입: {en!r}"
     assert not H.search(vi), f"vi 한글 혼입: {vi!r}"            # vi 현지화 고지만(한글 0)
     assert not H.search(zh), f"zh 한글 혼입: {zh!r}"            # zh 현지화 고지(zh NOTICE)
+
+
+def test_s2c_ko_keeps_disclosure_without_display_mapping(tmp_path):
+    """실 캠페인 회귀 가드: plan.md의 disclosure가 DISCLOSURE_DISPLAY 매핑에 없어도
+    ko 포스터에는 원문 고지가 부착돼야 한다. (표시문 정확일치에 묶여 임의 disclosure가
+    ko 포스터에서 통째 사라지던 위험 차단.) 외국어는 무번역 누락 유지 → R2가 잡는다."""
+    s = _store(tmp_path)
+    s.put("/r1/brainstorming/plan.md",
+          "---\ndisclosures: [투자원금 손실이 발생할 수 있습니다]\n"
+          "languages: [ko, en]\n---\n본문",
+          source="marker", mime="text/markdown")
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2c", "confirmed": {}, "bypass": {},
+         "languages": ["ko", "en"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    ko = s.get("/r1/design/design-system/components/disclosure/ko.txt").content_text
+    en = s.get("/r1/design/design-system/components/disclosure/en.txt").content_text
+    assert "투자원금 손실" in ko                 # ko: 매핑 없어도 원문 고지 부착
+    assert "투자원금" not in en                   # en: 무번역 → 누락(R2 검출 대상)
 
 
 def test_s2c_localizes_ai_notice_per_language(tmp_path):

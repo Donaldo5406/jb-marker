@@ -47,7 +47,6 @@ class GatewayRun(BaseModel):
     provider: str = "fake"
     is_marker: bool = False
     answer: str | None = None
-    bypass: bool = False
     action: str | None = None
     bypass_map: dict | None = None
     mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
@@ -249,7 +248,7 @@ def create_app() -> FastAPI:
         provider_name = "demo" if body.mock else body.provider
         req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                              user_prompt=body.prompt, provider=provider_name,
-                             is_marker=body.is_marker, answer=body.answer, bypass=body.bypass,
+                             is_marker=body.is_marker, answer=body.answer,
                              action=body.action, user_id=user_id,
                              bypass_map=body.bypass_map)
         media_name = "demo" if body.mock else "google"

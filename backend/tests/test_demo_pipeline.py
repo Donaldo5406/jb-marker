@@ -15,17 +15,35 @@ def _client(monkeypatch):
 
 def _run(client, rid, studio, prompt, **kw):
     body = {"run_id": rid, "studio": studio, "prompt": prompt,
-            "provider": "anthropic", "is_marker": True, "mock": True, "bypass": True}
+            "provider": "anthropic", "is_marker": True, "mock": True}
     body.update(kw)
     return client.post("/gateway/run", json=body)
+
+
+def _seed_brainstorming(client, rid):
+    """브레인스토밍 bypass 제거 후 — 멀티턴 대화로 brainstorming을 done까지 구동.
+    design/review 셋업용(과거 _run bypass 한 턴 완주를 대체)."""
+    def turn(prompt, answer=None):
+        body = {"run_id": rid, "studio": "brainstorming", "prompt": prompt,
+                "provider": "anthropic", "is_marker": True, "mock": True}
+        if answer is not None:
+            body["answer"] = answer
+        r = client.post("/gateway/run", json=body)
+        assert r.status_code == 200, r.text
+        return r
+    turn("정기예금 캠페인 기획하자")
+    turn("2030 사회초년생", answer="2030 사회초년생")
+    turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
+    turn("예, plan으로", answer="예, plan으로")     # spec 확정
+    turn("보충하기", answer="보충하기")               # plan 누락 보충
+    turn("예, 확정", answer="예, 확정")               # plan 확정 → done
 
 
 def test_brainstorming_demo_produces_spec_and_plan(monkeypatch):
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
-    r = _run(client, rid, "brainstorming", "정기예금 캠페인")
-    assert r.status_code == 200
-    # bypass → Stage A ready → Stage B 자동 진입 → plan 생성, brainstorming done.
+    _seed_brainstorming(client, rid)
+    # 멀티턴 confirm → spec 확정 → plan 보충/확정 → brainstorming done.
     spec = client.get(f"/vfs/{rid}/brainstorming/spec.md")
     plan = client.get(f"/vfs/{rid}/brainstorming/plan.md")
     assert spec.status_code == 200 and "goal:" in spec.json()["content_text"]
@@ -40,7 +58,7 @@ def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
 
     def turn(prompt, answer=None):
         body = {"run_id": rid, "studio": "brainstorming", "prompt": prompt,
-                "provider": "anthropic", "is_marker": True, "mock": True, "bypass": False}
+                "provider": "anthropic", "is_marker": True, "mock": True}
         if answer is not None:
             body["answer"] = answer
         r = client.post("/gateway/run", json=body)
@@ -86,7 +104,7 @@ def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
 def test_design_demo_produces_layout_and_visual(monkeypatch):
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
-    _run(client, rid, "brainstorming", "정기예금 캠페인")
+    _seed_brainstorming(client, rid)
     # design: bypass_map으로 전 step OFF → 한 턴 연쇄.
     bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
     r = _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
@@ -103,7 +121,7 @@ def test_review_demo_blocks_on_staged_violations(monkeypatch):
     보고서·done 상태는 정상 기록된다. 교정 후 PASS 경로는 T7에서 별도 검증."""
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
-    _run(client, rid, "brainstorming", "정기예금 캠페인")
+    _seed_brainstorming(client, rid)
     bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
     _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
     # review는 호출당 한 단계 전진(R0→R1→R2→R3). 프론트 자동 루프와 동일하게 done까지 구동.
@@ -167,7 +185,7 @@ def test_review_demo_passes_after_remediation(monkeypatch):
     재검토가 무위반 → PASS. 결정 A안(FabricEditor 수동 편집)을 main.scene 직접 작성으로 재현한다."""
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
-    _run(client, rid, "brainstorming", "정기예금 캠페인")
+    _seed_brainstorming(client, rid)
     bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
     _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
 

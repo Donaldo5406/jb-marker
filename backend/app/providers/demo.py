@@ -23,8 +23,10 @@ _EXAGGERATION_KO = ("업계 최고", "최고 금리", "최고의", "무조건", 
 _RATE = re.compile(r"\d+(?:\.\d+)?\s*%")
 # 우대조건 단서 키워드(언어 무관 부분문자열). 있으면 단서 충족, 없으면 누락(금소법 §22).
 _PREFERENTIAL = ("세전", "우대", "pre-tax", "preferential", "trước thuế", "ưu đãi", "税前", "优惠")
-# S2b 교정 신호 — 사용자가 보강/수정/교정을 요청하면 위반 카피 대신 clean 카피로 재생성.
-_REMEDIATION_SIGNAL = ("보강", "수정", "교정", "정정", "고지", "준법", "법률", "fix", "comply")
+# S2b 교정 신호 — 사용자가 위반 카피의 보강/교정을 요청하면 clean 카피로 재생성.
+# 일반 디자인 챗에 흔한 광범위 단어(수정·법률·고지)는 false-positive(위반 카피 조기 소거)를
+# 유발해 제외 — 교정 의도가 분명한 토큰만 유지(예: "카피 수정해줘"는 더 이상 발동하지 않음).
+_REMEDIATION_SIGNAL = ("보강", "교정", "정정", "준법", "fix", "comply")
 # 화이트리스트(law.go.kr) 실 deep-link.
 _LAW_ADVERTISING = "https://www.law.go.kr/법령/표시ㆍ광고의공정화에관한법률/제3조"
 _LAW_CONSUMER = "https://www.law.go.kr/법령/금융소비자보호에관한법률/제22조"
@@ -131,11 +133,6 @@ def _plan_json() -> str:
                        "ask": None, "ready": True}, ensure_ascii=False)
 
 
-# 하네스가 req.bypass일 때 system 프롬프트에 주입하는 마커(harness_brainstorming._BYPASS_DIRECTIVE와 짝).
-# 있으면 멀티턴 대화를 건너뛰고 전체 산출물을 즉시(ready) 반환 → bypass 패스트패스 보존.
-_BYPASS_MARK = "[빠른 진행]"
-
-
 def _count_user_turns(messages) -> int:
     """provider 입력 메시지에서 실제 user 턴 수(압축 요약 헤드 제외)."""
     n = 0
@@ -155,12 +152,10 @@ def _section_after(system: str, marker: str) -> str:
 
 
 def _stage_a_brainstorm(messages, system: str):
-    """Stage A — bypass면 전체 spec 즉시, 아니면 리서치+질문으로 점진 구체화.
+    """Stage A — 리서치+질문으로 점진 구체화(턴 기반). bypass 패스트패스는 제거됨.
 
     Returns: (response_text, citations). 1턴에 리서치 인용을 동반(파일 트리에 research 산출).
     """
-    if _BYPASS_MARK in (system or ""):
-        return _spec_json(), []
     turns = _count_user_turns(messages)
     if turns <= 1:
         # 리서치 후 첫 질문(타겟) — 인용 동반.
@@ -188,13 +183,11 @@ def _stage_a_brainstorm(messages, system: str):
 
 
 def _stage_b_brainstorm(system: str) -> str:
-    """Stage B — bypass면 완성 plan 즉시. 아니면 1차 누락 초안 → 보충 후 완성.
+    """Stage B — 1차 누락 초안 → 보충 후 완성(bypass 패스트패스는 제거됨).
 
     현재 plan.md(system의 '[현재 plan.md]' 구간)가 비어 있으면 1차(누락) 초안을,
     있으면(보충 단계) 완성 plan을 반환. 누락 초안은 하네스 critic이 'c'(보충)로 유도.
     """
-    if _BYPASS_MARK in (system or ""):
-        return _plan_json()
     cur = _section_after(system, "[현재 plan.md]")
     if not cur:
         return json.dumps({

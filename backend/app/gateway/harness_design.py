@@ -17,6 +17,7 @@ import re
 import yaml
 
 from ..core.grounding import build_corpus, find_ungrounded
+from ..core.visual_rules import visual_compliance_summary
 from ..providers.base import Message
 from .harness import Harness, HarnessRequest, HarnessResult
 
@@ -264,6 +265,10 @@ class DesignHarness(Harness):
         sys = self.system_prompt() + (
             "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
             "텍스트는 copy[lang][key]에, 슬롯은 role/bbox/z/copy_key로. "
+            "시각 적법성 검토를 위해 텍스트 슬롯(headline/body/cta/disclosure)에는 font_px(정수)와 "
+            "color(#RRGGBB)를, 최상위에는 bg_color(#RRGGBB, 배경 대표 톤)를 포함하세요. "
+            "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
+            "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
             'JSON 한 개만: {"reply":"...","layout_spec":{...},"ready":true/false}'
             f"\n[tokens]\n{tokens.content_text if tokens else '{}'}"
             f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}")
@@ -346,13 +351,18 @@ class DesignHarness(Harness):
         notices = {}
         for lang in langs:
             notice = self.NOTICES.get(lang, self.NOTICES["ko"])
-            # 법령 고지는 해당 언어 표시문(번역)이 있을 때만 부착. 없으면 누락 →
-            # 외국어 포스터에 한국어 법령문이 새지 않고, 검토(R2)가 누락을 잡아 교정 유도.
+            # 법령 고지 부착 규칙:
+            #  - 표시문(번역) 매핑이 있으면 그 언어로 부착(ko·en 등).
+            #  - ko는 매핑이 없어도 원문 고지(한국어)가 그대로 유효 → 원문 부착.
+            #    (실 캠페인 plan.md의 임의 disclosures가 ko 포스터에서 통째 사라지는 것 방지.)
+            #  - 그 외 언어는 무번역 누락 → 외국어 포스터에 한글이 새지 않고, R2가 누락을 잡아 교정 유도.
             parts = [notice]
             for disc in disclosures:
                 localized = self.DISCLOSURE_DISPLAY.get(disc, {}).get(lang)
                 if localized:
                     parts.append(localized)
+                elif lang == "ko":
+                    parts.append(disc)
             text = " ".join(parts)
             notices[lang] = text
             store.put(f"{base}/design-system/components/disclosure/{lang}.txt",
@@ -395,6 +405,17 @@ class DesignHarness(Harness):
                   f"- avg: {critic['avg']}", f"- pass: {critic['pass']}"]
         for k in self.RUBRIC:
             lines.append(f"- {k}: {critic['scores'].get(k)}")
+        # 시각 적법성 메타데이터(결정론) — 글자크기·대비·고지 시인성 측정값을 기록해
+        # Review가 비전 LLM 없이도 1차 판단(core/visual_rules와 동일 계산).
+        vc = visual_compliance_summary(spec)
+        lines += ["", "## 시각 적법성(visual_compliance)",
+                  f"- passed: {vc['passed']}",
+                  f"- disclosure_font_px: {vc['disclosure_font_px']}",
+                  f"- max_text_font_px: {vc['max_text_font_px']}",
+                  f"- disclosure_contrast: {vc['disclosure_contrast']}",
+                  f"- bg_color: {vc['bg_color']}"]
+        for v in vc["violations"]:
+            lines.append(f"- 위반 {v['rule']}({v['severity']}): {v['evidence']}")
         store.put(f"{base}/metadata.md", "\n".join(lines),
                   source="marker", mime="text/markdown")
         return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
