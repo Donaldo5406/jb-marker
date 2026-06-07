@@ -23,6 +23,6 @@ def test_golden_passthrough_round_trip(tmp_path, monkeypatch):
     # VFS 영속 확인 (list + get 왕복)
     nodes = client.get(f"/vfs/{run_id}").json()["nodes"]
     assert any(n["path"] == out_path for n in nodes)
-    got = client.get(f"/vfs/{run_id}/brainstorming/passthrough.md").json()
+    got = client.get(f"/vfs/{run_id}/brainstorming/_passthrough.md").json()
     assert "핀테크 캠페인" in got["content_text"]
     assert got["meta"]["source"] == "raw"

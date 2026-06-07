@@ -14,4 +14,4 @@ def test_passthrough_builds_raw_messages_without_system():
 def test_passthrough_output_path_in_studio():
     h = PassthroughHarness()
     req = HarnessRequest(run_id="r1", studio="design", user_prompt="x", provider="fake")
-    assert h.output_path(req) == "/r1/design/passthrough.md"
+    assert h.output_path(req) == "/r1/design/_passthrough.md"

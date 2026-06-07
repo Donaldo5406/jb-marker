@@ -9,12 +9,14 @@ import { EntitlementPanel } from "@/components/cockpit/EntitlementPanel";
 import { AccountPanel } from "@/components/cockpit/AccountPanel";
 import { MockModePanel } from "@/components/cockpit/MockModePanel";
 import { UpsellModal } from "@/components/cockpit/UpsellModal";
+import { FileViewerDrawer } from "@/components/cockpit/FileViewerDrawer";
+import { StudioNavToast } from "@/components/cockpit/StudioNavToast";
 import { AskUserToast } from "@/components/cockpit/AskUserToast";
 
 function CockpitInner() {
   const c = useCockpit();
   return (
-    <div className="flex h-screen bg-background text-on-surface">
+    <div className="flex h-screen bg-surface text-on-surface">
       <Sidebar view={c.view} onView={c.setView} />
       <div className="flex flex-1 flex-col overflow-hidden">
         {c.view === "workspace" && (
@@ -40,6 +42,8 @@ function CockpitInner() {
         )}
       </div>
       <UpsellModal />
+      <FileViewerDrawer />
+      <StudioNavToast />
       <AskUserToast />
     </div>
   );

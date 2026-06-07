@@ -59,5 +59,5 @@ def test_gateway_delegates_to_handle_turn_and_publishes_events():
                        provider_factory=lambda name: FakeProvider())
     req = HarnessRequest(run_id="rg", studio="brainstorming", user_prompt="hi", provider="fake")
     res = gw.run(req, PassthroughHarness())
-    assert res.output_path == "/rg/brainstorming/passthrough.md"
+    assert res.output_path == "/rg/brainstorming/_passthrough.md"
     assert any(e["type"] == "artifact" for e in res.events)

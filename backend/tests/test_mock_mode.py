@@ -19,7 +19,7 @@ def test_mock_true_forces_demo_text_provider(monkeypatch):
     })
     assert r.status_code == 200
     # passthrough가 DemoProvider.complete 결과를 그대로 영속(미매칭 system → 빈 reply JSON).
-    got = client.get(f"/vfs/{rid}/brainstorming/passthrough.md")
+    got = client.get(f"/vfs/{rid}/brainstorming/_passthrough.md")
     assert got.status_code == 200
 
 
@@ -32,7 +32,7 @@ def test_mock_omitted_keeps_existing_behavior(monkeypatch):
         "provider": "fake", "is_marker": False,
     })
     assert r.status_code == 200
-    assert "원문" in client.get(f"/vfs/{rid}/brainstorming/passthrough.md").json()["content_text"]
+    assert "원문" in client.get(f"/vfs/{rid}/brainstorming/_passthrough.md").json()["content_text"]
 
 
 def test_design_mock_injects_fake_image_provider(monkeypatch):

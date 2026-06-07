@@ -10,7 +10,7 @@ export function AskUserToastView({ ask, onSelect, onClose }: {
   ask: AskPayload | null; onSelect: (choice: string) => void; onClose: () => void;
 }) {
   if (!ask) return null;
-  const tone = ask.trigger === "c" ? "border-amber-400" : "border-outline-variant";
+  const tone = ask.trigger === "c" ? "border-severity-warning" : "border-outline-variant";
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4">
       <div role="status" aria-live="polite" aria-labelledby="askuser-question"

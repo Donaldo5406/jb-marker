@@ -21,6 +21,8 @@
 }
 
 @layer utilities {
+  /* .bg-background: 랜딩/마케팅 페이지에서 body 그라데이션을 투과시키는 용도.
+     콕핏(작업영역)은 이 유틸에 의존하지 말고 bg-surface 토큰을 명시 사용한다. */
   .bg-background {
     background-color: transparent;
   }

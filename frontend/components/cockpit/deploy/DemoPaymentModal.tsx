@@ -15,15 +15,20 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
       data-testid="demo-payment-modal"
     >
-      <div className="bg-white rounded p-6 w-96 space-y-3">
-        <h2 className="text-lg font-bold">Pro 구독 (월 $100)</h2>
-        <p className="text-sm text-gray-600">Marker 모델 + Advisor 챗 이용권.</p>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="결제"
+        className="bg-surface rounded p-6 w-96 space-y-3"
+      >
+        <h2 className="text-lg font-bold">Pro+ 구독 (월 ₩150,000)</h2>
+        <p className="text-sm text-on-surface-variant">Deploy 스튜디오 · 발송 어드바이저 이용권.</p>
         <button
           type="button"
           disabled
-          className="w-full py-2 bg-gray-200 text-gray-500 rounded text-sm"
+          className="w-full py-2 bg-surface-container text-on-surface-variant rounded text-sm"
         >
-          결제하기 (M7 활성)
+          실 결제 (준비 중)
         </button>
         <button
           type="button"
@@ -31,7 +36,7 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
             onPayDemo();
             onClose();
           }}
-          className="w-full py-2 bg-green-500 text-white rounded text-sm"
+          className="w-full py-2 bg-primary text-on-primary rounded text-sm"
           data-testid="demo-pay-btn"
         >
           데모 결제 (즉시 통과)
@@ -39,7 +44,7 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
         <button
           type="button"
           onClick={onClose}
-          className="w-full py-1 text-xs text-gray-500"
+          className="w-full py-1 text-xs text-on-surface-variant"
         >
           취소
         </button>

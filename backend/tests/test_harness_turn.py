@@ -15,8 +15,8 @@ def test_passthrough_handle_turn_persists_and_returns():
     req = HarnessRequest(run_id="r1", studio="brainstorming", user_prompt="안녕", provider="fake")
     res = PassthroughHarness().handle_turn(req, provider=FakeProvider(), store=s)
     assert res.text.startswith("echo:") or "echo" in res.text
-    assert res.output_path == "/r1/brainstorming/passthrough.md"
-    assert s.get("/r1/brainstorming/passthrough.md") is not None
+    assert res.output_path == "/r1/brainstorming/_passthrough.md"
+    assert s.get("/r1/brainstorming/_passthrough.md") is not None
     assert res.ask is None
     assert any(e["type"] == "artifact" for e in res.events)
 

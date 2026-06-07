@@ -14,7 +14,7 @@ const DEPLOY_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 export type CockpitView = "workspace" | "history" | "setting";
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
-export type Entitlement = { marker: boolean };
+export type Entitlement = { marker: boolean; deploy: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
 export type ReviewGate = { status: string; critical: number; warning: number };
@@ -84,6 +84,7 @@ export type CockpitContextValue = {
   viewHistoryDetail: (runId: string) => void;
   closeHistoryDetail: () => void;
   toggleEntitlement: () => Promise<void>;
+  toggleDeploy: () => void;
   closeUpsell: () => void;
   // ---- deploy actions (M6 T19) ----
   setupDeploy: (selected: string[], languages: string[]) => Promise<{ matrix?: { channel: string; lang: string }[]; step_status?: string } & Record<string, unknown>>;
@@ -126,7 +127,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   // 파일 내용 캐시(path→OpenFile). 재클릭/재방문 시 네트워크 왕복 생략(#3 딜레이 해소).
   // 무효화: 저장 시 해당 path 갱신, artifact 이벤트(백엔드 재생성) 시 해당 path/전체 제거.
   const fileCacheRef = useRef<Map<string, OpenFile>>(new Map());
-  const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false });
+  const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false, deploy: false });
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingAsk, setPendingAsk] = useState<AskPayload | null>(null);
@@ -513,8 +514,17 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const toggleEntitlement = useCallback(async () => {
     const next = !entitlement.marker;
     const res = await api.setEntitlement(next);
-    setEntitlement({ marker: res.marker });
+    setEntitlement((e) => ({ ...e, marker: res.marker }));
   }, [entitlement.marker]);
+
+  // deploy 엔타이틀먼트는 데모 클라이언트 플래그(stub 결제) — 라이브 Supabase 스키마 무변경.
+  const toggleDeploy = useCallback(() => {
+    setEntitlement((e) => {
+      const nd = !e.deploy;
+      if (typeof window !== "undefined") window.localStorage.setItem("jbm_deploy_entitlement", nd ? "1" : "0");
+      return { ...e, deploy: nd };
+    });
+  }, []);
 
   const closeUpsell = useCallback(() => setUpsellOpen(false), []);
 
@@ -606,10 +616,12 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         if (mm !== null) setMockModeState(mm === "1");
         const fromUrl = new URL(window.location.href).searchParams.get("run");
         if (fromUrl) void openRun(fromUrl);
+        const dep = window.localStorage.getItem("jbm_deploy_entitlement") === "1";
+        setEntitlement((e) => ({ ...e, deploy: dep }));
       }
       void api
         .getEntitlement()
-        .then((e) => setEntitlement({ marker: e.marker }))
+        .then((e) => setEntitlement((prev) => ({ ...prev, marker: e.marker })))
         .catch(() => {
           /* 백엔드 미기동 시 기본값(무료) 유지 */
         });
@@ -687,6 +699,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     viewHistoryDetail,
     closeHistoryDetail,
     toggleEntitlement,
+    toggleDeploy,
     closeUpsell,
     setupDeploy,
     runEligibility,

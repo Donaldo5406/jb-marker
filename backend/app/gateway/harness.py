@@ -89,4 +89,5 @@ class PassthroughHarness(Harness):
                              events=[{"type": "artifact", "path": path}])
 
     def output_path(self, req: HarnessRequest) -> str:
-        return f"/{req.run_id}/{req.studio}/passthrough.md"
+        # _ 접두 → 프론트 FileTree 숨김(스펙외 산출물 비가시화). 라운드트립은 보존.
+        return f"/{req.run_id}/{req.studio}/_passthrough.md"
