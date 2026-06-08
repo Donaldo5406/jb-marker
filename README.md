@@ -3,9 +3,16 @@
 > **금융 마케팅 홍보물의 기획 → 디자인 → 준법 검토 → 발송을 하나의 파이프라인으로 잇는 멀티 기능 에디터 플랫폼.**
 > 수동 편집과 AI 에이전트 편집을 한 화면에서 오가며, 모든 산출물은 근거(grounding)와 함께 기록된다.
 
-JB금융그룹 Fin:AI Challenge 자유주제 출품작. `mvp/03-marketing`을 리팩토링하여 새 독립 레포로 재출발했다.
+JB금융그룹 Fin:AI Challenge **지정주제 3 — 디지털 마케팅 AI Agent** 출품작. `mvp/03-marketing`을 리팩토링하여 새 독립 레포로 재출발했다.
+> 마케팅 콘텐츠의 **준법 사전심의**(지정주제 2의 문제의식)를 파이프라인에 내장해, 'AI 대량 생성'과 '건별 사람 심의'의 구조적 충돌을 정면으로 해소한다.
 
 ---
+
+## 라이브
+
+- **웹앱**: https://jb-marker.vercel.app
+- **백엔드 API**: https://doss-8b-instruct-jb-marker.hf.space (`/health` → `{"status":"ok"}`)
+- **영속**: Supabase(Postgres · Auth · Storage) · `main` push 시 GitHub Actions가 Vercel·HF Space로 자동 배포
 
 ## 한눈에 보기
 
@@ -26,7 +33,7 @@ JB금융그룹 Fin:AI Challenge 자유주제 출품작. `mvp/03-marketing`을 �
 | 스튜디오 | 하는 일 | 핵심 |
 | --- | --- | --- |
 | **BrainStorming** | 리서치 → 스펙(1단계) → 구현계획(2단계) 생성 | 가상 폴더 트리 · 모델 선택(Marker/Claude/GPT/Gemini) · AskUser 훅(WebSocket으로 중간 의사결정 선택 UI) |
-| **Design** | 구현계획 기반 디자인: rough → 컴포넌트 단계 → final confirm | 대형 Fabric.js v6 에디터 + AI 챗 패널 · 3액터(Marker·Gemini/Nano Banana·Fabric.js) · 다국어 버전 산출 · Review용 메타데이터 저장 |
+| **Design** | 구현계획 기반 디자인: rough → 컴포넌트 단계 → final confirm | 대형 Fabric.js v7 에디터 + AI 챗 패널 · 3액터(Marker·Gemini/Nano Banana·Fabric.js) · 다국어 버전 산출 · Review용 메타데이터 저장 |
 | **Review** | 준법 검토 + 다국어 동등성 검토 | 실제 법령 기반 위반 포인팅 · 비전 AI 검수 · % 게이지 진행 표시 · 수정은 사용자 위임 후 재검토 (mvp/02 확장판) |
 | **Deploy** | 발송 행위의 적법성 판정 + 발송 계획 | 결정론 규칙엔진(정보통신망법 §50 동의·야간·옵트아웃 + 개인정보보호법 §15 목적·§16 보유기간) · 다중 정책(가장 강한 BLOCK 채택) · 발송 어댑터 stub · D2 카피 적응 advisor |
 
@@ -43,7 +50,7 @@ JB금융그룹 Fin:AI Challenge 자유주제 출품작. `mvp/03-marketing`을 �
 
 ```
 jb-marker/
-├── frontend/                  # Next.js(App Router) + TS + Tailwind + motion + fabric v6 → Vercel
+├── frontend/                  # Next.js(App Router) + TS + Tailwind + motion + fabric v7 → Vercel
 │   ├── app/                   # 라우트: page(랜딩) · cockpit · pricing · showcase
 │   └── components/            # cockpit(+deploy) · landing · ui
 ├── backend/                   # FastAPI + Python(>=3.11) → HF Space
@@ -62,7 +69,7 @@ jb-marker/
     └── plans/                 # 마일스톤별 구현계획(plan)  — brainstorming → writing-plans 산출물
 ```
 
-## 빌드 마일스톤 (전체 8단계 중 7단계 완료)
+## 빌드 마일스톤 (전 단계 완료 · 라이브 배포)
 
 | # | 마일스톤 | 상태 |
 |---|---|---|
@@ -70,10 +77,15 @@ jb-marker/
 | M1 | VfsStore + Marker API 게이트웨이 | ✅ 완료 |
 | M2 | 프론트 셸: 랜딩 + 콕핏 + 네비게이션 (E2E) | ✅ 완료 (PR #1) |
 | M3 | BrainStormingStudio | ✅ 완료 (PR #2) |
-| M4 | DesignStudio (S0~S3 파이프라인 · 3액터 · Fabric.js v6 에디터) | ✅ 완료 |
+| M4 | DesignStudio (S0~S3 파이프라인 · 3액터 · Fabric.js v7 에디터) | ✅ 완료 |
 | M5 | ReviewStudio (준법 + 다국어 동등성) | ✅ 완료 (PR #3) |
 | M6 | DeployStudio (§50+§15·§16 결정론 규칙엔진 · advisor · 토큰/비용 관측) | ✅ 완료 (PR #5·#6·#7) |
-| M7 | History + 통합·배포 (Supabase · 실 Auth · 실배포) | ⏳ 대기 (마지막) |
+| M7-A | Supabase 영속 + 실 Auth(익명 JWT · 소유권 가드 · RLS) | ✅ 완료 |
+| M7-B | History 갤러리(목록→상세 · 디자인시스템 iframe 프리뷰) | ✅ 완료 |
+| M7-C | 실배포 (Vercel · HF Space · Supabase 라이브) | ✅ 완료 |
+| O1~O4 | 횡단 정책(세션 수명주기 · Design confirm 게이트 · 안정 이벤트 · 긴 스레드 compaction) | ✅ 완료 |
+
+> **테스트(2026-06)**: 백엔드 `pytest` 366개 수집 · 클린 환경 약 360개 통과 · 5 skipped / 프런트 `vitest` 187개 통과 (54 files), CI green. *(환경에 따라 ±, 제출 직전 클린 `.env` 격리 측정으로 확정 권장)*
 
 ## 로컬 실행
 
