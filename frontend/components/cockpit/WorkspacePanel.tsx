@@ -95,18 +95,18 @@ export function WorkspacePanel() {
     );
   }
 
-  // design/review/deploy(및 그 외): 좌측 FileTree 고정 + 스튜디오 콘텐츠(현행 3트랙 그리드 유지, 리사이즈 없음).
-  // design/review/deploy 모두 col-span-2 단일 컨테이너를 방출(내부 레이아웃 자체 소유)하므로 우측 2트랙(1fr·360px)을 보존한다.
+  // design: 자체 4-panel(VFS·캔버스·챗) 셸을 full-width로 단독 렌더(좌측 260px FileTree 그리드 미사용).
+  if (isDesign) {
+    return <DesignStudio />;
+  }
+
+  // review/deploy(및 그 외): 좌측 FileTree 고정 + 스튜디오 콘텐츠(현행 유지).
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr_360px] overflow-hidden bg-surface">
-      {/* 좌: FileTree(모든 스튜디오에서 유지) */}
       <div className="min-h-0 overflow-hidden border-r border-outline-variant">
         <FileTree />
       </div>
-      {/* 중·우: design/review/deploy 모두 col-span-2 단일 컨테이너를 방출(내부 레이아웃 자체 소유) / 그외=Placeholder */}
-      {isDesign ? (
-        <DesignStudio />
-      ) : isReview ? (
+      {isReview ? (
         <ReviewStudio />
       ) : isDeploy ? (
         <DeployStudio />

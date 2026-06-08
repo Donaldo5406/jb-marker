@@ -5,6 +5,7 @@ let ctx: any;
 vi.mock("../CockpitProvider", () => ({ useCockpit: () => ctx }));
 vi.mock("../ChatPane", () => ({ ChatPane: () => <div data-testid="chat-pane" /> }));
 vi.mock("../FileContent", () => ({ FileContent: () => <div data-testid="file-content" /> }));
+vi.mock("../FileTree", () => ({ FileTree: () => <div data-testid="file-tree" /> }));
 
 import { DesignStudio } from "../DesignStudio";
 
@@ -18,6 +19,10 @@ beforeEach(() => {
     switchDesignLang: vi.fn(),
     runDesign: vi.fn().mockResolvedValue({ text: "" }),
     openFile: null,
+    runId: "r",
+    setOpenFileContent: vi.fn(),
+    saveSceneJson: vi.fn(),
+    regenConfirm: { open: false, onConfirm: vi.fn(), onCancel: vi.fn() },
   };
 });
 

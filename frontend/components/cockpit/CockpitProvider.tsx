@@ -9,6 +9,7 @@ import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
 import { isImagePath } from "@/lib/fileType";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
 import { renderAndUploadAll } from "@/lib/sceneRender";
+import { EDITED_PATH, addLang, parseEdited } from "@/lib/editor/editedLangs";
 
 const DEPLOY_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -70,6 +71,7 @@ export type CockpitContextValue = {
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
   designGate: DesignGate | null;          // meta.gate — 현재 confirm 게이트 상태(critic/auto_advanced)
+  regenConfirm: { open: boolean; onConfirm: () => void; onCancel: () => void };   // scene-wins 재생성 confirm 게이트
   // ---- review state (M5 spec §8.3) ----
   reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
   reviewGate: ReviewGate | null;            // 통합 reconciler 산정 결과(critical/warning 수)
@@ -156,6 +158,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [designLang, setDesignLang] = useState("ko");
   const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
   const [designGate, setDesignGate] = useState<DesignGate | null>(null);
+  // scene-wins: 재생성 confirm 게이트 상태(수동 편집본이 있을 때만 노출). Promise resolve 핸들러를 보관.
+  const [regenConfirm, setRegenConfirm] = useState<{ open: boolean; onConfirm: () => void; onCancel: () => void }>(
+    { open: false, onConfirm: () => {}, onCancel: () => {} });
   // M5: 검토 진행 단계·게이트·ack 플래그(메모리 상). 새 run 마다 R0/null/false로 리셋.
   const [reviewStage, setReviewStage] = useState<ReviewStage | null>(null);
   const [reviewGate, setReviewGate] = useState<ReviewGate | null>(null);
@@ -344,7 +349,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       const bg = spec.slots.find((s) => s.role === "background");
       if (bg) bg.asset_ref = VISUAL;
     }
+    let editedLangs: string[] = [];
+    try { editedLangs = parseEdited((await api.vfsGet(id, EDITED_PATH)).content_text); } catch { /* 없음 */ }
     for (const lang of langs) {
+      if (editedLangs.includes(lang)) continue;   // scene-wins: 수동 편집본 보존
       const scene = assembleScene(spec, lang, (ref) => api.assetUrl(id, `design/${ref}`));
       await api.vfsPut(id, `design/final/${lang}/main.scene`, JSON.stringify(scene), "application/json");
     }
@@ -404,6 +412,21 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const runDesign = useCallback(async (action: string, prompt = "") => {
     const id = runIdRef.current;
     if (!id) return { text: "" };
+    // scene-wins: 재생성은 수동 편집 마킹이 있으면 confirm 게이트를 통과해야 한다.
+    if (action === "regenerate") {
+      let edited: string[] = [];
+      try { edited = parseEdited((await api.vfsGet(id, EDITED_PATH)).content_text); } catch { /* 없음 */ }
+      if (edited.length > 0) {
+        const proceed = await new Promise<boolean>((resolve) => {
+          setRegenConfirm({ open: true,
+            onConfirm: () => { setRegenConfirm((s) => ({ ...s, open: false })); resolve(true); },
+            onCancel: () => { setRegenConfirm((s) => ({ ...s, open: false })); resolve(false); } });
+        });
+        if (!proceed) return { text: "" };
+        // 확정 → 편집 마킹 해제(재생성이 새 씬으로 대체).
+        try { await api.vfsPut(id, EDITED_PATH, JSON.stringify({ langs: [] }), "application/json"); } catch { /* noop */ }
+      }
+    }
     const res = await api.gatewayRun({
       run_id: id, studio: "design", prompt,
       provider: "anthropic", is_marker: true, action,
@@ -521,8 +544,19 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   /** 언어 전환(I4): 현재 언어를 바꾸고 해당 언어 scene을 재조립/열기(spec 없으면 no-op). */
   const switchDesignLang = useCallback(async (lang: string) => {
     setDesignLang(lang);
+    const id = runIdRef.current;
+    if (id) {
+      // scene-wins: 마킹된 언어는 재조립 없이 저장본을 그대로 연다.
+      let edited: string[] = [];
+      try { edited = parseEdited((await api.vfsGet(id, EDITED_PATH)).content_text); } catch { /* 없음 */ }
+      if (edited.includes(lang)) {
+        const path = `/${id}/design/final/${lang}/main.scene`;
+        try { await api.vfsGet(id, restOf(id, path)); await selectFile(path); return; }
+        catch { /* 파일 없으면 아래 조립 폴백 */ }
+      }
+    }
     await assembleAndOpenScene(lang);
-  }, [assembleAndOpenScene]);
+  }, [assembleAndOpenScene, selectFile]);
 
   /** 캔버스 편집 결과(scene JSON)를 현재 열린 .scene 파일에 in-place 저장. */
   const saveSceneJson = useCallback(async (content: string) => {
@@ -532,7 +566,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     await api.vfsPut(id, rest, content, "application/json");
     // 캔버스 저장 결과를 캐시에 반영(다음 selectFile이 stale 내용을 돌려주지 않도록).
     fileCacheRef.current.set(openFile.path, { ...openFile, content, dirty: false });
-  }, [openFile]);
+    // scene-wins: 현재 언어를 "수동 편집됨"으로 마킹 → 언어전환/재생성이 덮어쓰지 않게.
+    try {
+      let langs: string[] = [];
+      try { langs = parseEdited((await api.vfsGet(id, EDITED_PATH)).content_text); } catch { /* 최초엔 없음 */ }
+      const next = addLang(langs, designLang);
+      if (next.length !== langs.length) await api.vfsPut(id, EDITED_PATH, JSON.stringify({ langs: next }), "application/json");
+    } catch { /* 마킹 실패는 저장 자체를 막지 않음 */ }
+  }, [openFile, designLang]);
 
   const answerAsk = useCallback(async (choice: string) => {
     const id = runIdRef.current;
@@ -743,6 +784,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     designBypass,
     setDesignBypass,
     designGate,
+    regenConfirm,
     reviewStage,
     reviewGate,
     reviewAcknowledged,

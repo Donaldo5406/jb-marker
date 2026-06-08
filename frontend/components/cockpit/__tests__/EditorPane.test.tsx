@@ -9,8 +9,8 @@ vi.mock("@/components/cockpit/CodeView", () => ({
 vi.mock("@/components/cockpit/MarkdownView", () => ({
   MarkdownView: () => <div data-testid="mdview">md</div>,
 }));
-vi.mock("@/components/cockpit/FabricEditor", () => ({
-  FabricEditor: () => <div data-testid="fabric">fabric</div>,
+vi.mock("@/components/cockpit/editor/DesignEditor", () => ({
+  DesignEditor: () => <div data-testid="design-editor">design</div>,
 }));
 vi.mock("@/components/cockpit/ImageView", () => ({
   ImageView: ({ path }: { path: string }) => <div data-testid="imageview">img:{path}</div>,
@@ -51,10 +51,10 @@ describe("EditorPane 코드 읽기/소스 토글", () => {
     fireEvent.click(screen.getByRole("button", { name: "내용 복사" }));
     expect(writeText).toHaveBeenCalledWith('{"a":1}');
   });
-  it(".scene는 Fabric 유지(코드뷰 미적용)", async () => {
+  it(".scene는 DesignEditor 유지(코드뷰 미적용)", async () => {
     mockCockpit({ path: "/r1/design/final/ko/main.scene", content: "{}", mime: "application/json", dirty: false });
     render(<EditorPane />);
-    expect(await screen.findByTestId("fabric")).toBeTruthy();
+    expect(await screen.findByTestId("design-editor")).toBeTruthy();
     expect(screen.queryByTestId("codeview")).toBeNull();
   });
   it(".png는 ImageView로 표시(코드뷰·저장·복사 비노출)", async () => {
