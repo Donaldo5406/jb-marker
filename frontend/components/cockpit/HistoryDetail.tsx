@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { GalleryMedia } from "./GalleryMedia";
 import { PreviewFrame } from "./PreviewFrame";
+import { HistoryFileViewer } from "./HistoryFileViewer";
 import { UsagePanel } from "./UsagePanel";
 
 type LoadState = "loading" | "ok" | "error";
@@ -34,6 +35,7 @@ export type HistoryDetailProps = {
 export function HistoryDetail({ runId, onBack, onContinue }: HistoryDetailProps) {
   const [data, setData] = React.useState<GalleryResponse | null>(null);
   const [state, setState] = React.useState<LoadState>("loading");
+  const [openDocPath, setOpenDocPath] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -137,9 +139,11 @@ export function HistoryDetail({ runId, onBack, onContinue }: HistoryDetailProps)
                               </figcaption>
                             </figure>
                           ) : (
-                            <div
+                            <button
                               key={it.path}
-                              className="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 transition-colors hover:bg-surface-container-low"
+                              type="button"
+                              onClick={() => setOpenDocPath(it.path)}
+                              className="flex w-full items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-left transition-colors hover:bg-surface-container-low"
                             >
                               <FileText
                                 className="h-4 w-4 shrink-0 text-on-surface-variant"
@@ -151,7 +155,7 @@ export function HistoryDetail({ runId, onBack, onContinue }: HistoryDetailProps)
                               <span className="ml-auto shrink-0 text-caption text-outline">
                                 {it.source ?? ""}
                               </span>
-                            </div>
+                            </button>
                           ),
                         )}
                       </div>
@@ -163,6 +167,14 @@ export function HistoryDetail({ runId, onBack, onContinue }: HistoryDetailProps)
           )}
         </div>
       </div>
+
+      {openDocPath && (
+        <HistoryFileViewer
+          runId={runId}
+          path={openDocPath}
+          onClose={() => setOpenDocPath(null)}
+        />
+      )}
     </div>
   );
 }
