@@ -8,22 +8,13 @@ import { isImagePath, baseName } from "@/lib/fileType";
 import { ImageView } from "./ImageView";
 import type { OpenFile } from "./CockpitProvider";
 
-const FabricEditor = dynamic(() => import("./FabricEditor").then((m) => m.FabricEditor), { ssr: false });
+const DesignEditor = dynamic(() => import("./editor/DesignEditor").then((m) => m.DesignEditor), { ssr: false });
 const MarkdownView = dynamic(() => import("./MarkdownView").then((m) => m.MarkdownView), {
   loading: () => <div className="flex-1 bg-surface" />,
 });
 const CodeView = dynamic(() => import("./CodeView").then((m) => m.CodeView), {
   loading: () => <div className="flex-1 bg-surface" />,
 });
-
-function parseScene(content: string): { objects: any[]; width?: number; height?: number } | null {
-  if (!content) return null;
-  try {
-    return JSON.parse(content) as { objects: any[]; width?: number; height?: number };
-  } catch {
-    return null;
-  }
-}
 
 /** 파일 1건의 본문 렌더(확장자 분기) + md/code 보기 토글.
  *  파일 액션(저장/복사/닫기)·경로 표시는 래퍼(EditorPane / FileViewerDrawer)가 담당. */
@@ -44,10 +35,6 @@ export function FileContent({
     setMdMode("preview");
     setCodeMode("read");
   }, [file.path]);
-
-  // scene 파싱을 내용 기준으로 메모이즈 — 무관한 리렌더(폴/토스트)마다 FabricEditor가
-  // 캔버스를 clear+재로딩하지 않도록 안정 참조를 전달한다.
-  const sceneObj = React.useMemo(() => parseScene(file.content), [file.content]);
 
   const isScene = file.path.endsWith(".scene");
   const isMd = file.path.endsWith(".md");
@@ -77,7 +64,8 @@ export function FileContent({
         </div>
       )}
       {isScene ? (
-        <FabricEditor scene={sceneObj} width={sceneObj?.width} height={sceneObj?.height} onSave={(json) => onSaveScene(JSON.stringify(json))} />
+        <DesignEditor content={file.content} dirty={file.dirty}
+          onSave={(json) => onSaveScene(json)} onClose={() => { /* 닫기는 래퍼가 처리 */ }} />
       ) : isImage ? (
         <ImageView runId={runId} path={file.path} />
       ) : showPreview ? (
