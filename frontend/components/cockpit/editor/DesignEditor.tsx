@@ -12,8 +12,9 @@ import { keyToEditorAction } from "@/lib/editor/shortcuts";
 
 /** .scene 편집 셸. content(.scene JSON 문자열)를 캔버스로, 편집 결과를 onSave(json)로. */
 export function DesignEditor({
-  content, dirty, onSave, onClose,
+  content, dirty: _dirty, onSave, onClose,
 }: { content: string; dirty: boolean; onSave: (json: string) => void | Promise<void>; onClose: () => void }) {
+  void _dirty; // 외부 dirty prop은 더 이상 사용하지 않음(저장버튼은 내부 dirty로 구동). 시그니처는 유지.
   const elRef = React.useRef<HTMLCanvasElement>(null);
   const scene = React.useMemo(() => parseScene(content), [content]);
   const { canvas } = useFabricCanvas(elRef, scene);
@@ -22,6 +23,8 @@ export function DesignEditor({
   const { push: pushHistory, undo: undoHistory, redo: redoHistory, reset: resetHistory, canUndo, canRedo } = history;
   const [zoom, setZoom] = React.useState(1);
   const [saving, setSaving] = React.useState(false);
+  // 캔버스 편집을 내부에서 추적하는 dirty. (외부 dirty prop은 .scene 캔버스 편집을 반영하지 못함)
+  const [dirty, setDirty] = React.useState(false);
   const [revision, setRevision] = React.useState(0);            // 객체 변경 시 인스펙터 갱신
   const [selected, setSelected] = React.useState<SelectedProps | null>(null);
   const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
@@ -36,6 +39,7 @@ export function DesignEditor({
     if (!canvas) return;
     const s = snapshot();
     if (s) resetHistory(s);
+    setDirty(false);
   }, [canvas, snapshot, resetHistory]);
 
   // 캔버스 이벤트 → 선택/리비전/히스토리. 안정 ref(canvas/snapshot/pushHistory)에만 의존한다.
@@ -50,8 +54,9 @@ export function DesignEditor({
       setRevision((r) => r + 1);
     };
     const onModified = () => {
-      // restore() 진행 중에는 loadFromJSON이 발화한 이벤트이므로 히스토리를 밀지 않는다.
+      // restore() 진행 중에는 loadFromJSON이 발화한 이벤트이므로 히스토리를 밀지 않고 dirty도 안 올린다.
       if (restoringRef.current) { sync(); return; }
+      setDirty(true);
       const s = snapshot(); if (s) pushHistory(s); sync();
     };
     canvas.on("selection:created", sync);
@@ -70,15 +75,15 @@ export function DesignEditor({
   const restore = React.useCallback((json: string | null) => {
     if (!canvas || !json) return;
     restoringRef.current = true;
-    void canvas.loadFromJSON(JSON.parse(json)).then(() => {
-      canvas.renderAll(); setRevision((r) => r + 1); restoringRef.current = false;
-    });
+    void canvas.loadFromJSON(JSON.parse(json))
+      .then(() => { canvas.renderAll(); setRevision((r) => r + 1); })
+      .finally(() => { restoringRef.current = false; });
   }, [canvas]);
 
   const doSave = React.useCallback(async () => {
     const s = snapshot(); if (s == null) return;
     setSaving(true);
-    try { await onSave(s); } finally { setSaving(false); }
+    try { await onSave(s); setDirty(false); } finally { setSaving(false); }
   }, [snapshot, onSave]);
 
   const applyZoom = React.useCallback((z: number) => {
@@ -102,6 +107,10 @@ export function DesignEditor({
   React.useEffect(() => {
     if (!canvas) return;
     const onKey = (e: KeyboardEvent) => {
+      // DOM 폼 입력(인스펙터 number/color/select 등)에 포커스가 있으면 단축키를 가로채지 않는다.
+      const ae = document.activeElement as HTMLElement | null;
+      const tag = ae?.tagName;
+      if (ae && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || ae.isContentEditable)) return;
       const editing = (canvas.getActiveObject() as any)?.isEditing;
       if (editing) return;
       const action = keyToEditorAction(e);
@@ -126,8 +135,10 @@ export function DesignEditor({
   const onChangeProps = (patch: Record<string, unknown>) => {
     const a = canvas?.getActiveObject(); if (!a || !canvas) return;
     a.set(patch); canvas.renderAll();
+    setDirty(true);
     const s = snapshot(); if (s) pushHistory(s);
     setSelected(a.toObject([...SCENE_CUSTOM_PROPS]) as SelectedProps);
+    setRevision((r) => r + 1);
   };
 
   return (
