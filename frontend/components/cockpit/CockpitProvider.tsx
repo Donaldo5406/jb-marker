@@ -642,7 +642,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   useEffect(() => {
     if (typeof window === "undefined") return;
     setViewState(viewFromSearch(window.location.search));
-    // 마운트 1회만 — eslint-disable-next-line react-hooks/exhaustive-deps
+    // 마운트 1회만(의존: 모듈 스코프 viewFromSearch + 안정 setter setViewState → exhaustive-deps 미발화).
   }, []);
 
   // ---- mount: 익명 세션 확보 → `?run=` 복원 + entitlement 초기화 ----
