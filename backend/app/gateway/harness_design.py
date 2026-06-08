@@ -16,6 +16,7 @@ import re
 
 import yaml
 
+from ..core.fonts import looks_like_font_name
 from ..core.grounding import build_corpus, find_ungrounded
 from ..core.lang import normalize_languages
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
@@ -499,9 +500,13 @@ class DesignHarness(Harness):
         # creative_direction은 구조형(palette/font/grid/aspect) 또는 실 브레인스토밍의 서술형
         # (concept/visual_mood/color_palette/typography)로 올 수 있다 — 둘 다 수용해 빈 tokens로
         # 디자인이 브랜드 방향을 잃지 않게 한다. aspect 미기재 시 material_matrix에서 추론.
+        # typography는 폰트명일 때만 font로 폴백한다. 실 브레인스토밍은 typography를
+        # 서술 문장으로 쓰는데, 그대로 font에 넣으면 design-system 프리뷰 CSS font-family로
+        # 새서 깨진다. 서술형 typography는 아래 루프에서 tokens["typography"]로 별도 보존됨.
+        _typo = cd.get("typography")
         tokens = {
             "palette": cd.get("palette") or [],
-            "font": cd.get("font") or cd.get("typography"),
+            "font": cd.get("font") or (_typo if looks_like_font_name(_typo) else None),
             "grid": cd.get("grid"),
             "aspect": cd.get("aspect") or _aspect_from_matrix(matrix) or "1:1",
         }
