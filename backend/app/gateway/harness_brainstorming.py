@@ -30,6 +30,10 @@ REQUIRED_SPEC_FIELDS = {
     "languages", "multinational", "tone", "factsheet", "disclosures",
 }
 
+# Stage A 웹검색 마커 — provider(anthropic/google/openai)가 `if tools`로 truthy만 검사하므로
+# 내용은 무시되고 각자 네이티브 검색(web_search_20250305 / google_search / web_search_options)을 켠다.
+WEB_SEARCH_TOOL = [{"type": "web_search"}]
+
 PERSONA = (
     "당신은 금융 마케팅 캠페인 기획 전문가입니다. 타겟 세그멘테이션·메시지 전략·채널 믹스·"
     "카피 방향·컴플라이언스(표시광고·금융광고)·리서치 기반 의사결정에 능합니다. "
@@ -198,7 +202,8 @@ class BrainstormingHarness(Harness):
         existing = len(store.list(f"{base}/assets/research"))
         for i, c in enumerate(citations or []):
             p = f"{base}/assets/research/article/src_{existing + i}.md"
-            store.put(p, c.get("snippet") or "", source="research",
+            body = c.get("snippet") or f"# {c.get('title') or ''}\n\n{c.get('url') or ''}"
+            store.put(p, body, source="research",
                       meta={"source_url": c.get("url"), "title": c.get("title")}, mime="text/markdown")
         return len(citations or [])
 
@@ -223,11 +228,11 @@ class BrainstormingHarness(Harness):
             "충분히 모이면 그때 document에 spec.md 전체를 작성하세요 — "
             "goal/target_segments/key_messages/channels/languages/multinational/tone/factsheet/disclosures를 "
             "YAML frontmatter로 담고, 작성을 마치면 ready=true로 표시합니다. "
-            "외부 사실이 꼭 필요하면 그 사실을 사용자에게 질문해 확인하세요(자동 웹검색은 하지 않습니다)." + _PROTOCOL +
+            "시장·트렌드·경쟁사 등 외부 사실이 필요하면 웹검색으로 직접 확인해 반영하고, 불확실하면 사용자에게 질문하세요." + _PROTOCOL +
             f"\n\n[현재 spec.md]\n{cur}")
-        # 웹서치 OFF(B): 한 줄 프롬프트에 아티클을 자동 수집하지 않음 — 대화-우선.
+        # 웹서치 ON(Stage A): 모델 자율 검색(WEB_SEARCH_TOOL). citations는 _save_research로 영속.
         resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
-                                 model=req.provider, system=sys)
+                                 model=req.provider, system=sys, tools=WEB_SEARCH_TOOL)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
         reply = (data.get("reply") or "").strip()
