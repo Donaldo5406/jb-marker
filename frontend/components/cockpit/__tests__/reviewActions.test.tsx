@@ -62,7 +62,9 @@ function installFetch() {
       const st = REVIEW_STEPS[Math.min(reviewStep, REVIEW_STEPS.length - 1)];
       reviewStep += 1;
       const meta: any = { step: st };
-      if (st === "R3") meta.gate = { status: "PASS", critical: 0, warning: 0 };
+      // 백엔드 wire 형식(severity.py:91) — critical_count/warning_count. 0이 아닌 값으로
+      // 프론트 매핑(CockpitProvider) 회귀(필드명 불일치→롤업 0)를 잡는다.
+      if (st === "R3") meta.gate = { status: "WARN", critical_count: 1, warning_count: 2 };
       return ok({ output_path: "", text: `${st} 완료`, meta });
     }
     return ok({});
@@ -108,9 +110,11 @@ describe("CockpitProvider review actions (M5 §8.3)", () => {
     expect(reviewCalls[0].is_marker).toBe(true);
     expect(reviewCalls[0].provider).toBe("anthropic");
 
-    // 종단 상태: done + R3 gate 반영
+    // 종단 상태: done + R3 gate 반영 (wire 키 critical_count/warning_count → 프론트 critical/warning 매핑)
     expect(captured!.reviewStage).toBe("done");
-    expect(captured!.reviewGate?.status).toBe("PASS");
+    expect(captured!.reviewGate?.status).toBe("WARN");
+    expect(captured!.reviewGate?.critical).toBe(1);
+    expect(captured!.reviewGate?.warning).toBe(2);
   });
 
   it("ackReview: gateway action=ack + reviewAcknowledged=true", async () => {

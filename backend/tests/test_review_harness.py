@@ -58,6 +58,33 @@ def test_review_harness_initial_state(tmp_path):
     assert state["acknowledged"] is False
 
 
+def test_collect_scene_copy_reconstructs_from_objects(tmp_path):
+    """실 production 경로 회귀 가드: 프론트 sceneAssembler가 저장하는 main.scene은
+    top-level copy 없이 {version, objects:[{type:textbox, role, text, lang}], width, height}
+    형식이다 → 백엔드가 objects에서 role→text로 카피를 복원해야 R1/R2가 콘텐츠를 본다.
+    기존 백엔드 픽스처는 {copy:{lang:{...}}} 형식만 써서 이 재구성 분기를 한 번도 타지
+    않았다(테스트 위장). role/type 키명·케이싱이 깨지면 scene_copy가 비어 위반 무탐이
+    발생하므로 production 형식을 직접 검증한다."""
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko", "en"])
+    for lang, head, body in [("ko", "헤드라인", "본문 카피"), ("en", "Headline", "Body copy")]:
+        store.put(
+            f"/r1/design/final/{lang}/main.scene",
+            json.dumps({
+                "version": "6.0.0", "width": 1080, "height": 1350,
+                "objects": [
+                    {"type": "textbox", "role": "headline", "text": head, "lang": lang},
+                    {"type": "textbox", "role": "body", "text": body, "lang": lang},
+                    {"type": "image", "role": "background", "src": "x"},  # image는 제외돼야
+                ],
+            }),
+            source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    out = h._collect_scene_copy(store, "r1", ["ko", "en"])
+    assert out["ko"] == {"headline": "헤드라인", "body": "본문 카피"}
+    assert out["en"] == {"headline": "Headline", "body": "Body copy"}
+
+
 def test_r0_setup_creates_matrix_and_sets_in_progress(tmp_path):
     store = make_local_store(tmp_path)
     _setup_run(store, languages=["ko", "en"])
@@ -72,6 +99,32 @@ def test_r0_setup_creates_matrix_and_sets_in_progress(tmp_path):
     assert "visual/v1.png" in state["matrix"]["components"]
     m = store.get_manifest("r1")
     assert m.step_status.get("review") == "in_progress"
+
+
+def test_r0_normalizes_object_list_languages(tmp_path):
+    """FIX A: 실 Claude plan.md의 객체 리스트 languages → 문자열 코드로 정규화.
+
+    정규화 안 하면 matrix[dict] / 경로 `.../{dict}/main.scene` 에서 unhashable·깨진 경로로
+    R0가 크래시한다. 정규화 후 matrix는 문자열 키, 언어 수 정상.
+    """
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko", "en"])
+    plan_md = (
+        "---\n"
+        "languages:\n"
+        "  - code: ko\n    label: 한국어\n    primary: true\n"
+        "  - code: en\n    label: English\n"
+        "factsheet:\n  rate: 5.2\n"
+        "disclosures:\n  - 미래 수익 보장 아님\n"
+        "---\n# Plan\n")
+    store.put("/r1/brainstorming/plan.md", plan_md, source="marker", mime="text/markdown")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="검토",
+                         provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["languages"] == ["ko", "en"]
+    assert set(state["matrix"]) >= {"ko", "en", "components"}
 
 
 def test_r0_idempotent_cleanup(tmp_path):
@@ -140,6 +193,32 @@ def test_r1_legal_text_search_persists_verdicts(tmp_path, make_scripted):
     # state 전이
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert state["step"] == "R2"
+
+
+def test_r1_visual_violation_persists_legal_verdict(tmp_path):
+    """#3: R1의 결정론 시각 검사(core/visual_rules)가 layout.spec의 시각 위반을
+    legal verdict(kind=visual)로 영속 → 게이트에 합류. (텍스트 finding 없이도 검출.)"""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    # 고지 글자크기 위반(10px = 최대 72px의 14% < 30%). 고지 슬롯·카피는 존재(R-VIS-3 통과).
+    store.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "bg_color": "#FFFFFF",
+        "slots": [
+            {"role": "headline", "font_px": 72, "color": "#000000"},
+            {"role": "disclosure", "font_px": 10, "color": "#000000"},
+        ],
+        "copy": {"ko": {"disclosure": "예금자보호법에 따라 5천만원까지 보호"}},
+    }), source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)   # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)   # R1(텍스트 0건 + 결정론 시각 검사)
+    verdicts = h._load_all_verdicts(store, "r1")
+    visual = [v for v in verdicts if v.get("kind") == "visual"]
+    assert visual, f"시각 verdict 미검출: {verdicts}"
+    assert any(v["severity"] == "warning" for v in visual)
+    assert all(v["node"] == "legal" for v in visual)          # legal 노드로 합류
 
 
 def test_r1_legal_whitelist_drops_off_source(tmp_path, make_scripted):

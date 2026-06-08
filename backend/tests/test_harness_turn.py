@@ -21,7 +21,7 @@ def test_passthrough_handle_turn_persists_and_returns():
     assert any(e["type"] == "artifact" for e in res.events)
 
 
-def test_harness_request_has_answer_and_bypass_defaults():
+def test_harness_request_has_answer_default():
     from app.gateway.harness import HarnessRequest
     req = HarnessRequest(run_id="r", studio="brainstorming", user_prompt="p", provider="fake")
-    assert req.answer is None and req.bypass is False
+    assert req.answer is None and req.action is None

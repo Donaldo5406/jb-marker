@@ -34,10 +34,10 @@ def _store(tmp_path):
     return s
 
 
-def _req(action="advance", prompt="", bypass=False):
+def _req(action="advance", prompt=""):
     from app.gateway.harness import HarnessRequest
     return HarnessRequest(run_id="r1", studio="design", user_prompt=prompt,
-                          provider="fake", is_marker=True, action=action, bypass=bypass)
+                          provider="fake", is_marker=True, action=action)
 
 
 def test_first_turn_chains_s0_into_s1_then_gates(tmp_path):

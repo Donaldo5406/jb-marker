@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Lock, X } from "lucide-react";
+import { Lock, X, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import Link from "next/link";
+import { api } from "@/lib/api";
 import { useCockpit } from "@/components/cockpit/CockpitProvider";
 import { StepProgress, type Step } from "@/components/cockpit/StepProgress";
 import { DeployCard } from "@/components/cockpit/deploy/DeployCard";
@@ -32,6 +33,9 @@ const STEPS: Step[] = [
   { id: "D3", label: "발송" },
 ];
 
+type DispatchCell = { channel: string; lang: string; status: string; message?: string; reason?: string; recipients_count?: number };
+type DispatchSim = { step_status?: string; simulation?: DispatchCell[] };
+
 export function DeployStudio() {
   const c = useCockpit();
   const selected = c.selectedProviders;
@@ -40,6 +44,11 @@ export function DeployStudio() {
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [calendar, setCalendar] = React.useState<{ hour: number; blocked: boolean }[]>([]);
   const [verdicts, setVerdicts] = React.useState<ReviewVerdict[]>([]);
+  const [dispatch, setDispatch] = React.useState<DispatchSim | null>(null);
+  const [dispatching, setDispatching] = React.useState(false);
+  // T9: Design 산출(layout.spec.json)의 실제 4언어 카피를 패키징 입력으로 사용(더미 제거).
+  const [languages, setLanguages] = React.useState<string[]>(["ko"]);
+  const [designCopy, setDesignCopy] = React.useState<Record<string, Record<string, string>>>({});
 
   React.useEffect(() => {
     if (!activeAdvisor) return;
@@ -68,7 +77,29 @@ export function DeployStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [c.runId, verdictKey]);
 
-  const languages: string[] = ["ko"];
+  // T9: Design 산출 layout.spec.json에서 실제 언어셋·카피 로드(없으면 ko 기본 유지).
+  React.useEffect(() => {
+    if (!c.runId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const node = await api.vfsGet(c.runId!, "design/rough/layout.spec.json");
+        const spec = JSON.parse(node.content_text ?? "{}");
+        const copy = (spec.copy ?? {}) as Record<string, Record<string, string>>;
+        const langs = Object.keys(copy);
+        if (!cancelled && langs.length > 0) {
+          setDesignCopy(copy);
+          setLanguages(langs);
+        }
+      } catch {
+        /* design 미완 — ko 기본 유지 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [c.runId]);
+
   const matrix = selected.flatMap((ch) => languages.map((l) => ({ channel: ch, lang: l })));
   const currentStep = !c.eligibility ? "D0" : Object.keys(c.packages).length === 0 ? "D1" : "D2";
   const designDone = c.manifest?.step_status?.design === "done" || c.designStep === "done";
@@ -122,8 +153,8 @@ export function DeployStudio() {
         </DeployCard>
 
         {c.eligibility && (
-          <DeployCard step="D1" title="발송 적법성 (정보통신망법 §50)" desc="수신자별 동의·야간(21~08)·옵트아웃을 판정해 발송대상/제외를 가립니다.">
-            <EligibilityPanel total={c.eligibility.total} eligibleCount={c.eligibility.eligible_count} excludedCount={c.eligibility.excluded_count} calendar={calendar} />
+          <DeployCard step="D1" title="발송 적법성 (정보통신망법 §50 · 개인정보보호법 §15·§16)" desc="수신자별 동의·야간(21~08)·옵트아웃(§50)과 수집목적·보유기간(§15·§16)을 판정해 발송대상/제외를 가립니다.">
+            <EligibilityPanel total={c.eligibility.total} eligibleCount={c.eligibility.eligible_count} excludedCount={c.eligibility.excluded_count} calendar={calendar} breakdown={c.eligibility.breakdown} />
           </DeployCard>
         )}
 
@@ -134,7 +165,9 @@ export function DeployStudio() {
                 type="button"
                 onClick={async () => {
                   for (const cell of matrix) {
-                    await c.runPackagingCell(cell.channel, cell.lang, "demo copy " + cell.channel, `/runs/${c.runId}/deploy/packages/${cell.channel}_${cell.lang}/visual.png`);
+                    const cp = designCopy[cell.lang] ?? {};
+                    const copyText = [cp.headline, cp.body, cp.cta].filter(Boolean).join(" ").trim() || `demo copy ${cell.channel}`;
+                    await c.runPackagingCell(cell.channel, cell.lang, copyText, `/runs/${c.runId}/deploy/packages/${cell.channel}_${cell.lang}/visual.png`);
                   }
                 }}
                 className="rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container"
@@ -167,11 +200,67 @@ export function DeployStudio() {
               selectedCount={selected.length}
               devPass={c.devPass}
               onConfirm={async () => {
-                const res = await c.dispatchConfirm();
-                if (res.needsPayment) setPaymentOpen(true);
+                setDispatching(true);
+                try {
+                  const res = await c.dispatchConfirm();
+                  if (res.needsPayment) {
+                    setPaymentOpen(true);
+                    return;
+                  }
+                  setDispatch(res as DispatchSim);
+                } finally {
+                  setDispatching(false);
+                }
               }}
               onPayDemo={() => setPaymentOpen(true)}
             />
+
+            {dispatching && (
+              <p className="mt-2 text-caption text-on-surface-variant" role="status" aria-live="polite">
+                발송을 처리하고 있습니다…
+              </p>
+            )}
+
+            {dispatch?.simulation && (
+              <div className="mt-3 space-y-2 rounded-xl border border-outline-variant bg-surface-container-low p-4 animate-fade-in-up" data-testid="dispatch-result">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary" aria-hidden />
+                    <p className="text-body-sm font-semibold text-on-surface">발송 완료 (시뮬레이션)</p>
+                  </div>
+                  {c.runId && (
+                    <button
+                      type="button"
+                      onClick={() => void c.selectFile(`/${c.runId}/deploy/report.md`)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1 text-caption font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                    >
+                      <FileText className="h-3.5 w-3.5" aria-hidden />
+                      Deploy Report 보기
+                    </button>
+                  )}
+                </div>
+                <ul className="space-y-1.5">
+                  {dispatch.simulation.map((s, i) => (
+                    <li key={`${s.channel}_${s.lang}_${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                      <span className="text-caption font-medium text-on-surface">{s.channel} · {s.lang}</span>
+                      {s.status === "skipped" ? (
+                        <span className="inline-flex items-center gap-1.5 text-caption text-error">
+                          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                          건너뜀{s.reason ? ` — ${s.reason}` : ""}
+                        </span>
+                      ) : (
+                        <span className="text-caption text-on-surface-variant">
+                          [STUB] {s.recipients_count ?? 0}명 발송 · 시뮬레이션(실 연동 시 실제 발송)
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {dispatch.simulation.length === 0 && (
+                  <p className="text-caption text-on-surface-variant">발송 대상 패키지가 없습니다. 패키징을 먼저 실행하세요.</p>
+                )}
+              </div>
+            )}
           </DeployCard>
         )}
       </div>

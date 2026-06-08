@@ -26,10 +26,8 @@ export function ChatPane() {
     setInput("");
     setLoading(true);
     try {
-      // bypass 기본 OFF — spec/plan 확정 게이트를 AI가 사용자에게 묻도록(단계 전환을 사용자가 통제).
-      // 자동 진행을 원하면 localStorage "brain_askuser_bypass"="1"로 켤 수 있다.
-      const bypass = typeof window !== "undefined" && window.localStorage.getItem("brain_askuser_bypass") === "1";
-      await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker, bypass });
+      // 브레인스토밍 bypass는 제거됨 — spec/plan 확정은 항상 AI가 사용자에게 묻는다(단계 전환 통제).
+      await c.sendChat({ prompt, provider: model.provider, isMarker: model.isMarker });
     } catch (err) {
       // 402(업셀)는 Provider가 처리. 그 외(네트워크/500)는 unhandled rejection 방지용 로깅.
       console.error("sendChat failed", err);

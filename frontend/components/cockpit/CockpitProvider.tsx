@@ -33,7 +33,18 @@ export type DeployStateLike = {
   matrix: { channel: string; lang: string }[];
   dev_pass: boolean;
 };
-export type EligibilityResult = { total: number; eligible_count: number; excluded_count: number };
+export type EligibilityReason = { status: string; label: string; count: number };
+// 법령 인용 — 정책 yaml의 매핑(백엔드가 객체로 반환). 필드는 방어적으로 옵셔널.
+export type EligibilityCitation = {
+  law?: string; article?: string; source_url?: string; quote?: string;
+};
+export type EligibilityBreakdownItem = {
+  policy: string; label: string; citation: EligibilityCitation; count: number; reasons: EligibilityReason[];
+};
+export type EligibilityResult = {
+  total: number; eligible_count: number; excluded_count: number;
+  breakdown?: EligibilityBreakdownItem[];   // 정책별(§50/§15·§16) 제외 사유 분해
+};
 export type PackageInfo = { status: string; reason?: string };
 export type AdvisorResult = { text?: string; tool_results?: unknown[]; needsPayment?: boolean };
 export type DispatchResult = { needsPayment?: boolean; report_path?: string } & Record<string, unknown>;
@@ -78,7 +89,7 @@ export type CockpitContextValue = {
   setOpenFileContent: (text: string) => void;
   closeFile: () => void;
   saveFile: () => Promise<void>;
-  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean })
+  sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean })
     => Promise<{ text?: string; ask?: AskPayload | null } | null>;
   runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
   runReview: () => Promise<{ text: string }>;
@@ -315,28 +326,36 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
   }, []);
 
-  /** backend layout.spec → assembleScene → design/final/{lang}/main.scene 저장 후 에디터에 자동 open(C1).
+  /** backend layout.spec → assembleScene → design/final/{lang}/main.scene 일괄 저장.
+   *  여러 언어를 한 번에 조립해(R2 동등성 검토는 4언어 scene을 비교) active 언어만 에디터에 open.
    *  rough spec이 없으면(파이프라인 미완) no-op. 빈 spec({}) 이어도 빈 scene을 안전 생성. */
-  const assembleAndOpenScene = useCallback(async (lang: string) => {
+  const assembleScenes = useCallback(async (langs: string[], active?: string) => {
     const id = runIdRef.current;
-    if (!id) return;
+    if (!id || !langs.length) return;
     let node;
     try { node = await api.vfsGet(id, "design/rough/layout.spec.json"); }
     catch { return; }                 // rough spec 없음 → 조립할 것 없음
     let spec: LayoutSpec;
     try { spec = JSON.parse(node.content_text ?? "{}"); }
     catch { return; }
-    // 배경 슬롯을 S2a 생성 비주얼(고정 경로)에 연결.
+    // 배경 슬롯을 S2a 생성 비주얼(고정 경로)에 연결(언어 무관·1회 변형).
     const VISUAL = "design-system/components/visual/v1.png";
     if (Array.isArray(spec?.slots)) {
       const bg = spec.slots.find((s) => s.role === "background");
       if (bg) bg.asset_ref = VISUAL;
     }
-    const scene = assembleScene(spec, lang, (ref) => api.assetUrl(id, `design/${ref}`));
-    await api.vfsPut(id, `design/final/${lang}/main.scene`, JSON.stringify(scene), "application/json");
+    for (const lang of langs) {
+      const scene = assembleScene(spec, lang, (ref) => api.assetUrl(id, `design/${ref}`));
+      await api.vfsPut(id, `design/final/${lang}/main.scene`, JSON.stringify(scene), "application/json");
+    }
     await refreshTree();
-    await selectFile(`/${id}/design/final/${lang}/main.scene`);
+    const open = active && langs.includes(active) ? active : langs[0];
+    await selectFile(`/${id}/design/final/${open}/main.scene`);
   }, [refreshTree, selectFile]);
+
+  /** 단일 언어 조립 + open(언어 스위처용 얇은 래퍼). */
+  const assembleAndOpenScene = useCallback(
+    (lang: string) => assembleScenes([lang], lang), [assembleScenes]);
 
   const setOpenFileContent = useCallback((text: string) => {
     setOpenFile((prev) => (prev ? { ...prev, content: text, dirty: true } : prev));
@@ -356,14 +375,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   }, [openFile, refreshTree]);
 
   const sendChat = useCallback(
-    async (p: { prompt: string; provider: Provider; isMarker: boolean; bypass?: boolean }) => {
+    async (p: { prompt: string; provider: Provider; isMarker: boolean }) => {
       const id = runIdRef.current;
       if (!id) return null;
       setMessages((m) => [...m, { role: "user", content: p.prompt }]);
       try {
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
-          provider: p.provider, is_marker: p.isMarker, bypass: p.bypass ?? false,
+          provider: p.provider, is_marker: p.isMarker,
           mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
@@ -388,18 +407,27 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const res = await api.gatewayRun({
       run_id: id, studio: "design", prompt,
       provider: "anthropic", is_marker: true, action,
-      bypass: !!designBypass[designStep],   // 호환: 현재 step의 bypass 단일 플래그
-      bypass_map: designBypass,             // 전체 맵 전송(백엔드 연쇄 전제)
+      bypass_map: designBypass,             // design 단계별 게이트 OFF 맵(백엔드 연쇄 전제)
       mock: mockModeRef.current,
     });
     await refreshTree();
     const st = res.meta?.step;
     if (typeof st === "string") setDesignStep(st);
     setDesignGate((res.meta?.gate as DesignGate) ?? null);   // 게이트 상태 보존(meta.gate)
-    // S3→done: 백엔드 layout.spec 완성 → 현재 언어 scene 조립 + 자동 open(C1).
-    if (st === "done") await assembleAndOpenScene(designLang);
+    // S3→done: 백엔드 layout.spec 완성 → plan 전체 언어 scene 일괄 조립(R2 4언어 비교) +
+    // 현재 언어 자동 open(C1). 언어는 design/_state.json(=plan frontmatter languages)이 정본.
+    if (st === "done") {
+      let langs: string[] = [];
+      try {
+        const sn = await api.vfsGet(id, "design/_state.json");
+        const s = JSON.parse(sn.content_text ?? "{}");
+        if (Array.isArray(s.languages)) langs = s.languages.filter((x: unknown) => typeof x === "string");
+      } catch { /* _state 없음 → 단일 언어 폴백 */ }
+      if (!langs.length) langs = [designLang];
+      await assembleScenes(langs, designLang);
+    }
     return { text: res.text };
-  }, [refreshTree, designBypass, designStep, assembleAndOpenScene, designLang]);
+  }, [refreshTree, designBypass, designStep, assembleScenes, designLang]);
 
   const setDesignBypass = useCallback(
     (id: string, on: boolean) => setDesignBypassState((m) => ({ ...m, [id]: on })),
@@ -452,10 +480,12 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
     // 4) 게이트·manifest 반영.
     if (gate) {
+      // 백엔드 compute_gate는 critical_count/warning_count로 내보낸다(severity.py:91).
+      // 과거 critical/warning만 읽어 롤업이 항상 0이던 버그 → wire 키 우선 폴백.
       setReviewGate({
         status: String(gate.status ?? ""),
-        critical: Number(gate.critical ?? 0),
-        warning: Number(gate.warning ?? 0),
+        critical: Number(gate.critical_count ?? gate.critical ?? 0),
+        warning: Number(gate.warning_count ?? gate.warning ?? 0),
       });
     }
     await loadManifest(id);
@@ -578,7 +608,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const runEligibility = useCallback(async () => {
     const id = runIdRef.current;
-    if (!id) return { total: 0, eligible_count: 0, excluded_count: 0 };
+    if (!id) return { total: 0, eligible_count: 0, excluded_count: 0, breakdown: [] };
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, { method: "POST" });
     const data = await res.json();
     setEligibility(data);

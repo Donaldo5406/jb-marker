@@ -19,6 +19,13 @@ DISCLOSURE_I18N: dict[str, dict[str, list[str]]] = {
         "zh": ["税前利率", "满足优惠条件"],
         "en": ["pre-tax rate", "preferential conditions apply"],
     },
+    # 예금자보호 고지 — plan.md disclosures 문자열과 정확히 일치해야 안전망 발동.
+    # vi/zh 카피가 이 고지를 누락하면 find_missing_disclosures가 LLM 없이 critical 검출(R2 위반#4).
+    "예금자보호법에 따라 5천만원까지 보호": {
+        "vi": ["bảo hiểm tiền gửi", "bảo vệ tiền gửi", "được bảo vệ tới"],
+        "zh": ["存款保险", "存款保护", "受保护"],
+        "en": ["deposit protection", "deposit insurance", "protected up to"],
+    },
 }
 
 

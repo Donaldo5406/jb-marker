@@ -23,6 +23,13 @@ REQUIRED_PLAN_FIELDS = {
     "copy_themes", "multinational", "languages", "factsheet", "disclosures",
 }
 
+# spec.md 충분성 게이트(Stage A) — Stage A system 프롬프트가 요구하는 9개 키와 동일.
+# ready=true여도 이 키가 빠졌으면 확정(b) 대신 보충(c)을 띄워 '충분조건 미달 spec 확정'을 차단.
+REQUIRED_SPEC_FIELDS = {
+    "goal", "target_segments", "key_messages", "channels",
+    "languages", "multinational", "tone", "factsheet", "disclosures",
+}
+
 PERSONA = (
     "당신은 금융 마케팅 캠페인 기획 전문가입니다. 타겟 세그멘테이션·메시지 전략·채널 믹스·"
     "카피 방향·컴플라이언스(표시광고·금융광고)·리서치 기반 의사결정에 능합니다. "
@@ -88,6 +95,14 @@ class BrainstormingHarness(Harness):
         여기선 plan.md의 frontmatter 키를 검사해 '부족한 필드 목록'을 돌려준다.
         """
         return sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
+
+    def critic_spec(self, spec_md: str) -> list[str]:
+        """충분성 게이트: spec.md frontmatter에서 누락된 REQUIRED_SPEC_FIELDS를 정렬 반환.
+
+        critic(plan)과 대칭. Stage A에서 ready라도 누락이 있으면 (c) 보충으로 유도해
+        '충분조건이 모두 모이지 않은 spec'이 확정(b)으로 넘어가는 것을 막는다.
+        """
+        return sorted(REQUIRED_SPEC_FIELDS - _frontmatter_keys(spec_md))
 
     # --- 상태 I/O (stateless 재개의 단일 소스) ---
     def _base(self, run_id: str) -> str:
@@ -192,7 +207,7 @@ class BrainstormingHarness(Harness):
 
         # 사용자가 직전 (b) spec-lock 질문에 '예'로 답함 → Stage B 진입
         pending = state.get("pending_ask") or {}
-        if pending.get("trigger") == "b" and (req.bypass or self._is_yes(req.answer)):
+        if pending.get("trigger") == "b" and self._is_yes(req.answer):
             state["spec_locked"] = True; state["stage"] = "B"; state["pending_ask"] = None
             self._save_state(store, req.run_id, state)
             self._save_messages(store, req.run_id, msgs)
@@ -232,16 +247,17 @@ class BrainstormingHarness(Harness):
             reply = ("내용을 정리하지 못했어요. 원하는 캠페인을 조금만 더 구체적으로 알려주시겠어요?"
                      if not document else "초안을 정리했어요. 확인해 주세요.")
 
-        # ready(+document) → spec lock 제안(b). bypass면 즉시 Stage B 진입.
+        # ready(+document) → 충분성 게이트. 누락 필드가 있으면 보충(c), 충족하면 확정(b).
+        # bypass 경로는 제거됨 — 모든 spec은 충분성 검증 + 사람 confirm을 거친다.
         if ready and document and not ask:
-            if req.bypass:
-                state["spec_locked"] = True; state["stage"] = "B"; state["pending_ask"] = None
-                msgs.append({"role": "assistant", "content": reply})
-                self._save_messages(store, req.run_id, msgs)
-                self._save_state(store, req.run_id, state)
-                return self._stage_b(req, provider, store, state, msgs, first=True)
-            ask = {"trigger": "b", "question": "spec을 확정하고 계획(plan) 단계로 넘어갈까요?",
-                   "options": ["예, plan으로", "아니오, 더 다듬기"]}
+            missing = self.critic_spec(document)
+            if missing:
+                ask = {"trigger": "c",
+                       "question": f"기획(spec)에 다음 필수 항목이 빠졌습니다: {', '.join(missing)}. 보충할까요?",
+                       "options": ["보충하기", "수동 편집"]}
+            else:
+                ask = {"trigger": "b", "question": "spec을 확정하고 계획(plan) 단계로 넘어갈까요?",
+                       "options": ["예, plan으로", "아니오, 더 다듬기"]}
 
         msgs.append({"role": "assistant", "content": reply})
         self._save_messages(store, req.run_id, msgs)
@@ -272,7 +288,7 @@ class BrainstormingHarness(Harness):
         # 1) pending(b) = plan lock 확정 처리(LLM 불필요)
         pending = state.get("pending_ask") or {}
         if not first and pending.get("trigger") == "b":
-            if req.bypass or self._is_yes(req.answer):
+            if self._is_yes(req.answer):
                 state["plan_locked"] = True; state["stage"] = "done"; state["pending_ask"] = None
                 store.set_step_status(req.run_id, "brainstorming", "done")   # D8
                 self._save_state(store, req.run_id, state)
@@ -316,14 +332,6 @@ class BrainstormingHarness(Harness):
             ask = {"trigger": "c", "question": f"계획에 다음 필수 요소가 빠졌습니다: {', '.join(missing)}. 보충할까요?",
                    "options": ["보충하기", "수동 편집"]}
         elif bool(data.get("ready")):
-            if req.bypass:
-                state["plan_locked"] = True; state["stage"] = "done"; state["pending_ask"] = None
-                store.set_step_status(req.run_id, "brainstorming", "done")
-                self._save_state(store, req.run_id, state)
-                msgs.append({"role": "assistant", "content": reply})
-                self._save_messages(store, req.run_id, msgs)
-                return HarnessResult(text=reply, output_path=f"{base}/plan.md",
-                                     meta={"source": "marker", "stage": "done"}, events=events)
             ask = {"trigger": "b", "question": "계획(plan)을 확정할까요? (design 단계가 열립니다)",
                    "options": ["예, 확정", "아니오, 더 다듬기"]}
         else:

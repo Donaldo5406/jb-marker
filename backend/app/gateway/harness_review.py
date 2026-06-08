@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import yaml
 
+from ..core.lang import normalize_languages
 from ..core.legal_search import _parse_json, apply_whitelist, load_whitelist, search_and_filter
 from ..core.severity import (  # T7: import-only, 사용은 T11/T14
     DISCLOSURE_I18N,
@@ -22,6 +23,7 @@ from ..core.severity import (  # T7: import-only, 사용은 T11/T14
     detect_exaggeration,
     find_missing_disclosures,
 )
+from ..core.visual_rules import evaluate_visual_compliance
 from ..providers.base import Message, Provider
 from .harness import Harness, HarnessRequest, HarnessResult
 
@@ -87,7 +89,10 @@ class ReviewHarness(Harness):
     def _load_state(self, store, run_id: str) -> dict:
         n = store.get(f"{self._base(run_id)}/_state.json")
         if n and n.content_text:
-            return json.loads(n.content_text)
+            st = json.loads(n.content_text)
+            # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
+            st["languages"] = normalize_languages(st.get("languages"))
+            return st
         return {
             "step": "R0", "languages": ["ko"], "matrix": {},
             "bypass": {}, "acknowledged": False, "last_run_at": None,
@@ -151,7 +156,8 @@ class ReviewHarness(Harness):
         # plan.md frontmatter → languages·disclosures
         plan_node = store.get(f"/{run_id}/brainstorming/plan.md")
         fm = _frontmatter(plan_node.content_text if plan_node else "")
-        languages = fm.get("languages") or ["ko"]
+        # 실 LLM은 languages를 객체 리스트로 쓸 수 있어 문자열 코드로 정규화(경로/matrix 키 안전).
+        languages = normalize_languages(fm.get("languages"))
 
         # 멱등 cleanup (stale 제거)
         self._cleanup_review_tree(store, run_id)
@@ -224,17 +230,35 @@ class ReviewHarness(Harness):
         return vid
 
     def _collect_scene_copy(self, store, run_id: str, languages: list[str]) -> dict:
-        """모든 언어 scene의 copy 슬롯 모음."""
+        """모든 언어 scene의 copy 슬롯 모음.
+
+        프론트 어셈블러는 main.scene을 {version, objects}로 저장(copy 필드 없음) →
+        텍스트박스 objects에서 role→text로 카피를 복원한다. main.scene이 없거나 비면
+        백엔드가 생성한 layout.spec.json[copy][lang]로 폴백 → 검토가 실제 카피를 본다
+        (이 폴백이 없으면 scene_copy가 비어 R1/R2가 콘텐츠를 못 봐 오탐/무탐).
+        """
         out: dict = {}
         for lang in languages:
+            copy: dict = {}
             n = store.get(f"/{run_id}/design/final/{lang}/main.scene")
-            if not n:
-                continue
-            try:
-                spec = json.loads(n.content_text)
-            except Exception:
-                spec = {}
-            copy = (spec.get("copy") or {}).get(lang) or {}
+            if n:
+                try:
+                    spec = json.loads(n.content_text)
+                except Exception:
+                    spec = {}
+                copy = (spec.get("copy") or {}).get(lang) or {}
+                if not copy:
+                    copy = {o.get("role"): o.get("text", "")
+                            for o in spec.get("objects", [])
+                            if str(o.get("type", "")).lower() == "textbox" and o.get("role")}
+            if not copy:
+                ls = store.get(f"/{run_id}/design/rough/layout.spec.json")
+                if ls:
+                    try:
+                        spec = json.loads(ls.content_text)
+                        copy = (spec.get("copy") or {}).get(lang) or {}
+                    except Exception:
+                        copy = {}
             out[lang] = copy
         return out
 
@@ -246,6 +270,25 @@ class ReviewHarness(Harness):
         meta_node = store.get(f"/{req.run_id}/design/metadata.md")
         metadata_md = meta_node.content_text if meta_node else ""
         whitelist = load_whitelist()
+
+        # 호출 0(결정론): 시각 적법성 룰 — layout.spec의 시각 메타데이터(글자크기·대비·고지)를
+        # 비전 LLM 무관하게 검사(core/visual_rules). findings는 legal verdict로 영속돼 게이트 합류.
+        visual_n = store.get(f"/{req.run_id}/design/rough/layout.spec.json")
+        if visual_n:
+            try:
+                vspec = json.loads(visual_n.content_text)
+            except Exception:
+                vspec = {}
+            for f in evaluate_visual_compliance(vspec):
+                self._persist_verdict(
+                    store, req.run_id, node="legal",
+                    asset_id="design/rough/layout.spec.json", lang=None,
+                    severity=f.get("severity", "warning"),
+                    location={"slot": f.get("slot", "visual"), "lang": None},
+                    evidence=f.get("evidence", ""),
+                    clause=f.get("clause"),
+                    official_source_url=f.get("official_source_url"),
+                    kind="visual")
 
         # 호출 1: 텍스트+서칭
         kept, dropped, meta_flags = search_and_filter(
