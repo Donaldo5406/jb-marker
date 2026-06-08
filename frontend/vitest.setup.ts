@@ -34,7 +34,7 @@ if (typeof globalThis.IntersectionObserver === "undefined") {
     observe(): void {}
     unobserve(): void {}
     disconnect(): void {}
-    takeRecords(): [] {
+    takeRecords(): IntersectionObserverEntry[] {
       return [];
     }
   }
