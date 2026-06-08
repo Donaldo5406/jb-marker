@@ -51,6 +51,46 @@ def test_s0_persists_material_matrix(tmp_path):
     assert mm and mm[0]["channel"] == "instagram"
 
 
+# --- FIX: creative_direction 서술형(실 브레인스토밍) 형식 수용 + aspect 추론 ---
+
+def test_aspect_from_matrix():
+    from app.gateway.harness_design import _aspect_from_matrix
+    assert _aspect_from_matrix([{"size": "1080×1920 (9:16)"}]) == "9:16"   # 명시 비율 우선
+    assert _aspect_from_matrix([{"size": "1080×1080 (정방형)"}]) == "1:1"  # 픽셀→근사
+    assert _aspect_from_matrix([{"size": "1080x1350"}]) == "4:5"           # 세로 포스터
+    assert _aspect_from_matrix([{"format": "배너"}]) is None               # 단서 없음
+    assert _aspect_from_matrix([]) is None
+
+
+def test_s0_accepts_descriptive_creative_direction(tmp_path):
+    # 실 브레인스토밍이 쓰는 서술형 creative_direction → 빈 tokens 대신 브랜드 방향 보존.
+    s = _store(tmp_path)
+    s.put("/r1/brainstorming/plan.md",
+          "---\ncreative_direction:\n"
+          "  concept: \"일상 속 3분 재테크\"\n"
+          "  color_palette: \"딥 네이비 + 라이트 민트\"\n"
+          "  typography: \"헤드라인 굵게, 본문 산세리프\"\n"
+          "material_matrix: [{channel: instagram, size: \"1080×1080\"}]\n"
+          "languages: [ko]\n---\n본문",
+          source="marker", mime="text/markdown")
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(), provider=FakeProvider(), store=s)
+    tok = json.loads(s.get("/r1/design/design-system/tokens.json").content_text)
+    assert tok["color_palette"] == "딥 네이비 + 라이트 민트"   # 서술형 팔레트 보존
+    assert tok["font"] == "헤드라인 굵게, 본문 산세리프"        # typography → font 폴백
+    assert tok["concept"] == "일상 속 3분 재테크"
+    assert tok["aspect"] == "1:1"   # creative_direction에 aspect 없음 → matrix에서 추론
+
+
+def test_s0_structured_creative_direction_still_works(tmp_path):
+    # 구조형(데모 형식) 회귀 가드 — palette/font/aspect 그대로 보존.
+    s = _store(tmp_path)   # _store의 plan.md는 palette/font/aspect 구조형
+    h = DesignHarness(image_provider=FakeProvider())
+    h.handle_turn(_req(), provider=FakeProvider(), store=s)
+    tok = json.loads(s.get("/r1/design/design-system/tokens.json").content_text)
+    assert "#0A84FF" in tok["palette"] and tok["font"] == "Inter" and tok["aspect"] == "1:1"
+
+
 # --- Task 6: few-shot 번들 + S1 Rough ---
 
 
