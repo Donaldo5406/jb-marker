@@ -68,7 +68,7 @@ def test_stage_a_writes_spec_and_research_and_returns_reply():
     research = s.list("/rb/brainstorming/assets/research")
     assert len(research) >= 1 and research[0].meta.get("source_url") == "https://x.com"
     assert len(h._load_messages(s, "rb")) == 2  # user + assistant
-    assert stub.calls[0]["tools"] is None  # B: Stage A 웹서치 OFF(아티클 자동수집 안 함)
+    assert stub.calls[0]["tools"] == [{"type": "web_search"}]  # Stage A 웹검색 ON(모델 자율)
 
 
 def test_stage_a_conversation_turn_writes_no_spec():
@@ -443,3 +443,53 @@ def test_window_compacted_no_retrigger_reuses_cached_summary():
     assert len(sp.calls) == 0                            # provider 미호출
     assert out[0].content == "[이전 대화 요약]\n기존요약"
     assert len(out) == 1 + (10 - 2)                      # 요약 + msgs[2:]
+
+
+def test_stage_a_passes_websearch_tool_and_stage_b_does_not():
+    # Stage A는 web_search tool을 전달(모델 자율 검색), Stage B(plan)는 전달하지 않는다.
+    from app.gateway.harness_brainstorming import BrainstormingHarness, REQUIRED_PLAN_FIELDS
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    # Stage A
+    a_stub = StubProvider([{"text": json.dumps(
+        {"reply": "타겟은?", "document": "", "ask": None, "ready": False})}])
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming",
+                  user_prompt="적금 캠페인", provider="fake", is_marker=True),
+                  provider=a_stub, store=s)
+    assert a_stub.calls[0]["tools"] == [{"type": "web_search"}]
+    # Stage B
+    _seed_stage_b(h, s)
+    full = "---\n" + "\n".join(f"{k}: v" for k in REQUIRED_PLAN_FIELDS) + "\n---\n계획"
+    b_stub = StubProvider([{"text": json.dumps(
+        {"reply": "계획", "document": full, "ask": None, "ready": True})}])
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming",
+                  user_prompt="계획 짜줘", provider="fake", is_marker=True),
+                  provider=b_stub, store=s)
+    assert b_stub.calls[0]["tools"] is None
+
+
+def test_save_research_falls_back_to_title_url_when_no_snippet():
+    # google/openai citations는 snippet=None → title/url 폴백 본문(빈 research 파일 방지).
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    h = BrainstormingHarness(); s = _store()
+    h._save_research(s, "rb", [{"url": "https://x.com", "title": "금리표", "snippet": None}])
+    research = s.list("/rb/brainstorming/assets/research")
+    assert len(research) == 1
+    body = research[0].content_text
+    assert "금리표" in body and "https://x.com" in body
+    assert research[0].meta.get("source_url") == "https://x.com"
+
+
+def test_stage_a_system_prompt_allows_websearch():
+    # 시스템 프롬프트가 검색을 금지하지 않고 허용한다.
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.gateway.harness import HarnessRequest
+    h = BrainstormingHarness(); s = _store()
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "r", "document": "", "ask": None, "ready": False})}])
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming",
+                  user_prompt="hi", provider="fake", is_marker=True),
+                  provider=stub, store=s)
+    sysp = stub.calls[0]["system"]
+    assert "웹검색" in sysp
+    assert "하지 않습니다" not in sysp   # 금지 문구 제거
