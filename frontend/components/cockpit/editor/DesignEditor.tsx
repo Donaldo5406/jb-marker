@@ -18,16 +18,27 @@ export function DesignEditor({
   const scene = React.useMemo(() => parseScene(content), [content]);
   const { canvas } = useFabricCanvas(elRef, scene);
   const history = useEditorHistory();
+  // useEditorHistory는 매 렌더 새 객체를 반환하지만 push/undo/redo/reset 콜백 ref는 안정적이다.
+  const { push: pushHistory, undo: undoHistory, redo: redoHistory, reset: resetHistory, canUndo, canRedo } = history;
   const [zoom, setZoom] = React.useState(1);
   const [saving, setSaving] = React.useState(false);
   const [revision, setRevision] = React.useState(0);            // 객체 변경 시 인스펙터 갱신
   const [selected, setSelected] = React.useState<SelectedProps | null>(null);
   const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
+  // restore() 중의 loadFromJSON이 object:removed/added를 발화 → onModified가 히스토리를 오염시키는 것을 막는 가드.
+  const restoringRef = React.useRef(false);
 
   const snapshot = React.useCallback(
     () => (canvas ? JSON.stringify(canvas.toObject([...SCENE_CUSTOM_PROPS])) : null), [canvas]);
 
-  // 캔버스 이벤트 → 선택/리비전/히스토리
+  // 캔버스 준비/교체 시 1회 초기 스냅샷으로 히스토리 리셋.
+  React.useEffect(() => {
+    if (!canvas) return;
+    const s = snapshot();
+    if (s) resetHistory(s);
+  }, [canvas, snapshot, resetHistory]);
+
+  // 캔버스 이벤트 → 선택/리비전/히스토리. 안정 ref(canvas/snapshot/pushHistory)에만 의존한다.
   React.useEffect(() => {
     if (!canvas) return;
     const sync = () => {
@@ -38,8 +49,11 @@ export function DesignEditor({
       setSelected(active ? (active.toObject([...SCENE_CUSTOM_PROPS]) as SelectedProps) : null);
       setRevision((r) => r + 1);
     };
-    const onModified = () => { const s = snapshot(); if (s) history.push(s); sync(); };
-    const initial = snapshot(); if (initial) history.reset(initial);
+    const onModified = () => {
+      // restore() 진행 중에는 loadFromJSON이 발화한 이벤트이므로 히스토리를 밀지 않는다.
+      if (restoringRef.current) { sync(); return; }
+      const s = snapshot(); if (s) pushHistory(s); sync();
+    };
     canvas.on("selection:created", sync);
     canvas.on("selection:updated", sync);
     canvas.on("selection:cleared", sync);
@@ -51,11 +65,14 @@ export function DesignEditor({
       canvas.off("selection:cleared", sync); canvas.off("object:modified", onModified);
       canvas.off("object:added", onModified); canvas.off("object:removed", onModified);
     };
-  }, [canvas, history, snapshot]);
+  }, [canvas, snapshot, pushHistory]);
 
   const restore = React.useCallback((json: string | null) => {
     if (!canvas || !json) return;
-    void canvas.loadFromJSON(JSON.parse(json)).then(() => { canvas.renderAll(); setRevision((r) => r + 1); });
+    restoringRef.current = true;
+    void canvas.loadFromJSON(JSON.parse(json)).then(() => {
+      canvas.renderAll(); setRevision((r) => r + 1); restoringRef.current = false;
+    });
   }, [canvas]);
 
   const doSave = React.useCallback(async () => {
@@ -90,15 +107,15 @@ export function DesignEditor({
       const action = keyToEditorAction(e);
       if (!action) return;
       e.preventDefault();
-      if (action === "undo") restore(history.undo());
-      else if (action === "redo") restore(history.redo());
+      if (action === "undo") restore(undoHistory());
+      else if (action === "redo") restore(redoHistory());
       else if (action === "duplicate") void duplicateActive();
       else if (action === "delete") deleteActive();
       else if (action === "save") void doSave();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canvas, history, restore, duplicateActive, deleteActive, doSave]);
+  }, [canvas, undoHistory, redoHistory, restore, duplicateActive, deleteActive, doSave]);
 
   // 인스펙터용 현재 객체 배열(리비전 의존).
   const objects = React.useMemo(
@@ -109,7 +126,7 @@ export function DesignEditor({
   const onChangeProps = (patch: Record<string, unknown>) => {
     const a = canvas?.getActiveObject(); if (!a || !canvas) return;
     a.set(patch); canvas.renderAll();
-    const s = snapshot(); if (s) history.push(s);
+    const s = snapshot(); if (s) pushHistory(s);
     setSelected(a.toObject([...SCENE_CUSTOM_PROPS]) as SelectedProps);
   };
 
@@ -135,8 +152,8 @@ export function DesignEditor({
         </Panel>
       </Group>
       <Toolbar
-        canUndo={history.canUndo} canRedo={history.canRedo} zoom={zoom} saving={saving} dirty={dirty}
-        onUndo={() => restore(history.undo())} onRedo={() => restore(history.redo())}
+        canUndo={canUndo} canRedo={canRedo} zoom={zoom} saving={saving} dirty={dirty}
+        onUndo={() => restore(undoHistory())} onRedo={() => restore(redoHistory())}
         onZoomIn={() => applyZoom(zoom + 0.1)} onZoomOut={() => applyZoom(zoom - 0.1)} onZoomFit={() => applyZoom(1)}
         onSave={() => void doSave()} onClose={onClose}
       />
