@@ -26,3 +26,18 @@ if (typeof globalThis.matchMedia === "undefined") {
     dispatchEvent: () => false,
   })) as unknown as typeof globalThis.matchMedia;
 }
+
+// jsdom은 IntersectionObserver도 제공하지 않는다. motion(framer)의 whileInView/useInView가
+// 마운트 시 사용하므로 최소 stub을 둔다(콜백 미발화 — 요소는 항상 DOM에 존재).
+if (typeof globalThis.IntersectionObserver === "undefined") {
+  class IntersectionObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): [] {
+      return [];
+    }
+  }
+  globalThis.IntersectionObserver =
+    IntersectionObserverStub as unknown as typeof IntersectionObserver;
+}
