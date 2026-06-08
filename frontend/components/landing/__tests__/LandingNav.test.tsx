@@ -12,7 +12,7 @@ describe("LandingNav 와이어링", () => {
   it("History 진입 링크(/cockpit?view=history · '작업 내역')가 있다", () => {
     const { container } = render(<LandingNav />);
     expect(container.querySelector('a[href="/cockpit?view=history"]')).not.toBeNull();
-    expect(screen.getByText("작업 내역")).toBeTruthy();
+    expect(screen.getByText("작업 내역")).toBeInTheDocument();
   });
 
   it("결제·체험해보기 링크는 유지된다", () => {
