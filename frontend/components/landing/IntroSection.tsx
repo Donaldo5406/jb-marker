@@ -9,18 +9,21 @@ const STEPS = [
     step: "01",
     icon: PenLine,
     title: "기획",
+    anchor: "step-planning",
     body: "브레인스토밍부터 메시지 카피까지, 캠페인의 뼈대를 함께 잡습니다.",
   },
   {
     step: "02",
     icon: Wand2,
     title: "디자인",
+    anchor: "step-design",
     body: "포스터·소재를 자동 생성하고, 에디터에서 손쉽게 다듬습니다.",
   },
   {
     step: "03",
     icon: ShieldCheck,
     title: "검토·발송",
+    anchor: "step-review",
     body: "금융 규정을 자동 검토한 뒤, 채널로 안전하게 배포합니다.",
   },
 ];
@@ -63,9 +66,11 @@ export function IntroSection() {
 
         {/* 3단계 카드 */}
         <div className="mt-14 grid gap-5 md:grid-cols-3">
-          {STEPS.map(({ step, icon: Icon, title, body }, i) => (
+          {STEPS.map(({ step, icon: Icon, title, body, anchor }, i) => (
             <motion.div
               key={step}
+              id={anchor}
+              className="scroll-mt-header"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}

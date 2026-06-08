@@ -13,6 +13,13 @@ import { renderAndUploadAll } from "@/lib/sceneRender";
 const DEPLOY_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 export type CockpitView = "workspace" | "history" | "setting";
+
+/** `?view=` 쿼리값을 안전한 CockpitView로 정규화. 화이트리스트 외/누락은 기본 workspace. */
+export function viewFromSearch(search: string): CockpitView {
+  const v = new URLSearchParams(search).get("view");
+  return v === "history" || v === "setting" ? v : "workspace";
+}
+
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
 export type Entitlement = { marker: boolean; deploy: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -181,6 +188,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const url = new URL(window.location.href);
     if (id) url.searchParams.set("run", id);
     else url.searchParams.delete("run");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
+
+  /** `?view=` URL 쿼리를 현재 view에 맞춘다(기본값 workspace는 쿼리 제거). SSR 가드. */
+  const syncViewQuery = useCallback((v: CockpitView) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (v === "workspace") url.searchParams.delete("view");
+    else url.searchParams.set("view", v);
     window.history.replaceState(null, "", url.toString());
   }, []);
 
@@ -541,7 +557,13 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const closeAsk = useCallback(() => setPendingAsk(null), []);
 
   const setStudio = useCallback((s: Studio) => setActiveStudio(s), []);
-  const setView = useCallback((v: CockpitView) => setViewState(v), []);
+  const setView = useCallback(
+    (v: CockpitView) => {
+      setViewState(v);
+      syncViewQuery(v);
+    },
+    [syncViewQuery],
+  );
   const viewHistoryDetail = useCallback((id: string) => setSelectedHistoryRun(id), []);
   const closeHistoryDetail = useCallback(() => setSelectedHistoryRun(null), []);
 
@@ -643,6 +665,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const data = await res.json();
     setDevPass(!!data.dev_pass);
     return data;
+  }, []);
+
+  // `?view=` 딥링크 복원 — ensureSession과 독립적으로 즉시 1회(예: /cockpit?view=history).
+  // 초기 렌더는 workspace, 마운트 직후 effect로 교정(하이드레이션 불일치 회피, `?run=` 복원과 동일 패턴).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setViewState(viewFromSearch(window.location.search));
+    // 마운트 1회만(의존: 모듈 스코프 viewFromSearch + 안정 setter setViewState → exhaustive-deps 미발화).
   }, []);
 
   // ---- mount: 익명 세션 확보 → `?run=` 복원 + entitlement 초기화 ----
