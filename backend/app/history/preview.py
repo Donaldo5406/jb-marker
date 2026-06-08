@@ -14,6 +14,8 @@ import html
 import json
 from pathlib import Path
 
+from ..core.fonts import looks_like_font_name
+
 _COPY_ROLES = ["headline", "body", "cta", "disclosure"]
 _ROLE_LABELS = {"headline": "헤드라인", "body": "바디", "cta": "CTA", "disclosure": "고지"}
 
@@ -46,6 +48,36 @@ def _blob_bytes(node) -> bytes:
     return b""
 
 
+def _downscale_inline(raw: bytes, mime: str | None, *, max_dim: int = 640) -> tuple[bytes, str]:
+    """비주얼을 썸네일(JPEG)로 다운스케일해 base64 인라인 크기를 줄인다.
+
+    풀해상도 키비주얼(실 Nano Banana는 1MB+)을 그대로 인라인하면 프리뷰 HTML이
+    수 MB가 되어 iframe srcdoc 다운로드·렌더가 수초 지연된다(History에서 프리뷰가
+    "안 뜨는" 체감의 실제 원인). Pillow 미설치·디코드 실패·외려 커짐 시 원본을
+    그대로 반환(graceful)한다.
+    """
+    try:
+        from io import BytesIO
+        from PIL import Image  # optional dep — 없으면 except로 원본 유지
+
+        im = Image.open(BytesIO(raw))
+        im.thumbnail((max_dim, max_dim))
+        if im.mode != "RGB":
+            # 투명도는 흰 배경에 합성(프리뷰 배경이 밝음)
+            rgba = im.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            im = bg
+        out = BytesIO()
+        im.save(out, format="JPEG", quality=82, optimize=True)
+        small = out.getvalue()
+        if len(small) < len(raw):  # 이미 아주 작은 이미지는 원본 유지
+            return small, "image/jpeg"
+    except Exception:
+        pass
+    return raw, (mime or "image/png")
+
+
 def build_preview_html(run_id: str, store) -> str:
     base = f"/{run_id}/design/design-system"
     tok_node = store.get(f"{base}/tokens.json")
@@ -58,6 +90,12 @@ def build_preview_html(run_id: str, store) -> str:
 
     palette = tokens.get("palette") or []
     font = tokens.get("font") or "Inter"
+    # 서술형 typography가 font로 새면 CSS font-family가 깨진다. 폰트명일 때만 CSS에 쓰고,
+    # 서술형은 타이포 노트(텍스트)로 보존한다(기존 런의 오염된 tokens.font도 안전 처리).
+    safe_font = font if looks_like_font_name(font) else "Inter"
+    typo_note = tokens.get("typography")
+    if not typo_note and not looks_like_font_name(font):
+        typo_note = font
     grid = tokens.get("grid")
     aspect = tokens.get("aspect")
 
@@ -67,14 +105,14 @@ def build_preview_html(run_id: str, store) -> str:
         for c in palette
     )
 
-    # 비주얼 base64 인라인.
+    # 비주얼 base64 인라인 (썸네일 다운스케일로 경량화 — 풀해상도 인라인 시 수 MB).
     visual_html = ""
     vnode = store.get(f"{base}/components/visual/v1.png")
     if vnode is not None:
         raw = _blob_bytes(vnode)
         if raw:
+            raw, mime = _downscale_inline(raw, vnode.mime)
             b64 = base64.b64encode(raw).decode("ascii")
-            mime = vnode.mime or "image/png"
             visual_html = (
                 f"<img class='visual' alt='visual' "
                 f"src='data:{_esc(mime)};base64,{b64}'>"
@@ -100,8 +138,8 @@ def build_preview_html(run_id: str, store) -> str:
             )
 
     meta_bits = []
-    if font:
-        meta_bits.append(f"폰트: {_esc(font)}")
+    if safe_font:
+        meta_bits.append(f"폰트: {_esc(safe_font)}")
     if grid:
         meta_bits.append(f"그리드: {_esc(grid)}")
     if aspect:
@@ -110,7 +148,7 @@ def build_preview_html(run_id: str, store) -> str:
 
     return f"""<!doctype html><html lang='ko'><head><meta charset='utf-8'>
 <style>
-:root{{font-family:{_esc(font)},Inter,system-ui,sans-serif}}
+:root{{font-family:{_esc(safe_font)},Inter,system-ui,sans-serif}}
 body{{margin:0;padding:24px;background:#f8fafc;color:#0b1324}}
 h2{{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px}}
 .meta{{color:#64748b;font-size:13px;margin-bottom:8px}}
@@ -126,7 +164,7 @@ code{{font-size:11px;color:#475569}}
 </style></head><body>
 <div class='meta'>{meta_line}</div>
 <h2>팔레트</h2><div class='palette'>{swatches}</div>
-<h2>타이포</h2><p class='sample'>{_esc(font)}</p><p>본문 샘플 — {_esc(font)}</p>
+<h2>타이포</h2><p class='sample'>{_esc(safe_font)}</p><p>본문 샘플 — {_esc(safe_font)}</p>{f"<p class='meta'>{_esc(typo_note)}</p>" if typo_note else ""}
 <h2>비주얼</h2>{visual_html or "<p class='meta'>비주얼 없음</p>"}
 <h2>카피</h2>{copy_cards or "<p class='meta'>카피 없음</p>"}
 </body></html>"""

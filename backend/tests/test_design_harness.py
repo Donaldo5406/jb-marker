@@ -77,7 +77,9 @@ def test_s0_accepts_descriptive_creative_direction(tmp_path):
     h.handle_turn(_req(), provider=FakeProvider(), store=s)
     tok = json.loads(s.get("/r1/design/design-system/tokens.json").content_text)
     assert tok["color_palette"] == "딥 네이비 + 라이트 민트"   # 서술형 팔레트 보존
-    assert tok["font"] == "헤드라인 굵게, 본문 산세리프"        # typography → font 폴백
+    # 서술형 typography는 font(CSS font-family)로 폴백하지 않는다 — 프리뷰 깨짐 방지.
+    assert tok["font"] is None
+    assert tok["typography"] == "헤드라인 굵게, 본문 산세리프"  # 서술형은 별도 키로 보존
     assert tok["concept"] == "일상 속 3분 재테크"
     assert tok["aspect"] == "1:1"   # creative_direction에 aspect 없음 → matrix에서 추론
 
