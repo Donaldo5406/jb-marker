@@ -62,6 +62,35 @@ def _frontmatter(md: str) -> dict:
         return {}
 
 
+# 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
+_STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
+                (4, 3, "4:3"), (9, 16, "9:16"), (16, 9, "16:9"),
+                (2, 3, "2:3"), (3, 2, "3:2")]
+
+
+def _aspect_from_matrix(matrix) -> str | None:
+    """material_matrix 첫 항목의 size/format/aspect에서 종횡비 추론.
+
+    creative_direction에 aspect가 없을 때 폴백 — "1080×1920 (9:16)"→9:16,
+    "1080×1080"→1:1. 명시 비율(예: 9:16)이 있으면 우선, 없으면 픽셀 치수를 표준비로 근사.
+    """
+    for m in (matrix or []):
+        if not isinstance(m, dict):
+            continue
+        for field in ("aspect", "size", "format"):
+            txt = str(m.get(field, ""))
+            rm = re.search(r"\b(\d{1,2})\s*:\s*(\d{1,2})\b", txt)        # 명시 비율 우선
+            if rm:
+                return f"{int(rm.group(1))}:{int(rm.group(2))}"
+            dm = re.search(r"(\d{2,5})\s*[×xX*]\s*(\d{2,5})", txt)        # 픽셀 치수
+            if dm:
+                w, h = int(dm.group(1)), int(dm.group(2))
+                if w > 0 and h > 0:
+                    ratio = w / h
+                    return min(_STD_ASPECTS, key=lambda a: abs(a[0] / a[1] - ratio))[2]
+    return None
+
+
 class DesignHarness(Harness):
     RUBRIC = ("hierarchy", "grid", "whitespace", "cta",
               "compliance", "copy_visual", "brand")
@@ -272,7 +301,9 @@ class DesignHarness(Harness):
             "시각 적법성 검토를 위해 각 텍스트 슬롯에 font_px(정수)와 color(#RRGGBB)를, "
             "최상위에 bg_color(#RRGGBB, 배경 대표 톤)를 반드시 포함하세요. "
             "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
-            "분명하도록(명도대비 4.5:1 이상) 설정하세요. 정확한 출력 형식 예시:\n"
+            "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
+            "tokens의 color_palette·typography·concept(있으면)를 색(color/bg_color)·폰트·톤에 "
+            "반영하고, aspect는 tokens.aspect를 따르세요. 정확한 출력 형식 예시:\n"
             '{"reply":"...","ready":true,"layout_spec":{"aspect":"4:5","bg_color":"#F2EFE9",'
             '"slots":['
             '{"role":"headline","bbox":{"x":80,"y":120,"w":920,"h":180},"z":3,"copy_key":"headline","font_px":96,"color":"#0B1324"},'
@@ -464,13 +495,24 @@ class DesignHarness(Harness):
         plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
         fm = _frontmatter(plan.content_text if plan else "")
         cd = fm.get("creative_direction") or {}
-        tokens = {"palette": cd.get("palette", []), "font": cd.get("font"),
-                  "grid": cd.get("grid"), "aspect": cd.get("aspect", "1:1")}
+        matrix = fm.get("material_matrix", [])
+        # creative_direction은 구조형(palette/font/grid/aspect) 또는 실 브레인스토밍의 서술형
+        # (concept/visual_mood/color_palette/typography)로 올 수 있다 — 둘 다 수용해 빈 tokens로
+        # 디자인이 브랜드 방향을 잃지 않게 한다. aspect 미기재 시 material_matrix에서 추론.
+        tokens = {
+            "palette": cd.get("palette") or [],
+            "font": cd.get("font") or cd.get("typography"),
+            "grid": cd.get("grid"),
+            "aspect": cd.get("aspect") or _aspect_from_matrix(matrix) or "1:1",
+        }
+        for k in ("concept", "visual_mood", "color_palette", "typography"):
+            if cd.get(k):
+                tokens[k] = cd[k]    # 서술형 브랜드 방향 → S1 styling 힌트(색·폰트·톤)
         store.put(f"{base}/design-system/tokens.json",
                   json.dumps(tokens, ensure_ascii=False), source="marker",
                   mime="application/json")
         store.put(f"{base}/_material_matrix.json",
-                  json.dumps(fm.get("material_matrix", []), ensure_ascii=False),
+                  json.dumps(matrix, ensure_ascii=False),
                   source="marker", mime="application/json")
         # 실 LLM은 languages를 객체 리스트([{code:...}])로 쓸 수 있어 문자열 코드로 정규화.
         # (안 하면 _s2c_brand/_s3_final의 NOTICES.get/copy.get가 dict 키 → TypeError로 크래시.)
