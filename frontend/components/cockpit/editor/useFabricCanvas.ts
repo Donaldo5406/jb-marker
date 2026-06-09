@@ -36,9 +36,13 @@ export function useFabricCanvas(
     canvas.renderAll();
     void (async () => {
       for (const o of objs) {
-        if (String(o.type ?? "").toLowerCase() !== "image" || !o.src) continue;
+        if (String(o.type ?? "").toLowerCase() !== "image") continue;
+        // Fabric Image.toObject은 src에 blob: objectURL을 직렬화한다 → 저장본 재로드 시 죽은 URL.
+        // assetPath(정본 VFS URL)가 있으면 그것을, 없으면(조립 직후 씬) src를 쓴다.
+        const srcPath = String(o.assetPath ?? o.src ?? "");
+        if (!srcPath) continue;
         try {
-          const res = await authedFetch(String(o.src));
+          const res = await authedFetch(srcPath);
           if (!res.ok) continue;
           const url = URL.createObjectURL(await res.blob());
           urls.push(url);
@@ -46,7 +50,7 @@ export function useFabricCanvas(
           if (cancelled) return;
           img.set({ left: o.left, top: o.top });
           if (o.width) img.scaleToWidth(o.width);
-          (img as any).role = o.role; (img as any).slotId = o.slotId;
+          (img as any).role = o.role; (img as any).slotId = o.slotId; (img as any).assetPath = srcPath;
           canvas.add(img);
           canvas.sendObjectToBack?.(img);
           canvas.renderAll();
