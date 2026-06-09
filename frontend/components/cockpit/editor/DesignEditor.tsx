@@ -17,6 +17,8 @@ import { buildFabricFilters, type FilterParams } from "@/lib/editor/imageFilters
 import { buildClipPath, type MaskKind } from "@/lib/editor/clipMask";
 import { computeAspectCrop, type AspectKey } from "@/lib/editor/imageCrop";
 import { exportFilename, triggerPngDownload } from "@/lib/editor/exportPng";
+import { RasterEditModal } from "./RasterEditModal";
+import { editedAssetName, computeRasterSwap } from "@/lib/editor/rasterEdit";
 import { useCockpit } from "../CockpitProvider";
 import { api, authedFetch } from "@/lib/api";
 
@@ -44,6 +46,8 @@ export function DesignEditor({
   const [selected, setSelected] = React.useState<SelectedProps | null>(null);
   const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
   const [selCount, setSelCount] = React.useState(0);              // 정렬 버튼 노출 판정(1+ 선택)
+  // 픽셀 리터칭 모달: 열림·소스 objectURL·원본 파일명·대상 fabric 이미지 객체.
+  const [raster, setRaster] = React.useState<{ source: string; fileName: string; target: any } | null>(null);
   const restoringRef = React.useRef(false);
   const importSeqRef = React.useRef(0);                            // asset 파일명 충돌 회피용 시퀀스
   const importedUrlsRef = React.useRef<string[]>([]);              // import objectURL — 언마운트 시 revoke
@@ -101,6 +105,23 @@ export function DesignEditor({
     setDirty(false);
   }, [canvas, loadVersion, snapshot, resetHistory]);
 
+  // 활성 이미지의 정본(assetPath ?? src)을 blob로 받아 objectURL을 filerobot source로. 텍스트/도형은 무시.
+  // 캔버스 이벤트 effect(아래)의 deps에 참조되므로 그보다 먼저 선언한다(TDZ 회피).
+  const openRasterEdit = React.useCallback(async (obj?: any) => {
+    const a = obj ?? (canvas?.getActiveObject() as any);
+    if (!a || String(a.type).toLowerCase() !== "image") return;
+    const srcPath = String(a.assetPath ?? a.src ?? "");
+    if (!srcPath) return;
+    try {
+      const res = await authedFetch(srcPath);
+      if (!res.ok) return;
+      const objUrl = URL.createObjectURL(await res.blob());
+      importedUrlsRef.current.push(objUrl);
+      const fileName = srcPath.split("/").pop() || "image.png";
+      setRaster({ source: objUrl, fileName, target: a });
+    } catch { /* 소스 로드 실패 — 무시 */ }
+  }, [canvas]);
+
   React.useEffect(() => {
     if (!canvas) return;
     const sync = () => {
@@ -139,13 +160,19 @@ export function DesignEditor({
     canvas.on("object:added", onModified);
     canvas.on("object:removed", onModified);
     canvas.on("object:moving", onMoving);
+    const onDblClick = (e: any) => {
+      const t = e.target;
+      if (t && String(t.type).toLowerCase() === "image") void openRasterEdit(t);
+    };
+    canvas.on("mouse:dblclick", onDblClick);
     return () => {
       canvas.off("selection:created", sync); canvas.off("selection:updated", sync);
       canvas.off("selection:cleared", sync); canvas.off("object:modified", onModified);
       canvas.off("object:added", onModified); canvas.off("object:removed", onModified);
       canvas.off("object:moving", onMoving);
+      canvas.off("mouse:dblclick", onDblClick);
     };
-  }, [canvas, snapshot, pushHistory, scene, loadingRef]);  // loadingRef는 안정적 ref(useFabricCanvas) — lint 충족용
+  }, [canvas, snapshot, pushHistory, scene, loadingRef, openRasterEdit]);  // loadingRef는 안정적 ref(useFabricCanvas) — lint 충족용
 
   // import objectURL 누수 방지(언마운트 시).
   React.useEffect(() => () => { importedUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
@@ -314,6 +341,38 @@ export function DesignEditor({
     triggerPngDownload(url, exportFilename(designLang));
   }, [canvas, designLang]);
 
+  // filerobot 저장 결과(dataURL) → 새 VFS asset(원본 보존) → 활성 이미지 src/assetPath 교체.
+  // setElement은 filters가 남아있으면 새 이미지에 재적용하므로 먼저 filters/clipPath/crop을 초기화한다.
+  const applyRaster = React.useCallback(async (dataUrl: string, fullName: string) => {
+    const target = raster?.target;
+    if (!canvas || !runId || !target) { setRaster(null); return; }
+    // 모달 오픈 중 씬 재로드(언어전환 등)로 대상이 캔버스에서 분리됐으면 무음 데이터 손실 방지.
+    if (!canvas.getObjects().includes(target)) { setRaster(null); return; }
+    const ext = (fullName.split(".").pop() || "png").toLowerCase();
+    const deps = {
+      vfsPut: (rest: string, b64: string, mime: string) => api.vfsPut(runId, rest, b64, mime, "base64"),
+      assetUrl: (rest: string) => api.assetUrl(runId, rest),
+    };
+    const saved = await importImageAsset(
+      deps, designLang, editedAssetName(fullName, ext), dataUrl, importSeqRef.current++);
+    if (!saved) { setRaster(null); return; }
+    const res = await authedFetch(saved.src);
+    if (!res.ok) { setRaster(null); return; }
+    const objUrl = URL.createObjectURL(await res.blob());
+    importedUrlsRef.current.push(objUrl);
+    const prevScaledW = (target.width ?? 0) * (target.scaleX ?? 1);
+    // P3 비파괴 보정 초기화(이중 적용·차원 불일치 방지) 후 새 픽셀로 교체.
+    target.filters = [];
+    target.clipPath = undefined;
+    await target.setSrc(objUrl);                       // width/height = 새 자연치수로 리셋
+    const { scaleX, scaleY } = computeRasterSwap(prevScaledW, target.width ?? 0);
+    target.set({ cropX: 0, cropY: 0, scaleX, scaleY });
+    (target as any).assetPath = saved.src;             // P3 재로드 정본 경로(필수: src와 함께 교체)
+    target.setCoords();                                // 새 치수로 선택 핸들 바운딩 박스 갱신
+    setRaster(null);
+    afterImageEdit(target);                            // renderAll + dirty + history + selected 동기
+  }, [canvas, runId, designLang, raster, afterImageEdit]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
@@ -335,6 +394,7 @@ export function DesignEditor({
             onBackward={(i) => { const o = opAt(i); if (o && canvas) { canvas.sendObjectBackwards(o); canvas.renderAll(); setRevision((r) => r + 1); } }}
             onChangeProps={onChangeProps}
             onApplyFilters={applyFilters} onApplyMask={applyMask} onApplyCrop={applyCrop}
+            onRasterEdit={() => void openRasterEdit()}
           />
         </Panel>
       </Group>
@@ -349,6 +409,13 @@ export function DesignEditor({
         onAlign={alignSelection} onDistribute={distributeSelection}
         onExportPng={exportPng}
       />
+      {raster && (
+        <RasterEditModal
+          open source={raster.source} fileName={raster.fileName}
+          onApply={(dataUrl, fullName) => void applyRaster(dataUrl, fullName)}
+          onClose={() => { URL.revokeObjectURL(raster.source); setRaster(null); }}
+        />
+      )}
     </div>
   );
 }

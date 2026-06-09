@@ -22,6 +22,7 @@ export function Inspector(props: {
   onApplyFilters: (params: FilterParams) => void;
   onApplyMask: (kind: MaskKind) => void;
   onApplyCrop: (aspect: AspectKey) => void;
+  onRasterEdit?: () => void;
 }) {
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-surface">
@@ -30,7 +31,8 @@ export function Inspector(props: {
         onForward={props.onForward} onBackward={props.onBackward} />
       <div className="my-1 h-px bg-outline-variant" />
       <PropertiesPanel selected={props.selected} onChange={props.onChangeProps}
-        onApplyFilters={props.onApplyFilters} onApplyMask={props.onApplyMask} onApplyCrop={props.onApplyCrop} />
+        onApplyFilters={props.onApplyFilters} onApplyMask={props.onApplyMask} onApplyCrop={props.onApplyCrop}
+        onRasterEdit={props.onRasterEdit} />
     </div>
   );
 }
