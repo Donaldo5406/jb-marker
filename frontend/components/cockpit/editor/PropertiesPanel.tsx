@@ -1,6 +1,10 @@
 // frontend/components/cockpit/editor/PropertiesPanel.tsx
 "use client";
 import * as React from "react";
+import { ImageFilterControls } from "./ImageFilterControls";
+import type { FilterParams } from "@/lib/editor/imageFilters";
+import type { MaskKind } from "@/lib/editor/clipMask";
+import type { AspectKey } from "@/lib/editor/imageCrop";
 
 export type SelectedProps = {
   type: string;
@@ -15,14 +19,24 @@ export type SelectedProps = {
   rx?: number;
   radius?: number;
   opacity?: number;
+  filters?: any[];
+  cropX?: number;
+  cropY?: number;
+  clipPath?: any;
 };
 
 const SHAPE_TYPES = new Set(["rect", "circle", "triangle", "ellipse", "line", "path"]);
 
 /** 선택 객체 속성 편집. 유형별 분기(textbox / 도형 / 이미지). onChange는 부분 patch를 넘긴다. */
 export function PropertiesPanel({
-  selected, onChange,
-}: { selected: SelectedProps | null; onChange: (patch: Record<string, unknown>) => void }) {
+  selected, onChange, onApplyFilters, onApplyMask, onApplyCrop,
+}: {
+  selected: SelectedProps | null;
+  onChange: (patch: Record<string, unknown>) => void;
+  onApplyFilters?: (params: FilterParams) => void;
+  onApplyMask?: (kind: MaskKind) => void;
+  onApplyCrop?: (aspect: AspectKey) => void;
+}) {
   if (!selected) {
     return <p className="px-3 py-3 text-caption text-on-surface-variant">객체를 선택하면 속성이 표시됩니다</p>;
   }
@@ -92,11 +106,19 @@ export function PropertiesPanel({
       )}
 
       {isImage && (
-        <label className={labelCls}>
-          투명도
-          <input aria-label="투명도" type="range" min={0} max={1} step={0.05} value={selected.opacity ?? 1}
-            onChange={(e) => onChange({ opacity: Number(e.target.value) })} className="w-32" />
-        </label>
+        <>
+          <label className={labelCls}>
+            투명도
+            <input aria-label="투명도" type="range" min={0} max={1} step={0.05} value={selected.opacity ?? 1}
+              onChange={(e) => onChange({ opacity: Number(e.target.value) })} className="w-32" />
+          </label>
+          <ImageFilterControls
+            filters={selected.filters} clipPath={selected.clipPath}
+            onApplyFilters={onApplyFilters ?? (() => {})}
+            onApplyMask={onApplyMask ?? (() => {})}
+            onApplyCrop={onApplyCrop ?? (() => {})}
+          />
+        </>
       )}
 
       {!isText && !isShape && !isImage && (
