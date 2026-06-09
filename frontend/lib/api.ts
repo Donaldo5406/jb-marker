@@ -60,10 +60,10 @@ export const api = {
   async vfsGet(runId: string, rest: string): Promise<VfsNode> {
     return j(await authedFetch(`${BASE}/vfs/${runId}/${rest}`));
   },
-  async vfsPut(runId: string, rest: string, content: string, mime?: string): Promise<VfsNode> {
+  async vfsPut(runId: string, rest: string, content: string, mime?: string, contentEncoding?: "base64"): Promise<VfsNode> {
     return j(await authedFetch(`${BASE}/vfs/${runId}/${rest}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content, mime: mime ?? null }),
+      body: JSON.stringify({ content, mime: mime ?? null, content_encoding: contentEncoding ?? null }),
     }));
   },
   async getEntitlement(): Promise<{ marker: boolean }> {

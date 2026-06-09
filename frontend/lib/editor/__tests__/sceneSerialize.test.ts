@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { SCENE_CUSTOM_PROPS, parseScene } from "../sceneSerialize";
 
 describe("SCENE_CUSTOM_PROPS", () => {
-  it("Review/i18n가 의존하는 role·lang·slotID + filters를 포함한다", () => {
+  it("Review/i18n가 의존하는 role·lang·slotID + filters + assetPath를 포함한다", () => {
     expect(SCENE_CUSTOM_PROPS).toEqual(
-      expect.arrayContaining(["role", "lang", "slotId", "filters"]),
+      expect.arrayContaining(["role", "lang", "slotId", "filters", "assetPath"]),
     );
   });
 });

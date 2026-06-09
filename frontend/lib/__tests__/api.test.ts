@@ -97,4 +97,27 @@ describe("api client", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({ bypass_map: { S1: true } });
   });
+
+  it("vfsPut가 contentEncoding을 주면 content_encoding을 body에 포함한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ path: "/r/x.png", mime: "image/png", content_text: null, meta: {} }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await api.vfsPut("r1", "design/final/ko/assets/0-x.png", "QUFBQg==", "image/png", "base64");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/vfs/r1/design/final/ko/assets/0-x.png");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ content: "QUFBQg==", mime: "image/png", content_encoding: "base64" });
+  });
+
+  it("vfsPut가 contentEncoding 미지정이면 content_encoding을 null로 보낸다(기존 호환)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ path: "/r/a.json", mime: null, content_text: "{}", meta: {} }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await api.vfsPut("r1", "design/final/ko/main.scene", "{}", "application/json");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.content_encoding ?? null).toBeNull();
+  });
 });

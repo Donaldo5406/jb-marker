@@ -5,12 +5,18 @@ import { authedFetch } from "@/lib/api";
 import type { ParsedScene } from "@/lib/editor/sceneSerialize";
 
 /** Fabric 캔버스 생성/해제 + 씬 로드. 캔버스 인스턴스를 state로 노출(준비되면 리렌더).
- *  텍스트는 동기 렌더(이미지 지연이 카피 표시를 막지 않게), 이미지는 인증 blob 후 맨 뒤로. */
+ *  텍스트는 동기 렌더(이미지 지연이 카피 표시를 막지 않게), 이미지는 인증 blob 후 맨 뒤로.
+ *  ⚠️ `scene`은 참조가 안정적이어야 한다(호출부에서 useMemo). 로드 완료 시 loadVersion이 증가해
+ *     리렌더가 발생하는데, 매 렌더 새 scene 객체를 넘기면 로드 effect가 재실행되어 루프가 된다. */
 export function useFabricCanvas(
   elRef: React.RefObject<HTMLCanvasElement>,
   scene: ParsedScene | null,
 ) {
   const [canvas, setCanvas] = React.useState<Canvas | null>(null);
+  // 프로그램적 씬 로드 구간 표시(true면 호출부가 object:added를 사용자 편집으로 오인하지 않음).
+  const loadingRef = React.useRef(false);
+  // 씬 로드(이미지까지) 완료 시 증가 — 호출부가 이 시점에 히스토리 baseline을 다시 잡는다.
+  const [loadVersion, setLoadVersion] = React.useState(0);
   const width = scene?.width ?? 1080;
   const height = scene?.height ?? 1080;
 
@@ -24,6 +30,7 @@ export function useFabricCanvas(
   React.useEffect(() => {
     if (!canvas || !scene) return;
     let cancelled = false;
+    loadingRef.current = true;          // 로드 시작 — 동기 텍스트/비동기 이미지 추가를 사용자 편집과 구분
     const urls: string[] = [];
     canvas.clear();
     const objs = scene.objects ?? [];
@@ -36,9 +43,13 @@ export function useFabricCanvas(
     canvas.renderAll();
     void (async () => {
       for (const o of objs) {
-        if (String(o.type ?? "").toLowerCase() !== "image" || !o.src) continue;
+        if (String(o.type ?? "").toLowerCase() !== "image") continue;
+        // Fabric Image.toObject은 src에 blob: objectURL을 직렬화한다 → 저장본 재로드 시 죽은 URL.
+        // assetPath(정본 VFS URL)가 있으면 그것을, 없으면(조립 직후 씬) src를 쓴다.
+        const srcPath = String(o.assetPath ?? o.src ?? "");
+        if (!srcPath) continue;
         try {
-          const res = await authedFetch(String(o.src));
+          const res = await authedFetch(srcPath);
           if (!res.ok) continue;
           const url = URL.createObjectURL(await res.blob());
           urls.push(url);
@@ -46,15 +57,16 @@ export function useFabricCanvas(
           if (cancelled) return;
           img.set({ left: o.left, top: o.top });
           if (o.width) img.scaleToWidth(o.width);
-          (img as any).role = o.role; (img as any).slotId = o.slotId;
+          (img as any).role = o.role; (img as any).slotId = o.slotId; (img as any).assetPath = srcPath;
           canvas.add(img);
           canvas.sendObjectToBack?.(img);
           canvas.renderAll();
         } catch { /* 누락/오류 스킵 — 텍스트는 이미 렌더됨 */ }
       }
+      if (!cancelled) { loadingRef.current = false; setLoadVersion((v) => v + 1); }  // 로드 완료 → baseline 재설정 신호
     })();
-    return () => { cancelled = true; urls.forEach((u) => URL.revokeObjectURL(u)); };
+    return () => { cancelled = true; loadingRef.current = false; urls.forEach((u) => URL.revokeObjectURL(u)); };
   }, [canvas, scene]);
 
-  return { canvas };
+  return { canvas, loadingRef, loadVersion };
 }
