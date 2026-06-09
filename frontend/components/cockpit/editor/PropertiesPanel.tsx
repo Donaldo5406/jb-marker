@@ -41,9 +41,11 @@ export function PropertiesPanel({
   if (!selected) {
     return <p className="px-3 py-3 text-caption text-on-surface-variant">객체를 선택하면 속성이 표시됩니다</p>;
   }
-  const isText = selected.type === "textbox";
-  const isShape = SHAPE_TYPES.has(selected.type);
-  const isImage = selected.type === "image";
+  // fabric v7 toObject().type은 "Textbox"/"Image"/"Rect" 등 대문자 클래스명 → 소문자로 정규화해 매칭.
+  const kind = String(selected.type ?? "").toLowerCase();
+  const isText = kind === "textbox";
+  const isShape = SHAPE_TYPES.has(kind);
+  const isImage = kind === "image";
   const labelCls = "flex flex-col gap-1 text-caption text-on-surface-variant";
   const numCls = "h-7 w-20 rounded border border-outline-variant bg-surface px-2 text-on-surface";
   const colorCls = "h-7 w-14 rounded border border-outline-variant";
@@ -96,7 +98,7 @@ export function PropertiesPanel({
             <input aria-label="테두리 두께" type="number" min={0} max={80} value={selected.strokeWidth ?? 0}
               onChange={(e) => onChange({ strokeWidth: Number(e.target.value) })} className={numCls} />
           </label>
-          {selected.type === "rect" && (
+          {kind === "rect" && (
             <label className={labelCls}>
               모서리 둥글기
               <input aria-label="모서리 둥글기" type="number" min={0} max={200} value={selected.rx ?? 0}

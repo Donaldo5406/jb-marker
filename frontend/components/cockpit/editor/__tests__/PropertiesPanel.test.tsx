@@ -51,4 +51,21 @@ describe("PropertiesPanel", () => {
     fireEvent.click(getByRole("button", { name: "픽셀 편집(리터칭)" }));
     expect(onRasterEdit).toHaveBeenCalled();
   });
+  // 회귀 가드: fabric v7 toObject().type은 대문자 클래스명("Image"/"Textbox"/"Rect").
+  // 대소문자 정규화가 없으면 분기가 폴백으로 빠져 속성 컨트롤이 전혀 안 뜬다(P1~P4 잠복 버그).
+  it("대문자 타입 'Image'도 이미지 컨트롤·픽셀 편집 버튼을 렌더 (fabric v7 케이싱 회귀 가드)", () => {
+    const onRasterEdit = vi.fn();
+    const { getByLabelText, getByRole } = render(
+      <PropertiesPanel selected={{ type: "Image", opacity: 1, filters: [] }} onChange={() => {}} onRasterEdit={onRasterEdit} />);
+    expect(getByLabelText("밝기")).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "픽셀 편집(리터칭)" }));
+    expect(onRasterEdit).toHaveBeenCalled();
+  });
+  it("대문자 타입 'Textbox'도 텍스트 컨트롤을 렌더 (회귀 가드)", () => {
+    const onChange = vi.fn();
+    const { getByLabelText } = render(
+      <PropertiesPanel selected={{ type: "Textbox", fill: "#000000" }} onChange={onChange} />);
+    fireEvent.change(getByLabelText("글자 색"), { target: { value: "#ff0000" } });
+    expect(onChange).toHaveBeenCalledWith({ fill: "#ff0000" });
+  });
 });
