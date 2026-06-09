@@ -1,6 +1,7 @@
 // frontend/components/cockpit/editor/DesignEditor.tsx
 "use client";
 import * as React from "react";
+import { Textbox, Rect, Circle, Line, FabricImage } from "fabric";
 import { useFabricCanvas } from "./useFabricCanvas";
 import { useEditorHistory } from "./useEditorHistory";
 import { Toolbar } from "./Toolbar";
@@ -9,32 +10,48 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { parseScene, SCENE_CUSTOM_PROPS } from "@/lib/editor/sceneSerialize";
 import type { SelectedProps } from "./PropertiesPanel";
 import { keyToEditorAction } from "@/lib/editor/shortcuts";
+import { buildObjectSpec, type NewObjectKind } from "@/lib/editor/objectFactory";
+import { importImageAsset } from "@/lib/editor/imageImport";
+import { useCockpit } from "../CockpitProvider";
+import { api, authedFetch } from "@/lib/api";
 
 /** .scene 편집 셸. content(.scene JSON 문자열)를 캔버스로, 편집 결과를 onSave(json)로. */
 export function DesignEditor({
   content, dirty: _dirty, onSave, onClose,
 }: { content: string; dirty: boolean; onSave: (json: string) => void | Promise<void>; onClose: () => void }) {
   void _dirty; // 외부 dirty prop은 더 이상 사용하지 않음(저장버튼은 내부 dirty로 구동). 시그니처는 유지.
+  const { runId, designLang } = useCockpit();
   const elRef = React.useRef<HTMLCanvasElement>(null);
   const scene = React.useMemo(() => parseScene(content), [content]);
   const { canvas } = useFabricCanvas(elRef, scene);
   const history = useEditorHistory();
-  // useEditorHistory는 매 렌더 새 객체를 반환하지만 push/undo/redo/reset 콜백 ref는 안정적이다.
   const { push: pushHistory, undo: undoHistory, redo: redoHistory, reset: resetHistory, canUndo, canRedo } = history;
   const [zoom, setZoom] = React.useState(1);
   const [saving, setSaving] = React.useState(false);
-  // 캔버스 편집을 내부에서 추적하는 dirty. (외부 dirty prop은 .scene 캔버스 편집을 반영하지 못함)
   const [dirty, setDirty] = React.useState(false);
-  const [revision, setRevision] = React.useState(0);            // 객체 변경 시 인스펙터 갱신
+  const [revision, setRevision] = React.useState(0);
   const [selected, setSelected] = React.useState<SelectedProps | null>(null);
   const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
-  // restore() 중의 loadFromJSON이 object:removed/added를 발화 → onModified가 히스토리를 오염시키는 것을 막는 가드.
+  const [selCount, setSelCount] = React.useState(0);              // 정렬 버튼 노출 판정(1+ 선택)
   const restoringRef = React.useRef(false);
+  const importSeqRef = React.useRef(0);                            // asset 파일명 충돌 회피용 시퀀스
+  const importedUrlsRef = React.useRef<string[]>([]);              // import objectURL — 언마운트 시 revoke
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const cx = (scene?.width ?? 1080) / 2;
+  const cy = (scene?.height ?? 1080) / 2;
 
   const snapshot = React.useCallback(
     () => (canvas ? JSON.stringify(canvas.toObject([...SCENE_CUSTOM_PROPS])) : null), [canvas]);
 
-  // 캔버스 준비/교체 시 1회 초기 스냅샷으로 히스토리 리셋.
+  // 이벤트를 발화하지 않는 변경(정렬 등) 후 히스토리/일관성을 수동 반영.
+  const commit = React.useCallback(() => {
+    if (!canvas) return;
+    setDirty(true);
+    const s = snapshot(); if (s) pushHistory(s);
+    setRevision((r) => r + 1);
+  }, [canvas, snapshot, pushHistory]);
+
   React.useEffect(() => {
     if (!canvas) return;
     const s = snapshot();
@@ -42,7 +59,6 @@ export function DesignEditor({
     setDirty(false);
   }, [canvas, snapshot, resetHistory]);
 
-  // 캔버스 이벤트 → 선택/리비전/히스토리. 안정 ref(canvas/snapshot/pushHistory)에만 의존한다.
   React.useEffect(() => {
     if (!canvas) return;
     const sync = () => {
@@ -51,10 +67,10 @@ export function DesignEditor({
       const idx = active ? objs.indexOf(active as any) : -1;
       setActiveIndex(idx >= 0 ? idx : null);
       setSelected(active ? (active.toObject([...SCENE_CUSTOM_PROPS]) as SelectedProps) : null);
+      setSelCount(canvas.getActiveObjects().length);
       setRevision((r) => r + 1);
     };
     const onModified = () => {
-      // restore() 진행 중에는 loadFromJSON이 발화한 이벤트이므로 히스토리를 밀지 않고 dirty도 안 올린다.
       if (restoringRef.current) { sync(); return; }
       setDirty(true);
       const s = snapshot(); if (s) pushHistory(s); sync();
@@ -71,6 +87,9 @@ export function DesignEditor({
       canvas.off("object:added", onModified); canvas.off("object:removed", onModified);
     };
   }, [canvas, snapshot, pushHistory]);
+
+  // import objectURL 누수 방지(언마운트 시).
+  React.useEffect(() => () => { importedUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
   const restore = React.useCallback((json: string | null) => {
     if (!canvas || !json) return;
@@ -103,11 +122,61 @@ export function DesignEditor({
     canvas.remove(a); canvas.discardActiveObject(); canvas.renderAll();
   }, [canvas]);
 
-  // 키보드 단축키(텍스트 인라인 편집 중에는 무시)
+  // 새 객체 추가(텍스트/도형/선). canvas.add가 object:added를 발화 → 히스토리/dirty 자동.
+  const addObject = React.useCallback((kind: NewObjectKind) => {
+    if (!canvas) return;
+    const spec = buildObjectSpec(kind, { x: cx, y: cy });
+    let obj;
+    if (spec.ctor === "rect") obj = new Rect(spec.props);
+    else if (spec.ctor === "circle") obj = new Circle(spec.props);
+    else if (spec.ctor === "line") { const { points, ...rest } = spec.props; obj = new Line(points, rest); }
+    else obj = new Textbox(spec.props.text, spec.props);
+    canvas.add(obj); canvas.setActiveObject(obj); canvas.renderAll();
+  }, [canvas, cx, cy]);
+
+  // 이미지 import: 파일 → dataURL → VFS asset(base64) → assetUrl로 재로드(blob) → 캔버스 추가.
+  const importFile = React.useCallback(async (file: File) => {
+    if (!canvas || !runId) return;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(file);
+    });
+    const deps = {
+      vfsPut: (rest: string, b64: string, mime: string) => api.vfsPut(runId, rest, b64, mime, "base64"),
+      assetUrl: (rest: string) => api.assetUrl(runId, rest),
+    };
+    const result = await importImageAsset(deps, designLang, file.name, dataUrl, importSeqRef.current++);
+    if (!result) return;
+    // 정본 assetUrl을 다시 받아 blob로 렌더(인라인 base64가 .scene에 박히지 않게).
+    const res = await authedFetch(result.src);
+    if (!res.ok) return;
+    const objUrl = URL.createObjectURL(await res.blob());
+    importedUrlsRef.current.push(objUrl);
+    const img = await FabricImage.fromURL(objUrl);
+    img.set({ left: cx - (img.width ?? 0) / 2, top: cy - (img.height ?? 0) / 2 });
+    if ((img.width ?? 0) > 600) img.scaleToWidth(600);
+    (img as any).role = "imported";
+    (img as any).assetPath = result.src;     // 저장-재로드 정본 경로
+    canvas.add(img); canvas.setActiveObject(img); canvas.renderAll();
+  }, [canvas, runId, designLang, cx, cy]);
+
+  const onPickFile = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (f) void importFile(f);
+    e.target.value = "";  // 같은 파일 재선택 허용
+  }, [importFile]);
+
+  const onDropCanvas = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type.startsWith("image/")) void importFile(f);
+  }, [importFile]);
+
+  // 키보드 단축키(텍스트 인라인 편집/폼 입력 중에는 무시)
   React.useEffect(() => {
     if (!canvas) return;
     const onKey = (e: KeyboardEvent) => {
-      // DOM 폼 입력(인스펙터 number/color/select 등)에 포커스가 있으면 단축키를 가로채지 않는다.
       const ae = document.activeElement as HTMLElement | null;
       const tag = ae?.tagName;
       if (ae && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || ae.isContentEditable)) return;
@@ -126,7 +195,6 @@ export function DesignEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [canvas, undoHistory, redoHistory, restore, duplicateActive, deleteActive, doSave]);
 
-  // 인스펙터용 현재 객체 배열(리비전 의존).
   const objects = React.useMemo(
     () => (canvas ? canvas.getObjects().map((o) => o.toObject([...SCENE_CUSTOM_PROPS])) : []),
     [canvas, revision]);
@@ -143,9 +211,11 @@ export function DesignEditor({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
       <Group orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <Panel id="de-canvas" defaultSize={72} minSize={40} className="min-h-0 overflow-auto bg-surface-container">
-          <div className="flex min-h-full items-center justify-center p-6">
+          <div className="flex min-h-full items-center justify-center p-6"
+            onDragOver={(e) => e.preventDefault()} onDrop={onDropCanvas}>
             <canvas ref={elRef} className="block shadow-ambient" />
           </div>
         </Panel>
@@ -163,10 +233,14 @@ export function DesignEditor({
         </Panel>
       </Group>
       <Toolbar
-        canUndo={canUndo} canRedo={canRedo} zoom={zoom} saving={saving} dirty={dirty}
+        canUndo={canUndo} canRedo={canRedo} zoom={zoom} saving={saving} dirty={dirty} canAlign={selCount >= 1}
         onUndo={() => restore(undoHistory())} onRedo={() => restore(redoHistory())}
         onZoomIn={() => applyZoom(zoom + 0.1)} onZoomOut={() => applyZoom(zoom - 0.1)} onZoomFit={() => applyZoom(1)}
         onSave={() => void doSave()} onClose={onClose}
+        onAddText={() => addObject("textbox")} onAddRect={() => addObject("rect")}
+        onAddCircle={() => addObject("circle")} onAddLine={() => addObject("line")}
+        onImportImage={() => fileInputRef.current?.click()}
+        onAlign={() => { /* Task 9에서 배선 */ }} onDistribute={() => { /* Task 9에서 배선 */ }}
       />
     </div>
   );
