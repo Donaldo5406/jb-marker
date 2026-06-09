@@ -346,6 +346,8 @@ export function DesignEditor({
   const applyRaster = React.useCallback(async (dataUrl: string, fullName: string) => {
     const target = raster?.target;
     if (!canvas || !runId || !target) { setRaster(null); return; }
+    // 모달 오픈 중 씬 재로드(언어전환 등)로 대상이 캔버스에서 분리됐으면 무음 데이터 손실 방지.
+    if (!canvas.getObjects().includes(target)) { setRaster(null); return; }
     const ext = (fullName.split(".").pop() || "png").toLowerCase();
     const deps = {
       vfsPut: (rest: string, b64: string, mime: string) => api.vfsPut(runId, rest, b64, mime, "base64"),
@@ -366,6 +368,7 @@ export function DesignEditor({
     const { scaleX, scaleY } = computeRasterSwap(prevScaledW, target.width ?? 0);
     target.set({ cropX: 0, cropY: 0, scaleX, scaleY });
     (target as any).assetPath = saved.src;             // P3 재로드 정본 경로(필수: src와 함께 교체)
+    target.setCoords();                                // 새 치수로 선택 핸들 바운딩 박스 갱신
     setRaster(null);
     afterImageEdit(target);                            // renderAll + dirty + history + selected 동기
   }, [canvas, runId, designLang, raster, afterImageEdit]);
@@ -410,7 +413,7 @@ export function DesignEditor({
         <RasterEditModal
           open source={raster.source} fileName={raster.fileName}
           onApply={(dataUrl, fullName) => void applyRaster(dataUrl, fullName)}
-          onClose={() => setRaster(null)}
+          onClose={() => { URL.revokeObjectURL(raster.source); setRaster(null); }}
         />
       )}
     </div>
