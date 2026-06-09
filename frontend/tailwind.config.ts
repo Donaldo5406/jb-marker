@@ -68,8 +68,12 @@ const config: Config = {
       backdropBlur: { glass: "20px" },
       keyframes: {
         "fade-in-up": { from: { opacity: "0", transform: "translateY(8px)" }, to: { opacity: "1", transform: "translateY(0)" } },
+        "rail-shimmer": { "0%": { transform: "translateX(-100%)" }, "100%": { transform: "translateX(100%)" } },
       },
-      animation: { "fade-in-up": "fade-in-up 0.3s ease-out both" },
+      animation: {
+        "fade-in-up": "fade-in-up 0.3s ease-out both",
+        "rail-shimmer": "rail-shimmer 1.2s ease-in-out infinite",
+      },
     },
   },
   plugins: [tailwindcssAnimate],
