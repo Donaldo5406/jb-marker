@@ -29,13 +29,14 @@ const SHAPE_TYPES = new Set(["rect", "circle", "triangle", "ellipse", "line", "p
 
 /** 선택 객체 속성 편집. 유형별 분기(textbox / 도형 / 이미지). onChange는 부분 patch를 넘긴다. */
 export function PropertiesPanel({
-  selected, onChange, onApplyFilters, onApplyMask, onApplyCrop,
+  selected, onChange, onApplyFilters, onApplyMask, onApplyCrop, onRasterEdit,
 }: {
   selected: SelectedProps | null;
   onChange: (patch: Record<string, unknown>) => void;
   onApplyFilters?: (params: FilterParams) => void;
   onApplyMask?: (kind: MaskKind) => void;
   onApplyCrop?: (aspect: AspectKey) => void;
+  onRasterEdit?: () => void;
 }) {
   if (!selected) {
     return <p className="px-3 py-3 text-caption text-on-surface-variant">객체를 선택하면 속성이 표시됩니다</p>;
@@ -118,6 +119,10 @@ export function PropertiesPanel({
             onApplyMask={onApplyMask ?? (() => {})}
             onApplyCrop={onApplyCrop ?? (() => {})}
           />
+          <button type="button" onClick={() => onRasterEdit?.()}
+            className="mt-1 h-8 rounded border border-outline-variant bg-surface px-3 text-caption text-on-surface hover:bg-surface-container">
+            픽셀 편집(리터칭)
+          </button>
         </>
       )}
 

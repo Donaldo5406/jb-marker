@@ -44,4 +44,11 @@ describe("PropertiesPanel", () => {
     fireEvent.change(getByLabelText("밝기"), { target: { value: "0.4" } });
     expect(onApplyFilters).toHaveBeenCalledWith({ brightness: 0.4, contrast: 0, saturation: 0, blur: 0, grayscale: false });
   });
+  it("image: '픽셀 편집' 버튼 → onRasterEdit 호출 (P4)", () => {
+    const onRasterEdit = vi.fn();
+    const { getByRole } = render(
+      <PropertiesPanel selected={{ type: "image", opacity: 1, filters: [] }} onChange={() => {}} onRasterEdit={onRasterEdit} />);
+    fireEvent.click(getByRole("button", { name: "픽셀 편집(리터칭)" }));
+    expect(onRasterEdit).toHaveBeenCalled();
+  });
 });
