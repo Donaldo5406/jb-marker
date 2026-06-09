@@ -8,7 +8,7 @@ const baseProps = {
   onUndo: vi.fn(), onRedo: vi.fn(), onZoomIn: vi.fn(), onZoomOut: vi.fn(),
   onZoomFit: vi.fn(), onSave: vi.fn(), onClose: vi.fn(),
   onAddText: vi.fn(), onAddRect: vi.fn(), onAddCircle: vi.fn(), onAddLine: vi.fn(),
-  onImportImage: vi.fn(), onAlign: vi.fn(), onDistribute: vi.fn(),
+  onImportImage: vi.fn(), onAlign: vi.fn(), onDistribute: vi.fn(), onExportPng: vi.fn(),
 };
 
 // --- P1 회귀 가드(기존 3건 유지) ---
@@ -50,5 +50,15 @@ describe("Toolbar P2", () => {
     fireEvent.click(screen.getByLabelText("왼쪽 정렬")); expect(p.onAlign).toHaveBeenCalledWith("left");
     fireEvent.click(screen.getByLabelText("가로 가운데 정렬")); expect(p.onAlign).toHaveBeenCalledWith("hcenter");
     fireEvent.click(screen.getByLabelText("가로 균등 분배")); expect(p.onDistribute).toHaveBeenCalledWith("h");
+  });
+});
+
+// --- P3 신규 ---
+describe("Toolbar P3", () => {
+  it("PNG 내보내기 클릭 → onExportPng", () => {
+    const onExportPng = vi.fn();
+    render(<Toolbar {...baseProps} onExportPng={onExportPng} />);
+    fireEvent.click(screen.getByRole("button", { name: "PNG 내보내기" }));
+    expect(onExportPng).toHaveBeenCalled();
   });
 });

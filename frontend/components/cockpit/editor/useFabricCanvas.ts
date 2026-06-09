@@ -53,10 +53,17 @@ export function useFabricCanvas(
           if (!res.ok) continue;
           const url = URL.createObjectURL(await res.blob());
           urls.push(url);
-          const img = await FabricImage.fromURL(url);
+          // 에디터 저장본(toObject)은 scaleX를 가져 fromObject로 전체 복원(scale·crop·filters·clipPath·opacity).
+          // 어셈블러 씬(scaleX 없음, width=슬롯 표시폭)은 기존대로 fromURL+scaleToWidth로 슬롯에 맞춘다.
+          let img: FabricImage;
+          if (o.scaleX != null) {
+            img = await FabricImage.fromObject({ ...o, src: url } as any);
+          } else {
+            img = await FabricImage.fromURL(url);
+            img.set({ left: o.left, top: o.top });
+            if (o.width) img.scaleToWidth(o.width);
+          }
           if (cancelled) return;
-          img.set({ left: o.left, top: o.top });
-          if (o.width) img.scaleToWidth(o.width);
           (img as any).role = o.role; (img as any).slotId = o.slotId; (img as any).assetPath = srcPath;
           canvas.add(img);
           canvas.sendObjectToBack?.(img);

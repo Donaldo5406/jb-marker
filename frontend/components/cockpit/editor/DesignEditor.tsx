@@ -1,7 +1,7 @@
 // frontend/components/cockpit/editor/DesignEditor.tsx
 "use client";
 import * as React from "react";
-import { Textbox, Rect, Circle, Line, FabricImage } from "fabric";
+import { Textbox, Rect, Circle, Line, FabricImage, Ellipse, filters as fabricFilters } from "fabric";
 import { useFabricCanvas } from "./useFabricCanvas";
 import { useEditorHistory } from "./useEditorHistory";
 import { Toolbar } from "./Toolbar";
@@ -13,8 +13,18 @@ import { keyToEditorAction } from "@/lib/editor/shortcuts";
 import { buildObjectSpec, type NewObjectKind } from "@/lib/editor/objectFactory";
 import { importImageAsset } from "@/lib/editor/imageImport";
 import { alignBoxes, distributeBoxes, snapValue, type Box, type AlignMode } from "@/lib/editor/align";
+import { buildFabricFilters, type FilterParams } from "@/lib/editor/imageFilters";
+import { buildClipPath, type MaskKind } from "@/lib/editor/clipMask";
+import { computeAspectCrop, type AspectKey } from "@/lib/editor/imageCrop";
+import { exportFilename, triggerPngDownload } from "@/lib/editor/exportPng";
 import { useCockpit } from "../CockpitProvider";
 import { api, authedFetch } from "@/lib/api";
+
+// 모듈 스코프 상수(fabricFilters는 모듈 import라 안정) — 매 렌더 재생성/useCallback deps 노이즈 회피.
+const FILTER_CTORS = {
+  Brightness: fabricFilters.Brightness, Contrast: fabricFilters.Contrast,
+  Saturation: fabricFilters.Saturation, Blur: fabricFilters.Blur, Grayscale: fabricFilters.Grayscale,
+};
 
 /** .scene 편집 셸. content(.scene JSON 문자열)를 캔버스로, 편집 결과를 onSave(json)로. */
 export function DesignEditor({
@@ -260,6 +270,50 @@ export function DesignEditor({
     setRevision((r) => r + 1);
   };
 
+  // 활성 이미지에 비파괴 보정 적용 후 직렬화 스냅샷을 selected에 반영(toObject가 filters/clipPath/crop 직렬화).
+  const afterImageEdit = React.useCallback((a: any) => {
+    canvas!.renderAll();
+    setDirty(true);
+    const s = snapshot(); if (s) pushHistory(s);
+    setSelected(a.toObject([...SCENE_CUSTOM_PROPS]) as SelectedProps);
+    setRevision((r) => r + 1);
+  }, [canvas, snapshot, pushHistory]);
+  const applyFilters = React.useCallback((params: FilterParams) => {
+    const a = canvas?.getActiveObject() as any; if (!a || !canvas) return;
+    if (String(a.type).toLowerCase() !== "image") return;
+    a.filters = buildFabricFilters(params, FILTER_CTORS);
+    a.applyFilters();
+    afterImageEdit(a);
+  }, [canvas, afterImageEdit]);
+  const applyMask = React.useCallback((kind: MaskKind) => {
+    const a = canvas?.getActiveObject() as any; if (!a || !canvas) return;
+    if (String(a.type).toLowerCase() !== "image") return;
+    const cp = buildClipPath(kind, { width: a.width ?? 0, height: a.height ?? 0 }, { Rect, Ellipse });
+    a.clipPath = cp ?? undefined;
+    afterImageEdit(a);
+  }, [canvas, afterImageEdit]);
+  const applyCrop = React.useCallback((aspect: AspectKey) => {
+    const a = canvas?.getActiveObject() as any; if (!a || !canvas) return;
+    if (String(a.type).toLowerCase() !== "image") return;
+    const el = a.getElement?.();
+    const natW = el?.naturalWidth || el?.width || a.width || 0;
+    const natH = el?.naturalHeight || el?.height || a.height || 0;
+    a.set(computeAspectCrop(natW, natH, aspect));
+    afterImageEdit(a);
+  }, [canvas, afterImageEdit]);
+  // 라이브 캔버스를 1:1 뷰포트로 캡처(현재 보정 반영) → PNG 다운로드. 선택 핸들 제외 위해 선택 해제.
+  const exportPng = React.useCallback(() => {
+    if (!canvas) return;
+    canvas.discardActiveObject();
+    const vt = canvas.viewportTransform ? ([...canvas.viewportTransform] as any) : null;
+    const z = canvas.getZoom();
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); canvas.renderAll();
+    const url = canvas.toDataURL({ format: "png", multiplier: 1 });
+    if (vt) canvas.setViewportTransform(vt);
+    canvas.setZoom(z); canvas.renderAll();
+    triggerPngDownload(url, exportFilename(designLang));
+  }, [canvas, designLang]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
@@ -280,6 +334,7 @@ export function DesignEditor({
             onForward={(i) => { const o = opAt(i); if (o && canvas) { canvas.bringObjectForward(o); canvas.renderAll(); setRevision((r) => r + 1); } }}
             onBackward={(i) => { const o = opAt(i); if (o && canvas) { canvas.sendObjectBackwards(o); canvas.renderAll(); setRevision((r) => r + 1); } }}
             onChangeProps={onChangeProps}
+            onApplyFilters={applyFilters} onApplyMask={applyMask} onApplyCrop={applyCrop}
           />
         </Panel>
       </Group>
@@ -292,6 +347,7 @@ export function DesignEditor({
         onAddCircle={() => addObject("circle")} onAddLine={() => addObject("line")}
         onImportImage={() => fileInputRef.current?.click()}
         onAlign={alignSelection} onDistribute={distributeSelection}
+        onExportPng={exportPng}
       />
     </div>
   );

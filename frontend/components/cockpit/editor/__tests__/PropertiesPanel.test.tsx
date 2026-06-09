@@ -37,4 +37,11 @@ describe("PropertiesPanel", () => {
     fireEvent.change(getByLabelText("투명도"), { target: { value: "0.5" } });
     expect(onChange).toHaveBeenCalledWith({ opacity: 0.5 });
   });
+  it("image: 밝기 슬라이더 → onApplyFilters (P3)", () => {
+    const onApplyFilters = vi.fn();
+    const { getByLabelText } = render(
+      <PropertiesPanel selected={{ type: "image", opacity: 1, filters: [] }} onChange={() => {}} onApplyFilters={onApplyFilters} />);
+    fireEvent.change(getByLabelText("밝기"), { target: { value: "0.4" } });
+    expect(onApplyFilters).toHaveBeenCalledWith({ brightness: 0.4, contrast: 0, saturation: 0, blur: 0, grayscale: false });
+  });
 });
