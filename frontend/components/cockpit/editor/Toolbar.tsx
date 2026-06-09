@@ -2,7 +2,7 @@
 "use client";
 import * as React from "react";
 import {
-  Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, X,
+  Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, Download, X,
   Type, Square, Circle as CircleIcon, Minus, ImagePlus,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
@@ -14,13 +14,14 @@ import type { AlignMode } from "@/lib/editor/align";
 export function Toolbar({
   canUndo, canRedo, zoom, saving, dirty, canAlign,
   onUndo, onRedo, onZoomIn, onZoomOut, onZoomFit, onSave, onClose,
-  onAddText, onAddRect, onAddCircle, onAddLine, onImportImage, onAlign, onDistribute,
+  onAddText, onAddRect, onAddCircle, onAddLine, onImportImage, onAlign, onDistribute, onExportPng,
 }: {
   canUndo: boolean; canRedo: boolean; zoom: number; saving: boolean; dirty: boolean; canAlign: boolean;
   onUndo: () => void; onRedo: () => void; onZoomIn: () => void; onZoomOut: () => void;
   onZoomFit: () => void; onSave: () => void; onClose: () => void;
   onAddText: () => void; onAddRect: () => void; onAddCircle: () => void; onAddLine: () => void;
   onImportImage: () => void; onAlign: (mode: AlignMode) => void; onDistribute: (axis: "h" | "v") => void;
+  onExportPng: () => void;
 }) {
   const icon = "inline-flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-40 disabled:pointer-events-none";
   const sep = <span className="mx-1 h-4 w-px bg-outline-variant" />;
@@ -56,6 +57,7 @@ export function Toolbar({
       <button type="button" aria-label="확대" className={icon} onClick={onZoomIn}><ZoomIn className="h-4 w-4" /></button>
       <button type="button" aria-label="화면 맞춤" className={icon} onClick={onZoomFit}><Maximize className="h-4 w-4" /></button>
       <button type="button" aria-label="닫기" className={cn(icon, "ml-auto")} onClick={onClose}><X className="h-4 w-4" /></button>
+      <button type="button" aria-label="PNG 내보내기" className={icon} onClick={onExportPng}><Download className="h-4 w-4" /></button>
       <button type="button" onClick={onSave} disabled={saving || !dirty}
         className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-caption font-medium text-on-primary hover:bg-primary-container disabled:opacity-40 disabled:pointer-events-none">
         <Save className="h-3.5 w-3.5" />{saving ? "저장 중…" : "scene 저장"}
