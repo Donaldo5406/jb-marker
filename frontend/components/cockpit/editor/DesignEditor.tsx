@@ -24,7 +24,7 @@ export function DesignEditor({
   const { runId, designLang } = useCockpit();
   const elRef = React.useRef<HTMLCanvasElement>(null);
   const scene = React.useMemo(() => parseScene(content), [content]);
-  const { canvas } = useFabricCanvas(elRef, scene);
+  const { canvas, loadingRef, loadVersion } = useFabricCanvas(elRef, scene);
   const history = useEditorHistory();
   const { push: pushHistory, undo: undoHistory, redo: redoHistory, reset: resetHistory, canUndo, canRedo } = history;
   const [zoom, setZoom] = React.useState(1);
@@ -82,12 +82,14 @@ export function DesignEditor({
     commit();
   }, [canvas, commit]);
 
+  // 캔버스 준비 + 매 씬 로드(이미지 포함) 완료 시 히스토리 baseline 재설정.
+  // loadVersion을 deps에 포함 → 언어 전환 등 재로드 후에도 깨끗한 baseline + dirty=false 보장.
   React.useEffect(() => {
     if (!canvas) return;
     const s = snapshot();
     if (s) resetHistory(s);
     setDirty(false);
-  }, [canvas, snapshot, resetHistory]);
+  }, [canvas, loadVersion, snapshot, resetHistory]);
 
   React.useEffect(() => {
     if (!canvas) return;
@@ -101,7 +103,9 @@ export function DesignEditor({
       setRevision((r) => r + 1);
     };
     const onModified = () => {
-      if (restoringRef.current) { sync(); return; }
+      // restore(undo/redo) 또는 프로그램적 씬 로드(useFabricCanvas) 중에는 사용자 편집이 아니므로
+      // dirty/history를 건드리지 않는다(배경 이미지 비동기 추가가 열자마자 dirty로 오인되는 것 방지).
+      if (restoringRef.current || loadingRef.current) { sync(); return; }
       setDirty(true);
       const s = snapshot(); if (s) pushHistory(s); sync();
     };
@@ -200,8 +204,10 @@ export function DesignEditor({
     const objUrl = URL.createObjectURL(await res.blob());
     importedUrlsRef.current.push(objUrl);
     const img = await FabricImage.fromURL(objUrl);
-    img.set({ left: cx - (img.width ?? 0) / 2, top: cy - (img.height ?? 0) / 2 });
+    // 먼저 스케일(>600px 다운스케일) 후 스케일된 치수로 중앙 배치 — scaleToWidth는 left/top을 옮기지 않으므로
+    // 순서를 반대로 하면 큰 이미지가 화면 밖으로 밀려난다.
     if ((img.width ?? 0) > 600) img.scaleToWidth(600);
+    img.set({ left: cx - img.getScaledWidth() / 2, top: cy - img.getScaledHeight() / 2 });
     (img as any).role = "imported";
     (img as any).assetPath = result.src;     // 저장-재로드 정본 경로
     canvas.add(img); canvas.setActiveObject(img); canvas.renderAll();

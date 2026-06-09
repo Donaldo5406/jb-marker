@@ -1,7 +1,7 @@
 import { it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-vi.mock("../useFabricCanvas", () => ({ useFabricCanvas: () => ({ canvas: null }) }));
+vi.mock("../useFabricCanvas", () => ({ useFabricCanvas: () => ({ canvas: null, loadingRef: { current: false }, loadVersion: 0 }) }));
 vi.mock("../../CockpitProvider", () => ({ useCockpit: () => ({ runId: "r1", designLang: "ko" }) }));
 
 import { DesignEditor } from "../DesignEditor";

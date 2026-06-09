@@ -5,12 +5,18 @@ import { authedFetch } from "@/lib/api";
 import type { ParsedScene } from "@/lib/editor/sceneSerialize";
 
 /** Fabric 캔버스 생성/해제 + 씬 로드. 캔버스 인스턴스를 state로 노출(준비되면 리렌더).
- *  텍스트는 동기 렌더(이미지 지연이 카피 표시를 막지 않게), 이미지는 인증 blob 후 맨 뒤로. */
+ *  텍스트는 동기 렌더(이미지 지연이 카피 표시를 막지 않게), 이미지는 인증 blob 후 맨 뒤로.
+ *  ⚠️ `scene`은 참조가 안정적이어야 한다(호출부에서 useMemo). 로드 완료 시 loadVersion이 증가해
+ *     리렌더가 발생하는데, 매 렌더 새 scene 객체를 넘기면 로드 effect가 재실행되어 루프가 된다. */
 export function useFabricCanvas(
   elRef: React.RefObject<HTMLCanvasElement>,
   scene: ParsedScene | null,
 ) {
   const [canvas, setCanvas] = React.useState<Canvas | null>(null);
+  // 프로그램적 씬 로드 구간 표시(true면 호출부가 object:added를 사용자 편집으로 오인하지 않음).
+  const loadingRef = React.useRef(false);
+  // 씬 로드(이미지까지) 완료 시 증가 — 호출부가 이 시점에 히스토리 baseline을 다시 잡는다.
+  const [loadVersion, setLoadVersion] = React.useState(0);
   const width = scene?.width ?? 1080;
   const height = scene?.height ?? 1080;
 
@@ -24,6 +30,7 @@ export function useFabricCanvas(
   React.useEffect(() => {
     if (!canvas || !scene) return;
     let cancelled = false;
+    loadingRef.current = true;          // 로드 시작 — 동기 텍스트/비동기 이미지 추가를 사용자 편집과 구분
     const urls: string[] = [];
     canvas.clear();
     const objs = scene.objects ?? [];
@@ -56,9 +63,10 @@ export function useFabricCanvas(
           canvas.renderAll();
         } catch { /* 누락/오류 스킵 — 텍스트는 이미 렌더됨 */ }
       }
+      if (!cancelled) { loadingRef.current = false; setLoadVersion((v) => v + 1); }  // 로드 완료 → baseline 재설정 신호
     })();
-    return () => { cancelled = true; urls.forEach((u) => URL.revokeObjectURL(u)); };
+    return () => { cancelled = true; loadingRef.current = false; urls.forEach((u) => URL.revokeObjectURL(u)); };
   }, [canvas, scene]);
 
-  return { canvas };
+  return { canvas, loadingRef, loadVersion };
 }
