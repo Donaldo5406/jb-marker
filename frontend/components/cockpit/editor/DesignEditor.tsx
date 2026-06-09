@@ -135,7 +135,7 @@ export function DesignEditor({
       canvas.off("object:added", onModified); canvas.off("object:removed", onModified);
       canvas.off("object:moving", onMoving);
     };
-  }, [canvas, snapshot, pushHistory, scene]);
+  }, [canvas, snapshot, pushHistory, scene, loadingRef]);  // loadingRef는 안정적 ref(useFabricCanvas) — lint 충족용
 
   // import objectURL 누수 방지(언마운트 시).
   React.useEffect(() => () => { importedUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
