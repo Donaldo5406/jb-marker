@@ -12,6 +12,7 @@ import type { SelectedProps } from "./PropertiesPanel";
 import { keyToEditorAction } from "@/lib/editor/shortcuts";
 import { buildObjectSpec, type NewObjectKind } from "@/lib/editor/objectFactory";
 import { importImageAsset } from "@/lib/editor/imageImport";
+import { alignBoxes, distributeBoxes, snapValue, type Box, type AlignMode } from "@/lib/editor/align";
 import { useCockpit } from "../CockpitProvider";
 import { api, authedFetch } from "@/lib/api";
 
@@ -52,6 +53,35 @@ export function DesignEditor({
     setRevision((r) => r + 1);
   }, [canvas, snapshot, pushHistory]);
 
+  // Fabric 객체 → 절대 좌표 Box. fabricDefaults가 origin을 left/top로 복원하므로 left/top=좌상단.
+  const boxOf = (o: any): Box => ({
+    left: o.left ?? 0, top: o.top ?? 0,
+    width: (o.width ?? 0) * (o.scaleX ?? 1), height: (o.height ?? 0) * (o.scaleY ?? 1),
+  });
+
+  const alignSelection = React.useCallback((mode: AlignMode) => {
+    if (!canvas) return;
+    const objs = canvas.getActiveObjects();
+    if (objs.length === 0) return;
+    canvas.discardActiveObject();   // 다중 선택을 해제해 각 객체를 절대 좌표로 복원
+    const bounds: Box = { left: 0, top: 0, width: scene?.width ?? 1080, height: scene?.height ?? 1080 };
+    const patches = alignBoxes(objs.map(boxOf), mode, bounds);
+    objs.forEach((o, i) => o.set(patches[i]));
+    canvas.requestRenderAll();
+    commit();
+  }, [canvas, scene, commit]);
+
+  const distributeSelection = React.useCallback((axis: "h" | "v") => {
+    if (!canvas) return;
+    const objs = canvas.getActiveObjects();
+    if (objs.length < 3) return;
+    canvas.discardActiveObject();
+    const patches = distributeBoxes(objs.map(boxOf), axis);
+    objs.forEach((o, i) => o.set(patches[i]));
+    canvas.requestRenderAll();
+    commit();
+  }, [canvas, commit]);
+
   React.useEffect(() => {
     if (!canvas) return;
     const s = snapshot();
@@ -75,18 +105,33 @@ export function DesignEditor({
       setDirty(true);
       const s = snapshot(); if (s) pushHistory(s); sync();
     };
+    // 드래그 중 캔버스 가장자리/중앙 + 다른 객체의 좌/중앙/우(상/중앙/하)로 스냅.
+    const SNAP = 8;
+    const onMoving = (e: any) => {
+      const o = e.target; if (!o) return;
+      const W = scene?.width ?? 1080; const H = scene?.height ?? 1080;
+      const others = canvas.getObjects().filter((x) => x !== o);
+      const w = (o.width ?? 0) * (o.scaleX ?? 1); const h = (o.height ?? 0) * (o.scaleY ?? 1);
+      const xs = [0, W / 2 - w / 2, W - w]; const ys = [0, H / 2 - h / 2, H - h];
+      for (const x of others) { const bw = (x.width ?? 0) * (x.scaleX ?? 1); xs.push(x.left ?? 0, (x.left ?? 0) + bw / 2 - w / 2, (x.left ?? 0) + bw - w); }
+      for (const y of others) { const bh = (y.height ?? 0) * (y.scaleY ?? 1); ys.push(y.top ?? 0, (y.top ?? 0) + bh / 2 - h / 2, (y.top ?? 0) + bh - h); }
+      const sx = snapValue(o.left ?? 0, xs, SNAP); if (sx != null) o.set({ left: sx });
+      const sy = snapValue(o.top ?? 0, ys, SNAP); if (sy != null) o.set({ top: sy });
+    };
     canvas.on("selection:created", sync);
     canvas.on("selection:updated", sync);
     canvas.on("selection:cleared", sync);
     canvas.on("object:modified", onModified);
     canvas.on("object:added", onModified);
     canvas.on("object:removed", onModified);
+    canvas.on("object:moving", onMoving);
     return () => {
       canvas.off("selection:created", sync); canvas.off("selection:updated", sync);
       canvas.off("selection:cleared", sync); canvas.off("object:modified", onModified);
       canvas.off("object:added", onModified); canvas.off("object:removed", onModified);
+      canvas.off("object:moving", onMoving);
     };
-  }, [canvas, snapshot, pushHistory]);
+  }, [canvas, snapshot, pushHistory, scene]);
 
   // import objectURL 누수 방지(언마운트 시).
   React.useEffect(() => () => { importedUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
@@ -240,7 +285,7 @@ export function DesignEditor({
         onAddText={() => addObject("textbox")} onAddRect={() => addObject("rect")}
         onAddCircle={() => addObject("circle")} onAddLine={() => addObject("line")}
         onImportImage={() => fileInputRef.current?.click()}
-        onAlign={() => { /* Task 9에서 배선 */ }} onDistribute={() => { /* Task 9에서 배선 */ }}
+        onAlign={alignSelection} onDistribute={distributeSelection}
       />
     </div>
   );
