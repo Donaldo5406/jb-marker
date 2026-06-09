@@ -14,6 +14,13 @@ describe("PropertiesPanel", () => {
     fireEvent.change(getByLabelText("글자 색"), { target: { value: "#ff0000" } });
     expect(onChange).toHaveBeenCalledWith({ fill: "#ff0000" });
   });
+  it("textbox: 폰트 크기 변경 → onChange({fontSize}) (P1 회귀 가드)", () => {
+    const onChange = vi.fn();
+    const { getByLabelText } = render(
+      <PropertiesPanel selected={{ type: "textbox", fontSize: 48 }} onChange={onChange} />);
+    fireEvent.change(getByLabelText("글자 크기"), { target: { value: "72" } });
+    expect(onChange).toHaveBeenCalledWith({ fontSize: 72 });
+  });
   it("rect: 채움/테두리/두께 편집 → onChange", () => {
     const onChange = vi.fn();
     const { getByLabelText } = render(
