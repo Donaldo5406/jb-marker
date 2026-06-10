@@ -18,9 +18,17 @@ export type VfsNode = {
   path: string; mime: string | null; source: string | null;
   content_text: string | null; meta: Record<string, unknown>;
 };
-export type AskPayload = { trigger: "a" | "b" | "c"; question: string; options: string[] };
+/** HITL 게이트 단일 봉투(T1-P2 §4.4) — kind·actions 항상 포함, None 필드는 wire에서 생략.
+ *  ask=brainstorming 질문 / confirm=design 단계 정지 / status=review R3 판정. */
+export type GateEnvelope = {
+  kind: "ask" | "confirm" | "status";
+  actions: string[];
+  trigger?: "a" | "b" | "c"; question?: string; options?: string[];
+  step?: string; critic?: Record<string, unknown> | null; auto_advanced?: string[];
+  status?: "PASS" | "WARN" | "BLOCKED"; critical_count?: number; warning_count?: number;
+};
 export type GatewayResult = {
-  output_path: string; text: string; ask?: AskPayload | null;
+  output_path: string; text: string; gate?: GateEnvelope | null;
   meta?: Record<string, unknown>;
 };
 export type Provider = "anthropic" | "openai" | "google" | "fake";

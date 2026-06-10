@@ -27,7 +27,7 @@ describe("api client", () => {
 
   it("gatewayRun forwards answer when provided", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ output_path: "/r/brainstorming/spec.md", text: "x", ask: null }),
+      ok: true, json: async () => ({ output_path: "/r/brainstorming/spec.md", text: "x", gate: null }),
     });
     vi.stubGlobal("fetch", fetchMock);
     await api.gatewayRun({ run_id: "r", studio: "brainstorming", prompt: "hi",

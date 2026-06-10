@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { api } from "./api";
-import type { AskPayload } from "./api";
+import type { GateEnvelope } from "./api";
 import { getAccessToken } from "./supabase";
 
-export type RunEvent = { type: string; path?: string; ask?: AskPayload };
+// WS 이벤트 어휘(T1-P2 §4.4): artifact{path} / gate{gate} / session{event, ...}.
+export type RunEvent = { type: string; path?: string; gate?: GateEnvelope; event?: string };
 
 /** runId의 WS에 연결해 이벤트를 onEvent로 흘린다. 끊기면 지수 백오프 재연결.
  *  WS 실패 시 pollMs 간격 폴백(onPoll 호출)로 트리 갱신을 유도. */
