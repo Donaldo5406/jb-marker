@@ -1,7 +1,7 @@
 """GateEnvelope 표준 봉투 (spec §4.1) — wire 직렬화 + HarnessResult/HTTP 가산 도입.
 
-T1-P2 Task 1: 순수 가산 — 모든 하네스가 아직 gate=None이므로
-HTTP 응답의 "gate"는 항상 null이어야 한다.
+T1-P2 Task 1: 순수 가산 — passthrough 등 미전환 하네스는 gate=None.
+T1-P2 Task 2: brainstorming은 ask 대신 gate(kind="ask")를 채운다.
 """
 from fastapi.testclient import TestClient
 
@@ -48,3 +48,25 @@ def test_gateway_response_includes_gate_key(monkeypatch, tmp_path):
     body = r.json()
     assert "gate" in body
     assert body["gate"] is None
+
+
+def test_brainstorming_mock_turn_returns_ask_gate(monkeypatch, tmp_path):
+    """T1-P2 Task 2: 브레인 mock 1턴(demo provider는 첫 턴에 질문(a)을 보장)
+    → HTTP 응답 gate가 kind="ask" 봉투로 채워진다."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("JBM_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "true")
+    from app.server import create_app
+    c = TestClient(create_app())
+    rid = c.post("/runs", json={"title": "g"}).json()["run_id"]
+    r = c.post("/gateway/run", json={
+        "run_id": rid, "studio": "brainstorming",
+        "prompt": "정기예금 캠페인 기획하자", "provider": "anthropic",
+        "is_marker": True, "mock": True,
+    })
+    assert r.status_code == 200
+    gate = r.json()["gate"]
+    assert gate is not None
+    assert gate["kind"] == "ask"
+    assert gate["actions"] == ["answer"]
+    assert "trigger" in gate
