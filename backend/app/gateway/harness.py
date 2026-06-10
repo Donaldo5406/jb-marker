@@ -26,13 +26,6 @@ class HarnessRequest:
 
 
 @dataclass
-class AskPayload:
-    trigger: str          # "a" | "b" | "c"
-    question: str
-    options: list[str]
-
-
-@dataclass
 class GateEnvelope:
     """HITL 게이트 표준 봉투 (spec §4.1) — 스튜디오 3종 신호의 단일 wire 형식.
 
@@ -71,7 +64,6 @@ class HarnessResult:
     text: str
     output_path: str
     meta: dict
-    ask: AskPayload | None = None
     gate: "GateEnvelope | None" = None
     events: list[dict] = field(default_factory=list)
 

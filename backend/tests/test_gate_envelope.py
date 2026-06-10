@@ -61,7 +61,7 @@ def test_gateway_response_includes_gate_key(monkeypatch, tmp_path):
     })
     assert r.status_code == 200
     body = r.json()
-    assert "gate" in body
+    assert set(body) == {"output_path", "text", "gate", "meta"}
     assert body["gate"] is None
 
 
