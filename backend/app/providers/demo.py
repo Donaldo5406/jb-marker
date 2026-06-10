@@ -11,11 +11,14 @@ findings/recommendations를 생성한다. 위반 카피가 들어오면 위반�
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from ..core.severity import EXAGGERATION_TOKENS
 from . import demo_fixtures as F
 from .base import Message, Provider, ProviderResponse
+
+logger = logging.getLogger(__name__)
 
 # JB 정기예금 캠페인 마스터 금리(grounding 진실값). 이와 다른 금리 표기는 허위표시 위반.
 _CORRECT_RATE = "3.5%"
@@ -152,7 +155,7 @@ def _section_after(system: str, marker: str) -> str:
     return (system[i + len(marker):]).strip() if i >= 0 else ""
 
 
-def _stage_a_brainstorm(messages, system: str):
+def _stage_a_brainstorm(messages):
     """Stage A — 리서치+질문으로 점진 구체화(턴 기반). bypass 패스트패스는 제거됨.
 
     Returns: (response_text, citations). 1턴에 리서치 인용을 동반(파일 트리에 research 산출).
@@ -269,7 +272,7 @@ class DemoProvider(Provider):
         key = (m.get("studio"), m.get("step"))
         s = system or ""
         if key == ("brainstorming", "stage_a"):   # Stage A — 리서치+멀티턴
-            text, citations = _stage_a_brainstorm(messages, s)
+            text, citations = _stage_a_brainstorm(messages)
             return ProviderResponse(text=text, model="demo", citations=citations)
         if key == ("brainstorming", "stage_b"):   # Stage B — 1차 누락→보충 완성
             return ProviderResponse(text=_stage_b_brainstorm(s), model="demo")
@@ -287,6 +290,7 @@ class DemoProvider(Provider):
         if key == ("review", "R3"):               # 통합 — 콘텐츠 기반 reconcile
             return ProviderResponse(text=_reconcile_json(messages),
                                     model="demo", raw=None)
+        logger.debug("demo: unrouted meta %s — 디폴트 응답(빈 reply)", key)
         return ProviderResponse(text=json.dumps({"reply": "", "ready": False},
                                                 ensure_ascii=False),
                                 model="demo", raw=None)
