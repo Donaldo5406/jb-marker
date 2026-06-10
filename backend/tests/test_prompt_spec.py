@@ -22,3 +22,12 @@ def test_meta_carries_studio_and_step():
     spec = PromptSpec(persona="P", studio="review", step="R2")
     assert spec.meta == {"studio": "review", "step": "R2"}
     assert PromptSpec(persona="P").meta == {"studio": "", "step": ""}
+
+
+def test_advisor_assemble_equals_system_prompt():
+    """T6 — advisor PromptSpec 조립 결과가 종전 SYSTEM_PROMPT와 문자 단위 동일."""
+    from app.deploy.advisor.prompt import SYSTEM_PROMPT
+
+    spec = PromptSpec(persona=SYSTEM_PROMPT, studio="deploy", step="advisor_chat")
+    assert spec.assemble() == SYSTEM_PROMPT
+    assert spec.meta == {"studio": "deploy", "step": "advisor_chat"}

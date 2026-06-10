@@ -12,6 +12,7 @@ from typing import Any
 from app.deploy.advisor.tools import ALLOWED, ToolNotAllowed, TOOL_SCHEMAS, assert_allowed
 from app.deploy.advisor.prompt import SYSTEM_PROMPT
 from app.deploy.advisor.grounding import check as grounding_check
+from ...gateway.prompt import PromptSpec
 
 
 class DeployAdvisor:
@@ -59,8 +60,13 @@ class DeployAdvisor:
         if "error" in ctx:
             return {"status": "error", "message": ctx["error"]}
 
+        # PromptSpec 구조화 — assemble()은 SYSTEM_PROMPT 그대로(조립 결과 무변경).
+        # meta(studio/step)는 provider.chat이 meta 미지원이라 현재 미전달 —
+        # advisor mock은 scripted 경로(DemoProvider 라우팅 무관). 후속에서 chat 인터페이스
+        # 확장 시 pspec.meta를 전달할 것.
+        pspec = PromptSpec(persona=SYSTEM_PROMPT, studio="deploy", step="advisor_chat")
         response = self.provider.chat(
-            system=SYSTEM_PROMPT,
+            system=pspec.assemble(),
             messages=[{"role": "user", "content": user_message}],
             tools=TOOL_SCHEMAS,
         )
