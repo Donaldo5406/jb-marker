@@ -1,7 +1,7 @@
 """AnthropicAdvisorProvider — 실 Claude messages-with-tools 호출.
 
 - ctx(copy.meta.json) + channel을 system prompt에 embed → LLM이 read_review 없이도 컨텍스트 보유
-- TOOL_SCHEMAS 그대로 Anthropic API에 전달, tool_use 블록을 AdvisorHarness가 기대하는
+- TOOL_SCHEMAS 그대로 Anthropic API에 전달, tool_use 블록을 DeployAdvisor가 기대하는
   `{"text": ..., "tool_calls": [{"name", "input"}]}` 형태로 변환
 - 키 없을 때는 server.py 라우트가 _ScriptedAdvisorProvider로 fallback
 """
@@ -38,7 +38,7 @@ def _build_system(ctx: dict, channel: str) -> str:
 
 
 class AnthropicAdvisorProvider:
-    """Anthropic messages-with-tools wrapper — AdvisorHarness 계약(.chat) 충족."""
+    """Anthropic messages-with-tools wrapper — DeployAdvisor 계약(.chat) 충족."""
 
     def __init__(self, *, api_key: str, model: str, ctx: dict, channel: str) -> None:
         self._api_key = api_key

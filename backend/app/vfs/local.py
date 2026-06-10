@@ -117,12 +117,3 @@ class LocalVfsStore(VfsStore):
 
     def delete(self, path) -> None:
         self._nodes.pop(path, None)
-
-    # --- 편의 메서드 (M6 deploy 라우트·AdvisorHarness용) ---
-    def put_text(self, path: str, content: str, *, source: str | None = None,
-                 mime: str | None = None) -> VfsNode:
-        return self.put(path, content, source=source or "marker", mime=mime)
-
-    def get_text(self, path: str) -> str | None:
-        n = self.get(path)
-        return n.content_text if n else None

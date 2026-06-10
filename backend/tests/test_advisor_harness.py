@@ -1,10 +1,10 @@
-"""AdvisorHarness — 도구 화이트리스트 + grounding 통합."""
+"""DeployAdvisor — 도구 화이트리스트 + grounding 통합."""
 import json
 from dataclasses import dataclass
 
 import pytest
 
-from app.gateway.harness_advisor import AdvisorHarness
+from app.deploy.advisor.chat import DeployAdvisor
 
 
 class FakeVfs:
@@ -45,7 +45,7 @@ def test_write_d2_copy_grounding_ok():
         "text": "적응 완료",
         "tool_calls": [{"name": "write_d2_copy", "input": {"package_id": "email_ko", "adapted_text": "수익률 5% 광고 수신거부 안내"}}],
     }])
-    h = AdvisorHarness(provider=provider, vfs_store=vfs, run_id="r1")
+    h = DeployAdvisor(provider=provider, vfs_store=vfs, run_id="r1")
     res = h.handle_turn(package_id="email_ko", user_message="80자로 압축해줘")
     assert res["tool_results"][0]["status"] == "ok"
     saved = json.loads(vfs.get_text("/r1/deploy/packages/email_ko/copy.meta.json"))
@@ -59,7 +59,7 @@ def test_write_d2_copy_grounding_fail_records_failures():
         "text": "적응 완료",
         "tool_calls": [{"name": "write_d2_copy", "input": {"package_id": "email_ko", "adapted_text": "수익률 9% 무조건"}}],
     }])
-    h = AdvisorHarness(provider=provider, vfs_store=vfs, run_id="r1")
+    h = DeployAdvisor(provider=provider, vfs_store=vfs, run_id="r1")
     res = h.handle_turn(package_id="email_ko", user_message="과장해줘")
     assert res["tool_results"][0]["status"] == "fail"
     assert any("number_mismatch" in f for f in res["tool_results"][0]["failures"])
@@ -74,7 +74,7 @@ def test_disallowed_tool_blocked_and_recorded():
         "text": "발송 시도",
         "tool_calls": [{"name": "dispatch", "input": {"channel": "email"}}],
     }])
-    h = AdvisorHarness(provider=provider, vfs_store=vfs, run_id="r1")
+    h = DeployAdvisor(provider=provider, vfs_store=vfs, run_id="r1")
     res = h.handle_turn(package_id="email_ko", user_message="발송해줘")
     assert res["tool_results"][0]["status"] == "blocked"
     transcript = vfs.get_text("/r1/deploy/advisor/transcripts/email_ko.jsonl")
@@ -88,7 +88,7 @@ def test_read_review_returns_context():
         "text": "확인",
         "tool_calls": [{"name": "read_review", "input": {"package_id": "email_ko"}}],
     }])
-    h = AdvisorHarness(provider=provider, vfs_store=vfs, run_id="r1")
+    h = DeployAdvisor(provider=provider, vfs_store=vfs, run_id="r1")
     res = h.handle_turn(package_id="email_ko", user_message="원본 보여줘")
     out = res["tool_results"][0]["output"]
     assert out["original_text"] == "수익률 5% 광고 수신거부"

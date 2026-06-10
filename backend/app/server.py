@@ -16,6 +16,7 @@ from .auth import make_user_id_dep
 from .config import load_settings
 from .deploy.adapters.base import Package, ScheduleSpec
 from .deploy.adapters.registry import get_adapter
+from .deploy.advisor.chat import DeployAdvisor
 from .deploy.eligibility import build_eligibility
 from .deploy.ledger import load_ledger
 from .deploy.packager import package_channel
@@ -23,7 +24,6 @@ from .deploy.providers import get_provider as get_deploy_provider
 from .deploy.rules_engine import load_policies
 from .gateway.gateway import MarkerGateway
 from .gateway.harness import HarnessRequest, PassthroughHarness
-from .gateway.harness_advisor import AdvisorHarness
 from .gateway.harness_brainstorming import BrainstormingHarness
 from .gateway.harness_design import DesignHarness
 from .history.gallery import build_gallery
@@ -440,7 +440,7 @@ def create_app() -> FastAPI:
         return {"package_id": package_id, "status": pkg["status"], "reason": pkg.get("reason")}
 
     class _ScriptedAdvisorProvider:
-        """AdvisorHarness 계약(.chat) 충족용 데모 advisor — ctx·channel 주입.
+        """DeployAdvisor 계약(.chat) 충족용 데모 advisor — ctx·channel 주입.
 
         키워드(압축·짧·줄여·shorten·shorter·compress) 감지 시 채널 한도에 맞게
         원본을 공백 단위 truncate(부분집합 보장) → write_d2_copy tool_call.
@@ -507,7 +507,7 @@ def create_app() -> FastAPI:
         ctx = json.loads(ctx_raw) if ctx_raw else {}
         channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
         provider = _make_advisor_provider(ctx, channel, mock=body.mock)
-        h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
+        h = DeployAdvisor(provider=provider, vfs_store=store, run_id=run_id)
         result = h.handle_turn(package_id=body.package_id, user_message=body.message)
         # advisor live LLM이 usage 노출 시 영속(scripted는 _usage 없음 → skip).
         if "_usage" in result:

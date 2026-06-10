@@ -43,3 +43,13 @@ class VfsStore(ABC):
 
     @abstractmethod
     def delete(self, path: str) -> None: ...
+
+    # --- 텍스트 편의 (deploy 라우트·DeployAdvisor·usage 로그의 정식 표면) ---
+    # Local/Supabase가 문자 그대로 동일하게 복제하던 구현을 ABC 구체 메서드로 승격 (T1-P1).
+    def put_text(self, path: str, content: str, *, source: str | None = None,
+                 mime: str | None = None) -> VfsNode:
+        return self.put(path, content, source=source or "marker", mime=mime)
+
+    def get_text(self, path: str) -> str | None:
+        n = self.get(path)
+        return n.content_text if n else None

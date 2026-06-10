@@ -174,11 +174,3 @@ class SupabaseVfsStore(VfsStore):
         signed = self._sb.storage.from_(self._bucket).create_signed_url(
             res.data[0]["blob_path"], expires_in)
         return signed.get("signedURL") or signed.get("signed_url")
-
-    # --- 편의 메서드 (deploy 라우트·AdvisorHarness) ---
-    def put_text(self, path: str, content: str, *, source=None, mime=None) -> VfsNode:
-        return self.put(path, content, source=source or "marker", mime=mime)
-
-    def get_text(self, path: str) -> str | None:
-        n = self.get(path)
-        return n.content_text if n else None
