@@ -3,11 +3,9 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from pydantic import BaseModel
 
 from . import entitlement
@@ -25,12 +23,14 @@ from .deploy.rules_engine import load_policies
 from .gateway.gateway import MarkerGateway
 from .gateway.harness import HarnessRequest
 from .gateway.registry import select_harness
-from .history.gallery import build_gallery
-from .history.preview import build_preview_html
 from .observability import usage as usage_log
 from .providers.wrappers import ModelBoundProvider, TrackedProvider
+from .routers import history as history_router
 from .routers import meta as meta_router
+from .routers import observability as observability_router
 from .routers import runs as runs_router
+from .routers import session as session_router
+from .routers import vfs as vfs_router
 from .routers.deps import require_owner_factory as _require_run_owner_factory
 from .session.liveness import Thresholds
 from .session.store import SessionStore
@@ -47,13 +47,6 @@ class GatewayRun(BaseModel):
     action: str | None = None
     bypass_map: dict | None = None
     mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
-
-
-class PutText(BaseModel):
-    content: str
-    mime: str | None = None
-    # "base64" → 백엔드가 디코드해 bytes로 저장 (PNG 등 바이너리 라운드트립용)
-    content_encoding: str | None = None
 
 
 # === M6 DeployStudio request bodies ===
@@ -77,11 +70,6 @@ class AdvisorChatBody(BaseModel):
 
 class DispatchBody(BaseModel):
     confirmed: bool = False
-
-
-def _node_dict(n) -> dict[str, Any]:
-    return {"path": n.path, "mime": n.mime, "source": n.source,
-            "content_text": n.content_text, "meta": n.meta}
 
 
 def create_app() -> FastAPI:
@@ -114,6 +102,10 @@ def create_app() -> FastAPI:
 
     app.include_router(meta_router.router)
     app.include_router(runs_router.router)
+    app.include_router(session_router.router)
+    app.include_router(vfs_router.router)
+    app.include_router(observability_router.router)
+    app.include_router(history_router.router)
 
     def _now_ms() -> int:
         return int(time.time() * 1000)
@@ -185,66 +177,6 @@ def create_app() -> FastAPI:
         return {"output_path": result.output_path, "text": result.text,
                 "gate": result.gate.to_dict() if result.gate else None,
                 "meta": result.meta}
-
-    @app.get("/runs/{run_id}/session/{studio}")
-    def session_heartbeat(run_id: str, studio: str,
-                          user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        return session_store.heartbeat(run_id, studio, _now_ms())
-
-    @app.post("/runs/{run_id}/session/{studio}/resume")
-    def session_resume(run_id: str, studio: str,
-                       user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        return session_store.resume(run_id, studio, _now_ms())
-
-    @app.post("/runs/{run_id}/session/{studio}/suspend")
-    def session_suspend(run_id: str, studio: str,
-                        user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        return session_store.suspend(run_id, studio, _now_ms())
-
-    @app.get("/runs/{run_id}/sessions")
-    def session_list(run_id: str,
-                     user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        return session_store.list(run_id, _now_ms())
-
-    @app.get("/vfs/{run_id}")
-    def vfs_list(run_id: str, prefix: str | None = None,
-                 user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        nodes = store.list(prefix or f"/{run_id}")
-        return {"nodes": [_node_dict(n) for n in nodes]}
-
-    @app.get("/vfs/{run_id}/{rest:path}")
-    def vfs_get(run_id: str, rest: str, user_id: str = Depends(user_id_dep)):
-        require_owner(run_id, user_id)
-        node = store.get(f"/{run_id}/{rest}")
-        if node is None:
-            raise HTTPException(404, "노드 없음")
-        if node.blob is not None or node.blob_path is not None:
-            # node.blob 은 store.get()이 이미 로드함(Local·Supabase 공통) — 재조회 불필요.
-            return Response(content=node.blob or b"", media_type=node.mime or "application/octet-stream")
-        return _node_dict(node)
-
-    @app.put("/vfs/{run_id}/{rest:path}")
-    def vfs_put(run_id: str, rest: str, body: PutText,
-                user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        mime = body.mime or ("application/json" if rest.endswith(".json") else "text/markdown")
-        # base64 인코딩 본문이면 bytes로 디코드해 저장 (PNG 등 바이너리 라운드트립).
-        # 미지정 시 기존 텍스트 경로 유지(하위호환).
-        if body.content_encoding == "base64":
-            import base64
-            try:
-                raw = base64.b64decode(body.content, validate=True)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"base64 decode failed: {e}")
-            node = store.put(f"/{run_id}/{rest}", raw, source="frontend", mime=mime)
-        else:
-            node = store.put(f"/{run_id}/{rest}", body.content, source="user", mime=mime)
-        return _node_dict(node)
 
     # === M6 DeployStudio routes ===
     @app.post("/runs/{run_id}/deploy/setup")
@@ -382,23 +314,6 @@ def create_app() -> FastAPI:
         result.pop("_usage", None)
         result.pop("_model", None)
         return result
-
-    @app.get("/runs/{run_id}/usage")
-    def get_usage(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
-        require_owner(run_id, user_id)
-        return usage_log.summarize(store, run_id=run_id)
-
-    @app.get("/runs/{run_id}/gallery")
-    def get_gallery(run_id: str, user_id: str = Depends(user_id_dep)) -> dict:
-        man = require_owner(run_id, user_id)
-        nodes = store.list(f"/{run_id}")
-        return build_gallery(man, nodes)
-
-    @app.get("/runs/{run_id}/preview")
-    def get_preview(run_id: str, user_id: str = Depends(user_id_dep)):
-        require_owner(run_id, user_id)
-        markup = build_preview_html(run_id, store)
-        return Response(content=markup, media_type="text/html")
 
     @app.post("/runs/{run_id}/deploy/dispatch")
     def deploy_dispatch(run_id: str, body: DispatchBody,
