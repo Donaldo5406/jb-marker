@@ -276,6 +276,7 @@ def test_summarize_calls_provider_with_prior_and_old():
     assert "이전요약X" in sent       # prior 포함
     assert "30대 적금" in sent       # old 본문 포함
     assert sp.calls[0]["system"] is not None
+    assert sp.calls[0]["meta"] == {"studio": "brainstorming", "step": "compact"}  # T7 명시 신호
 
 
 def _long_msgs(n):

@@ -1,9 +1,10 @@
-"""DemoProvider — 시연용 Mock 파이프라인. system 마커로 단계를 감지해 결정적 fixture 반환.
+"""DemoProvider — 시연용 Mock 파이프라인. meta{studio,step} 명시 신호로 단계를 라우팅해 결정적 fixture 반환.
 
 FakeProvider(echo)와 달리 각 하네스가 기대하는 JSON을 돌려줘 BrainStorming→Deploy 전 구간을
-끝까지 완주시킨다. 단계 감지는 system 프롬프트의 안정적 마커에 의존(프롬프트 변경 시 통합 테스트가 경보).
+끝까지 완주시킨다. 단계 라우팅은 하네스가 주입하는 meta(PromptSpec.meta)에 의존 —
+system 프롬프트 문구와 분리되어 프롬프트 수정이 mock을 깨뜨리지 않는다(spec §5.2).
 
-검토(R1 법률 / R3 reconciler)는 **콘텐츠 기반**: 들어온 scene_copy/verdicts를 검사해 동적으로
+검토(R1 법률 / R3 통합)는 **콘텐츠 기반**: 들어온 scene_copy/verdicts를 검사해 동적으로
 findings/recommendations를 생성한다. 위반 카피가 들어오면 위반을 적발하고, 교정된 카피면 사라진다
 (요청 간 상태 없는 stateless DemoProvider에서 위반→교정 루프를 성립시키는 핵심, spec §0).
 """
@@ -14,7 +15,7 @@ import re
 
 from ..core.severity import EXAGGERATION_TOKENS
 from . import demo_fixtures as F
-from .base import Provider, ProviderResponse
+from .base import Message, Provider, ProviderResponse
 
 # JB 정기예금 캠페인 마스터 금리(grounding 진실값). 이와 다른 금리 표기는 허위표시 위반.
 _CORRECT_RATE = "3.5%"
@@ -252,42 +253,43 @@ def _reconcile_json(messages) -> str:
     return json.dumps(reconcile(payload.get("verdicts") or []), ensure_ascii=False)
 
 
-def _detect(system: str, messages=None) -> str:
-    """system 마커로 단계 판별 → 해당 fixture/콘텐츠. 미매칭은 안전 기본.
-
-    Stage A/B(브레인스토밍)는 인용/턴 인식이 필요해 complete()가 직접 라우팅한다.
-    """
-    s = system or ""
-    if "[S1 Rough]" in s:
-        return _layout_json()
-    if "[S2b" in s:
-        return _copy_json(messages)
-    if "[자기-크리틱]" in s:
-        return _critic_json()
-    if "reconciler" in s:                       # Review R3 (PERSONA_C)
-        return _reconcile_json(messages)
-    if "동등성" in s:                            # Review R2 (PERSONA_B) — 안전망이 고지 누락 처리
-        return _empty_findings()
-    if "표시광고법" in s or "법률 검토관" in s:   # Review R1 (PERSONA_A 법률) — 콘텐츠 기반
-        return _legal_findings_json(messages)
-    if "검토관" in s or "법령" in s or "법률" in s:  # 기타 검토 페르소나 폴백
-        return _empty_findings()
-    return json.dumps({"reply": "", "ready": False}, ensure_ascii=False)
-
-
 class DemoProvider(Provider):
     name = "demo"
 
     def complete(self, messages: list[Message], *, model: str | None = None,
                  system: str | None = None, tools: list[dict] | None = None,
                  meta: dict | None = None, **kwargs) -> ProviderResponse:
+        """meta{studio,step} 명시 신호로 단계 라우팅(spec §5.2) — system 문구 비의존.
+
+        system은 단계 감지에 쓰지 않고, stage_b가 '[현재 plan.md]' 컨텍스트 블록의
+        **데이터**를 읽는 용도로만 사용(D6 — 하네스가 system 조립을 보존).
+        meta 부재/미지 step(compact 포함)은 안전 기본(빈 reply) — Passthrough 경로 보존.
+        """
+        m = meta or {}
+        key = (m.get("studio"), m.get("step"))
         s = system or ""
-        if "[Stage A]" in s:                      # 브레인스토밍 Stage A — 리서치+멀티턴
+        if key == ("brainstorming", "stage_a"):   # Stage A — 리서치+멀티턴
             text, citations = _stage_a_brainstorm(messages, s)
             return ProviderResponse(text=text, model="demo", citations=citations)
-        if "[Stage B]" in s:                      # 브레인스토밍 Stage B — 1차 누락→보충 완성
+        if key == ("brainstorming", "stage_b"):   # Stage B — 1차 누락→보충 완성
             return ProviderResponse(text=_stage_b_brainstorm(s), model="demo")
-        return ProviderResponse(text=_detect(s, messages), model="demo", raw=None)
+        if key == ("design", "S1"):               # 러프 레이아웃
+            return ProviderResponse(text=_layout_json(), model="demo", raw=None)
+        if key == ("design", "S2b"):              # 카피(위반→교정은 콘텐츠 기반)
+            return ProviderResponse(text=_copy_json(messages), model="demo", raw=None)
+        if key == ("design", "critic"):           # 자기 평가 scores
+            return ProviderResponse(text=_critic_json(), model="demo", raw=None)
+        if key == ("review", "R1"):               # 법률 — 콘텐츠 기반 적발
+            return ProviderResponse(text=_legal_findings_json(messages),
+                                    model="demo", raw=None)
+        if key == ("review", "R2"):               # 다국어 — 안전망이 고지 누락 처리
+            return ProviderResponse(text=_empty_findings(), model="demo", raw=None)
+        if key == ("review", "R3"):               # 통합 — 콘텐츠 기반 reconcile
+            return ProviderResponse(text=_reconcile_json(messages),
+                                    model="demo", raw=None)
+        return ProviderResponse(text=json.dumps({"reply": "", "ready": False},
+                                                ensure_ascii=False),
+                                model="demo", raw=None)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
         # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.
