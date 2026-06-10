@@ -39,7 +39,6 @@ def apply_whitelist(findings: list[dict], whitelist: dict) -> tuple[list[dict], 
 
 import json as _json
 
-from ..gateway.prompt import PromptSpec
 from ..providers.base import Message, Provider
 from .parsing import parse_json_block as _parse_json
 
@@ -76,17 +75,14 @@ def search_and_filter(provider: Provider, scene_copy: dict, metadata_md: str,
     """R1 호출 1: 텍스트+서칭 → 화이트리스트 필터.
 
     meta: 호출자(하네스)가 만든 명시 신호 {studio, step} — provider로 패스스루.
-          legal_search는 자체 meta를 만들지 않는다(함수 책임 분리).
+          legal_search는 자체 meta·PromptSpec을 만들지 않는다(함수 책임 분리).
     Returns: (kept_findings, dropped_count, meta_flags)
     meta_flags ∈ {live_unavailable: bool, parse_failed: bool}
     """
     system, messages, tools = build_legal_messages(scene_copy, metadata_md, whitelist)
-    # PromptSpec 래핑 — 조립 결과는 PERSONA_A 그대로(D6 문자열 무변경).
-    pspec = PromptSpec(persona=system, studio="review", step="R1")
     flags = {"live_unavailable": False, "parse_failed": False}
     try:
-        resp = provider.complete(messages, system=pspec.assemble(),
-                                 tools=tools, meta=meta)
+        resp = provider.complete(messages, system=system, tools=tools, meta=meta)
     except Exception:
         return [], 0, {"live_unavailable": True, "parse_failed": False}
     data = _parse_json(resp.text)
