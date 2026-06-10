@@ -278,7 +278,7 @@ def create_app() -> FastAPI:
         session_store.touch(body.run_id, body.studio, now, kind=kind)
         if reactivated:
             result.meta["session_event"] = "restored"
-            await _publish(body.run_id, {"kind": "restored",
+            await _publish(body.run_id, {"type": "session", "event": "restored",
                                          "studio": body.studio, "run_id": body.run_id})
         for ev in result.events:
             await _publish(body.run_id, ev)
@@ -517,6 +517,9 @@ def create_app() -> FastAPI:
                 kind="text", usage=result["_usage"],
                 meta={"package_id": body.package_id},
             )
+        # 내부 키는 영속(record_usage) 후 HTTP 응답에서 제거 — 명세 표면 위생 (spec §8.2).
+        result.pop("_usage", None)
+        result.pop("_model", None)
         return result
 
     @app.get("/runs/{run_id}/usage")
