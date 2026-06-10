@@ -35,3 +35,20 @@ def test_review_marker_lazy_import():
 def test_non_marker_falls_back_to_passthrough():
     assert isinstance(select_harness("design", False, media_provider_factory=_factory), PassthroughHarness)
     assert isinstance(select_harness("unknown", True, media_provider_factory=_factory), PassthroughHarness)
+
+
+def test_factory_called_only_for_media_harnesses():
+    """media_provider_factory는 design/review에서만 호출 — eager 생성 금지 계약."""
+    calls = []
+
+    def counting_factory():
+        calls.append(1)
+        return _FakeMedia()
+
+    select_harness("brainstorming", True, media_provider_factory=counting_factory)
+    select_harness("design", False, media_provider_factory=counting_factory)
+    assert calls == []
+    select_harness("design", True, media_provider_factory=counting_factory)
+    assert len(calls) == 1
+    select_harness("review", True, media_provider_factory=counting_factory)
+    assert len(calls) == 2
