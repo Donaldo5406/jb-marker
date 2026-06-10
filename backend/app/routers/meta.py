@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from .. import entitlement
+from ..schemas import EntitlementOut, ErrorOut, HealthOut
 from .deps import get_user_id
 
 router = APIRouter(tags=["meta"])
@@ -14,17 +15,21 @@ class EntitlementPut(BaseModel):
     marker: bool
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthOut, summary="헬스 체크")
 def health() -> dict:
     return {"status": "ok"}
 
 
-@router.get("/entitlement")
+@router.get("/entitlement", response_model=EntitlementOut,
+            summary="현재 사용자의 Marker 권한 조회",
+            responses={401: {"model": ErrorOut}})
 def get_entitlement(user_id: str = Depends(get_user_id)) -> dict:
     return {"marker": entitlement.is_entitled(user_id)}
 
 
-@router.put("/entitlement")
+@router.put("/entitlement", response_model=EntitlementOut,
+            summary="Marker 권한 토글(dev pass 부여/해제)",
+            responses={401: {"model": ErrorOut}})
 def put_entitlement(body: EntitlementPut, user_id: str = Depends(get_user_id)) -> dict:
     if body.marker:
         entitlement.set_dev_pass(user_id)
