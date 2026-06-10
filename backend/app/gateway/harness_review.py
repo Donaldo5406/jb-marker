@@ -12,10 +12,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import yaml
-
 from ..core.lang import normalize_languages
-from ..core.legal_search import _parse_json, apply_whitelist, load_whitelist, search_and_filter
+from ..core.legal_search import apply_whitelist, load_whitelist, search_and_filter
+from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block as _parse_json
 from ..core.severity import (  # T7: import-only, 사용은 T11/T14
     DISCLOSURE_I18N,
     EXAGGERATION_TOKENS,
@@ -57,26 +56,6 @@ PERSONA_C = (
     '"instruction":"...","priority":1,"related_verdict_ids":["..."]}, ...],'
     '"conflicts_resolved":[{"summary":"..."}, ...]}'
 )
-
-
-class _Empty:
-    content_text = "{}"
-
-
-def _empty():
-    return _Empty()
-
-
-def _frontmatter(md: str) -> dict:
-    md = (md or "").lstrip()
-    if not md.startswith("---"):
-        return {}
-    end = md.find("\n---", 3)
-    block = md[3:end] if end > 0 else md[3:]
-    try:
-        return yaml.safe_load(block) or {}
-    except Exception:
-        return {}
 
 
 class ReviewHarness(Harness):

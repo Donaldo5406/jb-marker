@@ -14,11 +14,10 @@ import json
 import os
 import re
 
-import yaml
-
 from ..core.fonts import looks_like_font_name
 from ..core.grounding import build_corpus, find_ungrounded
 from ..core.lang import normalize_languages
+from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, read_json_node
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
 from .harness import Harness, HarnessRequest, HarnessResult
@@ -41,26 +40,6 @@ PERSONA = (
     "브랜드 일관성·컴플라이언스 톤에 능하며, 텍스트는 절대 비주얼 픽셀에 굽지 않고 "
     "레이어로 분리합니다. 레이아웃은 구조화 JSON으로만 출력합니다."
 )
-
-
-class _Empty:
-    content_text = "{}"
-
-
-def _empty():
-    return _Empty()
-
-
-def _frontmatter(md: str) -> dict:
-    md = (md or "").lstrip()
-    if not md.startswith("---"):
-        return {}
-    end = md.find("\n---", 3)
-    block = md[3:end] if end > 0 else md[3:]
-    try:
-        return yaml.safe_load(block) or {}
-    except Exception:
-        return {}
 
 
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
@@ -232,16 +211,14 @@ class DesignHarness(Harness):
         """단계별 품질 판정. {'passed': bool, 'critic': dict|None}. spec §3.3/§3.4."""
         base = self._base(req.run_id)
         if step in CRITIC_STEPS:                 # S1/S3 — 7항목 시각 critic
-            spec = self._parse_json(
-                (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+            spec = read_json_node(store, f"{base}/rough/layout.spec.json")
             verdict = self._run_critic(req, provider, spec)
             return {"passed": bool(verdict["pass"]), "critic": verdict}
         if step == "S2b":                        # grounding — ungrounded 비어야 pass
             plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
             fm = _frontmatter(plan.content_text if plan else "")
             corpus = build_corpus(fm.get("factsheet") or {})
-            spec = self._parse_json(
-                (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+            spec = read_json_node(store, f"{base}/rough/layout.spec.json")
             bad = []
             for fields in (spec.get("copy") or {}).values():
                 for role in ("headline", "body", "cta"):
@@ -277,19 +254,8 @@ class DesignHarness(Harness):
         return out
 
     def _parse_json(self, text: str) -> dict:
-        text = (text or "").strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-        try:
-            return json.loads(text)
-        except Exception:
-            m = re.search(r"\{.*\}", text, re.S)
-            if not m:
-                return {}
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return {}   # 비-JSON 중괄호 조각(프롬프트 echo 등)은 무시
+        # 테스트 표면 유지 — 구현은 core.parsing 단일본.
+        return parse_json_block(text)
 
     def _s1_rough(self, req, provider, store, state) -> HarnessResult:
         base = self._base(req.run_id)
@@ -331,8 +297,7 @@ class DesignHarness(Harness):
 
     def _s2a_visual(self, req, provider, store, state) -> HarnessResult:
         base = self._base(req.run_id)
-        spec = self._parse_json(
-            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
         concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
         aspect = spec.get("aspect", "1:1")
         # M8: Nano Banana 실패(키 없음 등) → 보이는 그라데이션 placeholder 폴백(턴 전체 500 방지, spec §9).
@@ -377,8 +342,7 @@ class DesignHarness(Harness):
                           meta={"lang": lang, "role": role})
         # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 정제 카피를 병합
         # (slots/visual_concept/aspect 등 나머지는 보존).
-        spec = self._parse_json(
-            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
         spec.setdefault("copy", {})
         for lang, fields in copy.items():
             spec["copy"].setdefault(lang, {})
@@ -420,8 +384,7 @@ class DesignHarness(Harness):
                       "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
         # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합
         # (slots/visual_concept/aspect/기존 copy 등 나머지는 보존). _s2b_copy와 동일 idiom.
-        spec = self._parse_json(
-            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
         spec.setdefault("copy", {})
         for lang, text in notices.items():
             spec["copy"].setdefault(lang, {})
@@ -437,8 +400,7 @@ class DesignHarness(Harness):
 
     def _s3_final(self, req, provider, store, state) -> HarnessResult:
         base = self._base(req.run_id)
-        spec = self._parse_json(
-            (store.get(f"{base}/rough/layout.spec.json") or _empty()).content_text)
+        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
         copy = spec.get("copy", {})
         langs = state.get("languages", ["ko"])
         # M7: 자기-크리틱 실행(자문용·비차단). 게이트 의미론은 spec §13으로 유보.

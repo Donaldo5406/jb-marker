@@ -6,10 +6,10 @@ LLM 응답 프로토콜(JSON): {"reply": str, "document": str, "ask": {...}|null
 from __future__ import annotations
 
 import json
-import re
 
 from ..providers.base import Message
 from .harness import AskPayload, Harness, HarnessRequest, HarnessResult
+from ..core.parsing import parse_json_block as _parse_json
 
 # O4 compaction (spec: docs/specs/2026-06-02-messages-compaction-o4-design.md)
 COMPACT_INPUT_TOKENS = 100_000   # 직전 응답 usage.input_tokens 임계
@@ -47,24 +47,6 @@ _PROTOCOL = (
     '"ask": null 또는 {"trigger":"a|b|c","question":"...","options":["..."]}, '
     '"ready": true/false}'
 )
-
-
-def _parse_json(text: str) -> dict:
-    """LLM 출력에서 첫 JSON 객체를 견고하게 추출."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    try:
-        return json.loads(text)
-    except Exception:
-        # greedy: 최외곽 중괄호 구간을 잡음(단일 JSON 객체 출력 가정). 다객체 텍스트엔 부적합.
-        m = re.search(r"\{.*\}", text, re.S)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return {}
-        return {}
 
 
 def _to_ask(ask: dict | None) -> "AskPayload | None":
