@@ -514,6 +514,54 @@ def test_r3_persists_recommendations_and_report(tmp_path, make_scripted):
     assert state["step"] == "done"
 
 
+# ===== T1-P3 Task 5: PromptSpec 전환 — system 보존(D6) + meta 명시 신호 =====
+
+
+def test_r2_system_is_persona_b_and_meta_passed(tmp_path, make_scripted):
+    """T1-P3 D6: R2는 PERSONA_B를 그대로 system으로 전달(조립 없음) +
+    meta={"studio":"review","step":"R2"} 명시 신호 + model= 미전달."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko", "en"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    sp = make_scripted(complete_responses=[ProviderResponse(
+        text='{"findings":[]}', model="x")])
+    h.handle_turn(req, provider=sp, store=store)  # R2
+    call = sp.calls_complete[0]
+    assert call["system"] == PERSONA_B
+    assert call["kw"].get("meta") == {"studio": "review", "step": "R2"}
+    assert call["model"] is None  # model=provider.name 제거
+
+
+def test_r3_system_is_persona_c_and_meta_passed(tmp_path, make_scripted):
+    """T1-P3 D6: R3는 PERSONA_C를 그대로 system으로 전달 +
+    meta={"studio":"review","step":"R3"} 명시 신호 + model= 미전달."""
+    store = make_local_store(tmp_path)
+    store.create_run("r1", languages=["ko"])
+    store.put("/r1/brainstorming/plan.md", "---\nlanguages: [ko]\n---\n",
+              source="marker", mime="text/markdown")
+    state = {"step": "R3", "languages": ["ko"], "matrix": {},
+             "acknowledged": False, "live_unavailable": False,
+             "parse_failed": False, "vision_failed": False,
+             "step_failed": "", "vision_skipped": [],
+             "dropped_findings_count": 0, "r2_skipped": ""}
+    store.put("/r1/review/_state.json", json.dumps(state),
+              source="marker", mime="application/json")
+    sp = make_scripted(complete_responses=[ProviderResponse(
+        text='{"recommendations":[],"conflicts_resolved":[]}', model="x")])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=sp, store=store)  # R3
+    call = sp.calls_complete[0]
+    assert call["system"] == PERSONA_C
+    assert call["kw"].get("meta") == {"studio": "review", "step": "R3"}
+    assert call["model"] is None
+
+
 # ===== Task 14: 게이트 산정 → manifest.step_status =====
 
 
