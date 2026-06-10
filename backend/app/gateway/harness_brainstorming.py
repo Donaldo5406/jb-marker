@@ -8,7 +8,9 @@ from __future__ import annotations
 import json
 
 from ..providers.base import Message
+from .critic import CriticVerdict
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
+from .prompt import PromptSpec
 from .state import load_state, save_state
 from ..core.parsing import parse_json_block as _parse_json
 
@@ -49,6 +51,25 @@ _PROTOCOL = (
     '"ready": true/false}'
 )
 
+# Stage A 지시 블록 — PromptSpec.constraints 단일 원소(문자열은 인라인 시절과 동일, D6).
+STAGE_A_INSTR = (
+    "\n\n[Stage A] 먼저 사용자와 대화하며 캠페인 기획에 필요한 정보를 한 번에 하나씩 질문해 모읍니다. "
+    "정보가 충분해지기 전에는 document를 빈 문자열(\"\")로 두고 reply로만 대화하세요(이때 spec 파일은 생성되지 않습니다). "
+    "충분히 모이면 그때 document에 spec.md 전체를 작성하세요 — "
+    "goal/target_segments/key_messages/channels/languages/multinational/tone/factsheet/disclosures를 "
+    "YAML frontmatter로 담고, 작성을 마치면 ready=true로 표시합니다. "
+    "시장·트렌드·경쟁사 등 외부 사실이 필요하면 웹검색으로 직접 확인해 반영하고, 불확실하면 사용자에게 질문하세요."
+)
+
+# 요약자(컴팩션) 페르소나 — PromptSpec.persona(문자열은 인라인 시절과 동일, D6).
+COMPACT_PERSONA = (
+    "당신은 금융 마케팅 캠페인 기획 대화의 요약자입니다. "
+    "확정된 사실(goal·target_segments·key_messages·channels·languages·"
+    "multinational·tone·factsheet·disclosures)만 골라 최대한 짧게 요약합니다. "
+    "표·머리말·수식어·인사말 없이 'key: value' 한 줄씩, 확정 안 된 항목은 생략하세요. "
+    "이것은 후속 대화의 컨텍스트로 쓰일 압축 메모이므로 재진술·부연 없이 핵심만 남깁니다."
+)
+
 
 def _to_gate(ask: dict | None) -> "GateEnvelope | None":
     if not ask:
@@ -77,21 +98,24 @@ class BrainstormingHarness(Harness):
     def system_prompt(self) -> str:
         return PERSONA
 
-    def critic(self, plan_md: str) -> list[str]:
-        """⓪계약 검증: 누락된 REQUIRED_PLAN_FIELDS를 정렬해 반환.
+    def critic(self, plan_md: str) -> CriticVerdict:
+        """⓪계약 검증: plan.md frontmatter의 REQUIRED_PLAN_FIELDS 누락을 검사.
 
-        주의: 베이스 Harness.critic(draft)->str(텍스트 패스스루)을 의도적으로 재정의.
-        여기선 plan.md의 frontmatter 키를 검사해 '부족한 필드 목록'을 돌려준다.
+        CriticVerdict(spec §6) 반환 — issues=정렬된 누락 필드 목록, passed=누락 없음.
+        (T6에서 베이스 Harness.critic이 제거됨 — 이 critic 패밀리의 출력 봉투는
+        gateway/critic.py CriticVerdict로 표준화.)
         """
-        return sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
+        missing = sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
+        return CriticVerdict(passed=not missing, issues=missing)
 
-    def critic_spec(self, spec_md: str) -> list[str]:
-        """충분성 게이트: spec.md frontmatter에서 누락된 REQUIRED_SPEC_FIELDS를 정렬 반환.
+    def critic_spec(self, spec_md: str) -> CriticVerdict:
+        """충분성 게이트: spec.md frontmatter의 REQUIRED_SPEC_FIELDS 누락을 검사.
 
-        critic(plan)과 대칭. Stage A에서 ready라도 누락이 있으면 (c) 보충으로 유도해
-        '충분조건이 모두 모이지 않은 spec'이 확정(b)으로 넘어가는 것을 막는다.
+        critic(plan)과 대칭(CriticVerdict 반환). Stage A에서 ready라도 누락이 있으면
+        (c) 보충으로 유도해 '충분조건이 모두 모이지 않은 spec'이 확정(b)으로 넘어가는 것을 막는다.
         """
-        return sorted(REQUIRED_SPEC_FIELDS - _frontmatter_keys(spec_md))
+        missing = sorted(REQUIRED_SPEC_FIELDS - _frontmatter_keys(spec_md))
+        return CriticVerdict(passed=not missing, issues=missing)
 
     # --- 상태 I/O (stateless 재개의 단일 소스) ---
     def _base(self, run_id: str) -> str:
@@ -135,18 +159,15 @@ class BrainstormingHarness(Harness):
 
     def _summarize(self, provider, model: str, prior: str, old: list[dict]) -> str:
         """오래된 턴을 현재 턴 provider로 증분 요약. 캠페인 확정 사실 보존 우선."""
-        sys = ("당신은 금융 마케팅 캠페인 기획 대화의 요약자입니다. "
-               "확정된 사실(goal·target_segments·key_messages·channels·languages·"
-               "multinational·tone·factsheet·disclosures)만 골라 최대한 짧게 요약합니다. "
-               "표·머리말·수식어·인사말 없이 'key: value' 한 줄씩, 확정 안 된 항목은 생략하세요. "
-               "이것은 후속 대화의 컨텍스트로 쓰일 압축 메모이므로 재진술·부연 없이 핵심만 남깁니다.")
+        pspec = PromptSpec(persona=COMPACT_PERSONA,
+                           studio="brainstorming", step="compact")
         parts = []
         if prior:
             parts.append("[기존 요약]\n" + prior)
         convo = "\n".join(f"{m['role']}: {m.get('content', '')}" for m in old)
         parts.append("[추가 대화]\n" + convo)
         resp = provider.complete([Message("user", "\n\n".join(parts))],
-                                 model=model, system=sys)
+                                 system=pspec.assemble(), meta=pspec.meta)
         return (resp.text or "").strip()
 
     def _window_for_provider(self, msgs: list[dict], state: dict,
@@ -204,17 +225,15 @@ class BrainstormingHarness(Harness):
 
         spec_node = store.get(f"{base}/spec.md")
         cur = spec_node.content_text if spec_node else ""
-        sys = self.system_prompt() + (
-            "\n\n[Stage A] 먼저 사용자와 대화하며 캠페인 기획에 필요한 정보를 한 번에 하나씩 질문해 모읍니다. "
-            "정보가 충분해지기 전에는 document를 빈 문자열(\"\")로 두고 reply로만 대화하세요(이때 spec 파일은 생성되지 않습니다). "
-            "충분히 모이면 그때 document에 spec.md 전체를 작성하세요 — "
-            "goal/target_segments/key_messages/channels/languages/multinational/tone/factsheet/disclosures를 "
-            "YAML frontmatter로 담고, 작성을 마치면 ready=true로 표시합니다. "
-            "시장·트렌드·경쟁사 등 외부 사실이 필요하면 웹검색으로 직접 확인해 반영하고, 불확실하면 사용자에게 질문하세요." + _PROTOCOL +
-            f"\n\n[현재 spec.md]\n{cur}")
+        # 조립 순서(D6): persona → [Stage A] 지시 → _PROTOCOL → [현재 spec.md] — 인라인 시절과 동일.
+        pspec = PromptSpec(persona=self.system_prompt(),
+                           constraints=[STAGE_A_INSTR],
+                           output_schema=_PROTOCOL,
+                           references=[f"\n\n[현재 spec.md]\n{cur}"],
+                           studio="brainstorming", step="stage_a")
         # 웹서치 ON(Stage A): 모델 자율 검색(WEB_SEARCH_TOOL). citations는 _save_research로 영속.
         resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
-                                 model=req.provider, system=sys, tools=WEB_SEARCH_TOOL)
+                                 system=pspec.assemble(), tools=WEB_SEARCH_TOOL, meta=pspec.meta)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
         reply = (data.get("reply") or "").strip()
@@ -239,7 +258,7 @@ class BrainstormingHarness(Harness):
         # ready(+document) → 충분성 게이트. 누락 필드가 있으면 보충(c), 충족하면 확정(b).
         # bypass 경로는 제거됨 — 모든 spec은 충분성 검증 + 사람 confirm을 거친다.
         if ready and document and not ask:
-            missing = self.critic_spec(document)
+            missing = self.critic_spec(document).issues
             if missing:
                 ask = {"trigger": "c",
                        "question": f"기획(spec)에 다음 필수 항목이 빠졌습니다: {', '.join(missing)}. 보충할까요?",
@@ -292,12 +311,19 @@ class BrainstormingHarness(Harness):
         spec = store.get(f"{base}/spec.md")
         plan_node = store.get(f"{base}/plan.md")
         cur_plan = plan_node.content_text if plan_node else ""
-        sys = self.system_prompt() + (
-            "\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. plan.md의 YAML frontmatter에 반드시 "
-            f"다음 키를 포함하세요: {sorted(REQUIRED_PLAN_FIELDS)}. " + _PROTOCOL +
-            f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}\n\n[현재 plan.md]\n{cur_plan}")
+        # 조립 순서(D6): persona → [Stage B] 지시 → _PROTOCOL → [확정 spec.md] → [현재 plan.md] — 인라인 시절과 동일.
+        # 지시 블록은 sorted(REQUIRED_PLAN_FIELDS) 동적 결합이라 상수 추출 대신 함수 내 f-string 유지.
+        pspec = PromptSpec(
+            persona=self.system_prompt(),
+            constraints=[
+                "\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. plan.md의 YAML frontmatter에 반드시 "
+                f"다음 키를 포함하세요: {sorted(REQUIRED_PLAN_FIELDS)}. "],
+            output_schema=_PROTOCOL,
+            references=[f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}",
+                        f"\n\n[현재 plan.md]\n{cur_plan}"],
+            studio="brainstorming", step="stage_b")
         resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
-                                 model=req.provider, system=sys)
+                                 system=pspec.assemble(), meta=pspec.meta)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
         reply = (data.get("reply") or "").strip()
@@ -314,7 +340,7 @@ class BrainstormingHarness(Harness):
                      if not document else "계획 초안입니다. 확인해 주세요.")
 
         # 3) ⓪계약 검증
-        missing = self.critic(document)
+        missing = self.critic(document).issues
         if missing:
             ask = {"trigger": "c", "question": f"계획에 다음 필수 요소가 빠졌습니다: {', '.join(missing)}. 보충할까요?",
                    "options": ["보충하기", "수동 편집"]}

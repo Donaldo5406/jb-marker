@@ -14,7 +14,9 @@ class AnthropicProvider(Provider):
         self._api_key = api_key
         self._max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
 
-    def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
+    def complete(self, messages: list[Message], *, model: str | None = None,
+                 system: str | None = None, tools: list[dict] | None = None,
+                 meta: dict | None = None, **kwargs) -> ProviderResponse:
         from anthropic import Anthropic
         client = Anthropic(api_key=self._api_key)
         api_tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}] if tools else []

@@ -27,9 +27,16 @@ class Provider(ABC):
     name: str = "base"
 
     @abstractmethod
-    def complete(self, messages: list[Message], *, model: str,
+    def complete(self, messages: list[Message], *, model: str | None = None,
                  system: str | None = None,
-                 tools: list[dict] | None = None, **kwargs) -> ProviderResponse: ...
+                 tools: list[dict] | None = None,
+                 meta: dict | None = None, **kwargs) -> ProviderResponse:
+        """공통 completion 표면.
+
+        meta: 하네스 명시 신호 {studio, step} — DemoProvider만 소비(T7), 다른 구현체는 무시.
+        model: None이면 호출자가 모델 미지정 — 프로덕션은 _ModelBoundProvider가 주입.
+        """
+        ...
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
         """텍스트-free 비주얼 PNG 생성(이미지 액터). 미지원 provider는 NotImplementedError."""

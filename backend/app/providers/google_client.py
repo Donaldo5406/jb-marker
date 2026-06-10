@@ -17,7 +17,9 @@ class GoogleProvider(Provider):
         self._api_key = api_key
         self._image_model = image_model
 
-    def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
+    def complete(self, messages: list[Message], *, model: str | None = None,
+                 system: str | None = None, tools: list[dict] | None = None,
+                 meta: dict | None = None, **kwargs) -> ProviderResponse:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=self._api_key)

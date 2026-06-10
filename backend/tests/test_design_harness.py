@@ -114,7 +114,7 @@ def test_s1_writes_layout_spec_from_llm(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
 
     class SpecProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             doc = {"reply": "러프 완성", "layout_spec": {"aspect": "1:1", "grid": {"cols": 12},
                    "visual_concept": "블루 그라디언트", "slots": [{"role": "headline",
@@ -162,7 +162,7 @@ def test_s2b_writes_copy_and_flags_ungrounded(tmp_path):
           source="marker", mime="application/json")
     h = DesignHarness(image_provider=FakeProvider())
     class CopyProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             return ProviderResponse(text=json.dumps({"copy":{"ko":{
                 "headline":"연 9.9% 특별적금","body":"","cta":"가입"}}}), model=model)
@@ -371,7 +371,7 @@ def test_s2b_merges_copy_into_layout_spec_preserving_rest(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
 
     class CopyProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             return ProviderResponse(text=json.dumps({"copy": {"ko": {
                 "headline": "든든한 적금", "body": "", "cta": "가입"}}}), model=model)
@@ -398,7 +398,7 @@ def test_s3_runs_and_records_critic_without_blocking(tmp_path):
           source="marker", mime="application/json")
     h = DesignHarness(image_provider=FakeProvider())
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
-    assert res.meta.get("critic", {}).get("pass") in (True, False)
+    assert res.meta.get("critic", {}).get("passed") in (True, False)   # CriticVerdict 봉투
     md = s.get("/r1/design/metadata.md").content_text
     assert "크리틱" in md
     st = json.loads(s.get("/r1/design/_state.json").content_text)
@@ -558,7 +558,7 @@ def test_s1_enriches_font_px_from_bbox_when_llm_omits(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
 
     class BboxOnlyProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             doc = {"reply": "러프", "ready": True, "layout_spec": {"aspect": "1:1",
                    "bg_color": "#FFFFFF", "slots": [
@@ -599,3 +599,65 @@ def test_s2a_fallback_is_visible_placeholder_not_blank(tmp_path):
     assert png.blob[:8] == b"\x89PNG\r\n\x1a\n"
     assert res.meta.get("image_fallback") is True
     assert "GOOGLE_API_KEY" in res.text
+
+
+# --- T1-P3 T4: S1·S2b·critic 호출부 PromptSpec 전환 (D6 system 보존 + meta 신호) ---
+
+
+class _RecordingProvider(FakeProvider):
+    """complete 호출의 system/meta를 기록하고 FakeProvider 동작에 위임."""
+
+    def __init__(self):
+        self.calls = []
+
+    def complete(self, messages, *, model=None, system=None, tools=None, **kw):
+        self.calls.append({"system": system, "meta": kw.get("meta")})
+        return super().complete(messages, model=model, system=system,
+                                tools=tools, **kw)
+
+
+def test_s1_system_is_preserved_and_meta_passed(tmp_path):
+    # T1-P3 D6: PromptSpec 전환 후에도 system 구성·순서가 현행과 동일해야 하고,
+    # meta={"studio","step"} 명시 신호가 provider.complete로 전달돼야 한다.
+    import app.gateway.harness_design as hd
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    p = _RecordingProvider()
+    h.handle_turn(_req(), provider=p, store=s)            # S0→S1 생성(calls[0])
+    sysp = p.calls[0]["system"]
+    assert sysp.startswith(hd.PERSONA)                    # ① persona가 선두
+    i_instr = sysp.index("[S1 Rough]")                    # ② 블록 순서 보존
+    i_tok = sysp.index("[tokens]")
+    i_ref = sysp.index("[references]")
+    assert i_instr < i_tok < i_ref
+    assert p.calls[0]["meta"] == {"studio": "design", "step": "S1"}   # ③ 신호
+
+
+def test_s2b_system_is_preserved_and_meta_passed(tmp_path):
+    import app.gateway.harness_design as hd
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2b", "confirmed": {}, "bypass": {}, "languages": ["ko"],
+         "pending_ask": None}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({"copy": {"ko": {}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    p = _RecordingProvider()
+    h.handle_turn(_req(action="advance"), provider=p, store=s)   # S2b 생성(calls[0])
+    sysp = p.calls[0]["system"]
+    assert sysp.startswith(hd.PERSONA)
+    assert sysp.index("[S2b") < sysp.index("[factsheet]")
+    assert p.calls[0]["meta"] == {"studio": "design", "step": "S2b"}
+
+
+def test_critic_system_is_preserved_and_meta_passed(tmp_path):
+    import app.gateway.harness_design as hd
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    p = _RecordingProvider()
+    h.handle_turn(_req(), provider=p, store=s)   # S0→S1 게이트: calls[1]=critic
+    assert len(p.calls) == 2
+    sysp = p.calls[1]["system"]
+    assert sysp.startswith(hd.PERSONA)
+    assert "[자기-크리틱]" in sysp
+    assert p.calls[1]["meta"] == {"studio": "design", "step": "critic"}

@@ -116,7 +116,7 @@ def test_bypass_critic_fail_regenerates_once(tmp_path):
     calls = {"n": 0}
 
     class FailCritic(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             sysl = system or ""
             if "자기-크리틱" in sysl:                       # critic 호출
@@ -147,7 +147,7 @@ def test_bypass_s2b_grounding_triggers_regeneration(tmp_path):
     calls = {"n": 0}
 
     class UngroundedCopy(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             calls["n"] += 1
             return ProviderResponse(text=json.dumps(
@@ -170,7 +170,7 @@ def test_regenerate_at_gate_reruns_same_step(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
 
     class SpecProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             return ProviderResponse(text=json.dumps(
                 {"reply": "재생성", "layout_spec": {"visual_concept": "새 컨셉"}, "ready": True}),
@@ -210,11 +210,12 @@ def test_empty_poll_at_gate_does_not_regenerate(tmp_path):
 def test_gate_meta_critic_shape_and_no_premature_done(tmp_path):
     s = _store(tmp_path)
     h = DesignHarness(image_provider=FakeProvider())
-    # S0→S1 게이트: S1은 CRITIC_STEP → gate.critic에 판정 dict
+    # S0→S1 게이트: S1은 CRITIC_STEP → gate.critic에 CriticVerdict 봉투(spec §6)
     res = h.handle_turn(_req(), provider=FakeProvider(), store=s)
     assert res.gate.step == "S1"
     assert res.gate.critic is not None
-    assert "pass" in res.gate.critic
+    assert set(res.gate.critic) == {"passed", "issues", "scores"}
+    assert "avg" in res.gate.critic["scores"]
     # confirm S1 → S2a 게이트: S2a는 critic 단계 아님 → gate.critic None
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     assert res.gate.step == "S2a"

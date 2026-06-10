@@ -25,6 +25,7 @@ from ..core.severity import (  # T7: import-only, 사용은 T11/T14
 from ..core.visual_rules import evaluate_visual_compliance
 from ..providers.base import Message, Provider
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
+from .prompt import PromptSpec
 from .state import load_state, save_state
 
 
@@ -275,9 +276,10 @@ class ReviewHarness(Harness):
                     official_source_url=f.get("official_source_url"),
                     kind="visual")
 
-        # 호출 1: 텍스트+서칭
+        # 호출 1: 텍스트+서칭 — meta 명시 신호는 하네스가 만든다(legal_search는 패스스루)
         kept, dropped, meta_flags = search_and_filter(
-            provider, scene_copy, metadata_md, whitelist)
+            provider, scene_copy, metadata_md, whitelist,
+            meta={"studio": "review", "step": "R1"})
         if meta_flags.get("live_unavailable"):
             state["live_unavailable"] = True
         if meta_flags.get("parse_failed"):
@@ -406,8 +408,10 @@ class ReviewHarness(Harness):
             "required_disclosures": required_disclosures,
         }
         messages = [Message("user", json.dumps(user_payload, ensure_ascii=False))]
+        pspec = PromptSpec(persona=PERSONA_B, studio="review", step="R2")
         try:
-            resp = provider.complete(messages, model=provider.name, system=PERSONA_B)
+            resp = provider.complete(messages, system=pspec.assemble(),
+                                     meta=pspec.meta)
         except Exception:
             state["live_unavailable"] = True
             state["step"] = "R3"
@@ -491,8 +495,10 @@ class ReviewHarness(Harness):
         # LLM reconciler 호출
         user_payload = {"verdicts": verdicts}
         messages = [Message("user", json.dumps(user_payload, ensure_ascii=False))]
+        pspec = PromptSpec(persona=PERSONA_C, studio="review", step="R3")
         try:
-            resp = provider.complete(messages, model=provider.name, system=PERSONA_C)
+            resp = provider.complete(messages, system=pspec.assemble(),
+                                     meta=pspec.meta)
             data = _parse_json(resp.text)
         except Exception:
             state["step_failed"] = "R3"

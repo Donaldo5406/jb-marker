@@ -67,22 +67,23 @@ def test_placeholder_png_is_valid_png():
     assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 100
 
 
-def _complete(system: str):
+def _complete(meta: dict, system: str | None = None):
     from app.providers.demo import DemoProvider
     from app.providers.base import Message
-    return DemoProvider().complete([Message("user", "x")], model="demo", system=system)
+    return DemoProvider().complete([Message("user", "x")], model="demo",
+                                   system=system, meta=meta)
 
 
-def _complete_msgs(msgs, system: str):
+def _complete_msgs(msgs, meta: dict, system: str | None = None):
     from app.providers.base import Message
     from app.providers.demo import DemoProvider
     return DemoProvider().complete(
-        [Message(r, c) for r, c in msgs], model="demo", system=system)
+        [Message(r, c) for r, c in msgs], model="demo", system=system, meta=meta)
 
 
 def test_detect_stage_a_turn1_is_interactive_with_research():
     """T5: bypass 없는 1턴 → spec 미작성·질문(a)·리서치 인용 동반."""
-    resp = _complete("페르소나\n\n[Stage A] 대화로 정보 수집 ...")
+    resp = _complete({"studio": "brainstorming", "step": "stage_a"})
     r = json.loads(resp.text)
     assert r["ready"] is False and r["document"] == ""
     assert r["ask"]["trigger"] == "a"
@@ -94,13 +95,17 @@ def test_detect_stage_a_turn3_returns_full_spec():
     """T5: 충분한 대화(3턴) 후 전체 spec(ready)."""
     msgs = [("user", "정기예금 캠페인"), ("assistant", "타겟은?"),
             ("user", "2030"), ("assistant", "다국어?"), ("user", "영어 포함")]
-    r = json.loads(_complete_msgs(msgs, "페르소나\n\n[Stage A] ...").text)
+    r = json.loads(_complete_msgs(msgs, {"studio": "brainstorming",
+                                         "step": "stage_a"}).text)
     assert r["ready"] is True and "goal:" in r["document"]
 
 
 def test_detect_stage_b_first_draft_is_partial():
-    """T5: 현재 plan 비어있음(1차) → 누락 초안(disclosures/slots 빠짐, ready=false)."""
-    r = json.loads(_complete("페르소나\n\n[Stage B] ... [현재 plan.md]\n").text)
+    """T5: 현재 plan 비어있음(1차) → 누락 초안(disclosures/slots 빠짐, ready=false).
+
+    system은 '[현재 plan.md]' 컨텍스트 블록(데이터)만 전달 — 단계 마커 아님(T7)."""
+    r = json.loads(_complete({"studio": "brainstorming", "step": "stage_b"},
+                             system="페르소나\n\n... [현재 plan.md]\n").text)
     assert r["ready"] is False
     assert "disclosures:" not in r["document"] and "slots:" not in r["document"]
     assert "creative_direction:" in r["document"]
@@ -109,24 +114,25 @@ def test_detect_stage_b_first_draft_is_partial():
 def test_detect_stage_b_after_partial_completes():
     """T5: 현재 plan 존재(보충 단계) → 완성 plan(disclosures/slots 포함, ready)."""
     r = json.loads(_complete(
-        "페르소나\n\n[Stage B] ... [현재 plan.md]\n---\ncreative_direction: x\n---\n초안").text)
+        {"studio": "brainstorming", "step": "stage_b"},
+        system="페르소나\n\n... [현재 plan.md]\n---\ncreative_direction: x\n---\n초안").text)
     assert r["ready"] is True
     assert "disclosures:" in r["document"] and "slots:" in r["document"]
 
 
 def test_detect_s1_returns_layout_spec():
-    r = json.loads(_complete("페르소나\n\n[S1 Rough] layout_spec ...").text)
+    r = json.loads(_complete({"studio": "design", "step": "S1"}).text)
     assert "slots" in r["layout_spec"]
 
 
 def test_detect_s2b_returns_copy_4langs():
-    r = json.loads(_complete("페르소나\n\n[S2b 카피·타이포] ...").text)
+    r = json.loads(_complete({"studio": "design", "step": "S2b"}).text)
     assert set(r["copy"]) == {"ko", "en", "vi", "zh"}
 
 
 def test_detect_s2b_default_returns_violating_copy():
     """T7: 교정 신호 없는 1차 S2b → 위반 카피(과장 headline + 4.0% body) 반환."""
-    r = json.loads(_complete("페르소나\n\n[S2b 카피·타이포] ...").text)
+    r = json.loads(_complete({"studio": "design", "step": "S2b"}).text)
     assert "업계 최고" in r["copy"]["ko"]["headline"]      # 과장광고
     assert "4.0%" in r["copy"]["ko"]["body"]               # 금리 불일치
     # en/vi/zh는 clean(위반은 ko에 집중)
@@ -139,7 +145,7 @@ def test_detect_s2b_remediation_returns_clean_copy():
     from app.providers.demo import DemoProvider
     r = json.loads(DemoProvider().complete(
         [Message("user", "고지 문구를 보강하고 금리를 교정해줘")],
-        model="demo", system="페르소나\n\n[S2b 카피·타이포] ...").text)
+        model="demo", meta={"studio": "design", "step": "S2b"}).text)
     assert r["copy"] == F.COPY
 
 
@@ -154,12 +160,12 @@ def test_copy_violating_is_caught_by_legal_findings():
 
 
 def test_detect_critic_returns_passing_scores():
-    r = json.loads(_complete("페르소나\n\n[자기-크리틱] hierarchy/grid ...").text)
+    r = json.loads(_complete({"studio": "design", "step": "critic"}).text)
     assert set(r["scores"]) >= {"hierarchy", "brand"}
 
 
 def test_detect_review_b_returns_empty_findings():
-    r = json.loads(_complete("당신은 금융 마케팅 다국어 동등성 검토관입니다.").text)
+    r = json.loads(_complete({"studio": "review", "step": "R2"}).text)
     assert r["findings"] == []
 
 
@@ -211,18 +217,18 @@ def test_demo_reconcile_summarizes_verdicts_and_resolves_conflict():
 
 
 def test_demo_review_personas_route_correctly():
-    """demo.py:60 페르소나 충돌 해소 — R1(법률)/R2(동등성)/R3(reconciler) 분기."""
+    """검토 3단계 meta 분기 — R1(법률)/R2(다국어)/R3(통합). T7: 페르소나 문구 비의존."""
     from app.providers.demo import DemoProvider
     from app.providers.base import Message
 
-    def call(system, user_obj):
+    def call(step, user_obj):
         return json.loads(DemoProvider().complete(
             [Message("user", json.dumps(user_obj, ensure_ascii=False))],
-            model="demo", system=system).text)
+            model="demo", meta={"studio": "review", "step": step}).text)
 
-    r1 = call("당신은 전문 법률 검토관입니다. 표시광고법 ...", {"scene_copy": _VIOLATING})
+    r1 = call("R1", {"scene_copy": _VIOLATING})
     assert r1["findings"]                                 # R1 → 위반 적발
-    r2 = call("당신은 금융 마케팅 다국어 동등성 검토관입니다.", {"ko_copy": {}})
+    r2 = call("R2", {"ko_copy": {}})
     assert r2["findings"] == []                           # R2 → 안전망 위임(빈손)
-    r3 = call("당신은 ... 통합 reconciler입니다.", {"verdicts": []})
+    r3 = call("R3", {"verdicts": []})
     assert "recommendations" in r3                        # R3 → reconcile

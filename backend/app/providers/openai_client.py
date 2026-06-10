@@ -10,7 +10,9 @@ class OpenAIProvider(Provider):
     def __init__(self, api_key: str | None) -> None:
         self._api_key = api_key
 
-    def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
+    def complete(self, messages: list[Message], *, model: str | None = None,
+                 system: str | None = None, tools: list[dict] | None = None,
+                 meta: dict | None = None, **kwargs) -> ProviderResponse:
         from openai import OpenAI
         client = OpenAI(api_key=self._api_key)
         msgs = ([{"role": "system", "content": system}] if system else []) + \

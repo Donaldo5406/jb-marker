@@ -7,7 +7,9 @@ from .base import Message, Provider, ProviderResponse
 class FakeProvider(Provider):
     name = "fake"
 
-    def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
+    def complete(self, messages: list[Message], *, model: str | None = None,
+                 system: str | None = None, tools: list[dict] | None = None,
+                 meta: dict | None = None, **kwargs) -> ProviderResponse:
         last = messages[-1].content if messages else ""
         prefix = f"[{system}] " if system else ""
         citations = []

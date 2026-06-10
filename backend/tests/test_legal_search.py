@@ -77,6 +77,20 @@ def test_search_and_filter_parses_json_and_applies_whitelist(make_scripted):
     assert sp.calls_complete[0]["tools"] is not None
 
 
+def test_search_and_filter_passes_meta_to_provider(make_scripted):
+    """T1-P3 §5.3: 호출자(R1 하네스)가 전달한 meta가 provider.complete로
+    패스스루 + system은 PERSONA_A 그대로(D6) + model= 미전달."""
+    from app.core.legal_search import PERSONA_A
+    sp = make_scripted(complete_responses=[ProviderResponse(
+        text='{"findings":[]}', model="x")])
+    search_and_filter(sp, {"ko": {"headline": "x"}}, "콘티", load_whitelist(),
+                      meta={"studio": "review", "step": "R1"})
+    call = sp.calls_complete[0]
+    assert call["kw"].get("meta") == {"studio": "review", "step": "R1"}
+    assert call["system"] == PERSONA_A
+    assert call["model"] is None  # model=provider.name 제거
+
+
 def test_search_and_filter_graceful_on_exception(make_scripted):
     sp = make_scripted(complete_raises=RuntimeError("no key"))
     findings, dropped, meta = search_and_filter(

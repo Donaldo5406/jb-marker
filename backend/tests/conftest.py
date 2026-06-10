@@ -34,7 +34,7 @@ class ScriptedProvider(Provider):
         self.calls_complete: list[dict] = []
         self.calls_review_image: list[dict] = []
 
-    def complete(self, messages, *, model, system=None, tools=None, **kw):
+    def complete(self, messages, *, model=None, system=None, tools=None, **kw):
         self.calls_complete.append({"messages": messages, "model": model,
                                     "system": system, "tools": tools, "kw": kw})
         if self._complete_raises is not None:
