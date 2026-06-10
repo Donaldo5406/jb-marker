@@ -21,6 +21,7 @@ from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, 
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
+from .prompt import PromptSpec
 from .state import load_state, save_state
 
 STEPS = ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
@@ -40,6 +41,40 @@ PERSONA = (
     "당신은 금융 마케팅 시니어 아트디렉터입니다. 시각 위계·그리드·여백·CTA 배치·"
     "브랜드 일관성·컴플라이언스 톤에 능하며, 텍스트는 절대 비주얼 픽셀에 굽지 않고 "
     "레이어로 분리합니다. 레이아웃은 구조화 JSON으로만 출력합니다."
+)
+
+# [S1 Rough] 지시·JSON 예시 — PromptSpec.constraints 단일 원소(문자열은 인라인 시절과 동일, D6).
+S1_INSTR = (
+    "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
+    "slots에는 반드시 headline·body·cta·disclosure 4개 역할을 모두 포함하고, "
+    "각 슬롯은 role·bbox{x,y,w,h}·z·copy_key를 갖습니다. 텍스트는 copy[lang][key]에 둡니다. "
+    "시각 적법성 검토를 위해 각 텍스트 슬롯에 font_px(정수)와 color(#RRGGBB)를, "
+    "최상위에 bg_color(#RRGGBB, 배경 대표 톤)를 반드시 포함하세요. "
+    "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
+    "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
+    "tokens의 color_palette·typography·concept(있으면)를 색(color/bg_color)·폰트·톤에 "
+    "반영하고, aspect는 tokens.aspect를 따르세요. 정확한 출력 형식 예시:\n"
+    '{"reply":"...","ready":true,"layout_spec":{"aspect":"4:5","bg_color":"#F2EFE9",'
+    '"slots":['
+    '{"role":"headline","bbox":{"x":80,"y":120,"w":920,"h":180},"z":3,"copy_key":"headline","font_px":96,"color":"#0B1324"},'
+    '{"role":"body","bbox":{"x":80,"y":340,"w":900,"h":120},"z":2,"copy_key":"body","font_px":40,"color":"#1A2332"},'
+    '{"role":"cta","bbox":{"x":80,"y":980,"w":520,"h":96},"z":3,"copy_key":"cta","font_px":44,"color":"#FFFFFF"},'
+    '{"role":"disclosure","bbox":{"x":80,"y":1180,"w":920,"h":120},"z":1,"copy_key":"disclosure","font_px":30,"color":"#3A3A3A"}'
+    '],"copy":{"ko":{"headline":"...","body":"...","cta":"...","disclosure":"..."}}}}'
+    "\nJSON 한 개만 출력(코드펜스·주석 금지)."
+)
+
+# [S2b] 지시·JSON 형식 — 혼합 블록이라 constraints 1원소(문자열은 인라인 시절과 동일, D6).
+S2B_INSTR = (
+    "\n\n[S2b 카피·타이포] 헤드라인/바디/CTA를 언어별로 확정하세요. "
+    'factsheet 외 수치 금지. JSON: {"copy":{lang:{headline,body,cta}}}'
+)
+
+# [자기-크리틱] 지시 — 전체 정적이라 constraints 1원소(문자열은 인라인 시절과 동일, D6).
+CRITIC_INSTR = (
+    "\n\n[자기-크리틱] 아래 레이아웃을 hierarchy/grid/whitespace/cta/"
+    "compliance/copy_visual/brand 7항목으로 1~5 채점하세요. "
+    'JSON 한 개만: {"scores":{"hierarchy":n,...}}'
 )
 
 
@@ -260,28 +295,15 @@ class DesignHarness(Harness):
         base = self._base(req.run_id)
         tokens = store.get(f"{base}/design-system/tokens.json")
         refs = self._load_references()
-        sys = self.system_prompt() + (
-            "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
-            "slots에는 반드시 headline·body·cta·disclosure 4개 역할을 모두 포함하고, "
-            "각 슬롯은 role·bbox{x,y,w,h}·z·copy_key를 갖습니다. 텍스트는 copy[lang][key]에 둡니다. "
-            "시각 적법성 검토를 위해 각 텍스트 슬롯에 font_px(정수)와 color(#RRGGBB)를, "
-            "최상위에 bg_color(#RRGGBB, 배경 대표 톤)를 반드시 포함하세요. "
-            "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
-            "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
-            "tokens의 color_palette·typography·concept(있으면)를 색(color/bg_color)·폰트·톤에 "
-            "반영하고, aspect는 tokens.aspect를 따르세요. 정확한 출력 형식 예시:\n"
-            '{"reply":"...","ready":true,"layout_spec":{"aspect":"4:5","bg_color":"#F2EFE9",'
-            '"slots":['
-            '{"role":"headline","bbox":{"x":80,"y":120,"w":920,"h":180},"z":3,"copy_key":"headline","font_px":96,"color":"#0B1324"},'
-            '{"role":"body","bbox":{"x":80,"y":340,"w":900,"h":120},"z":2,"copy_key":"body","font_px":40,"color":"#1A2332"},'
-            '{"role":"cta","bbox":{"x":80,"y":980,"w":520,"h":96},"z":3,"copy_key":"cta","font_px":44,"color":"#FFFFFF"},'
-            '{"role":"disclosure","bbox":{"x":80,"y":1180,"w":920,"h":120},"z":1,"copy_key":"disclosure","font_px":30,"color":"#3A3A3A"}'
-            '],"copy":{"ko":{"headline":"...","body":"...","cta":"...","disclosure":"..."}}}}'
-            "\nJSON 한 개만 출력(코드펜스·주석 금지)."
-            f"\n[tokens]\n{tokens.content_text if tokens else '{}'}"
-            f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}")
+        # 조립 순서(D6): persona → [S1 Rough] 지시 → [tokens] → [references] — 인라인 시절과 동일.
+        pspec = PromptSpec(
+            persona=self.system_prompt(),
+            constraints=[S1_INSTR],
+            references=[f"\n[tokens]\n{tokens.content_text if tokens else '{}'}",
+                        f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}"],
+            studio="design", step="S1")
         resp = provider.complete([Message("user", req.user_prompt or "러프 시작")],
-                                 model=req.provider, system=sys)
+                                 system=pspec.assemble(), meta=pspec.meta)
         data = self._parse_json(resp.text)
         spec = data.get("layout_spec") or {}
         # 실 LLM이 font_px를 생략해도 R-VIS-1(글자크기 비율)이 동작하도록 bbox 높이로 보강(결정론).
@@ -323,12 +345,14 @@ class DesignHarness(Harness):
         plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
         fm = _frontmatter(plan.content_text if plan else "")
         corpus = build_corpus(fm.get("factsheet") or {})
-        sys = self.system_prompt() + (
-            "\n\n[S2b 카피·타이포] 헤드라인/바디/CTA를 언어별로 확정하세요. "
-            f"factsheet 외 수치 금지. JSON: {{\"copy\":{{lang:{{headline,body,cta}}}}}}"
-            f"\n[factsheet]\n{json.dumps(fm.get('factsheet') or {}, ensure_ascii=False)}")
+        # 조립 순서(D6): persona → [S2b] 지시 → [factsheet] — 인라인 시절과 동일.
+        pspec = PromptSpec(
+            persona=self.system_prompt(),
+            constraints=[S2B_INSTR],
+            references=[f"\n[factsheet]\n{json.dumps(fm.get('factsheet') or {}, ensure_ascii=False)}"],
+            studio="design", step="S2b")
         resp = provider.complete([Message("user", req.user_prompt or "카피 확정")],
-                                 model=req.provider, system=sys)
+                                 system=pspec.assemble(), meta=pspec.meta)
         copy = (self._parse_json(resp.text).get("copy")) or {}
         ungrounded = []
         for lang, fields in copy.items():
@@ -439,14 +463,14 @@ class DesignHarness(Harness):
 
     def _run_critic(self, req, provider, spec) -> dict:
         """텍스트 provider에 7항목 자기-크리틱 JSON을 요청 → critic() 판정(자문용)."""
-        sys = self.system_prompt() + (
-            "\n\n[자기-크리틱] 아래 레이아웃을 hierarchy/grid/whitespace/cta/"
-            "compliance/copy_visual/brand 7항목으로 1~5 채점하세요. "
-            'JSON 한 개만: {"scores":{"hierarchy":n,...}}')
+        # 조립 순서(D6): persona → [자기-크리틱] 지시 — 인라인 시절과 동일.
+        pspec = PromptSpec(persona=self.system_prompt(),
+                           constraints=[CRITIC_INSTR],
+                           studio="design", step="critic")
         try:
             resp = provider.complete(
                 [Message("user", json.dumps(spec, ensure_ascii=False))],
-                model=req.provider, system=sys)
+                system=pspec.assemble(), meta=pspec.meta)
             raw = (self._parse_json(resp.text).get("scores")) or {}
         except Exception:
             raw = {}

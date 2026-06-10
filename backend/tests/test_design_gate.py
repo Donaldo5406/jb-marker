@@ -116,7 +116,7 @@ def test_bypass_critic_fail_regenerates_once(tmp_path):
     calls = {"n": 0}
 
     class FailCritic(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             sysl = system or ""
             if "자기-크리틱" in sysl:                       # critic 호출
@@ -147,7 +147,7 @@ def test_bypass_s2b_grounding_triggers_regeneration(tmp_path):
     calls = {"n": 0}
 
     class UngroundedCopy(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             calls["n"] += 1
             return ProviderResponse(text=json.dumps(
@@ -170,7 +170,7 @@ def test_regenerate_at_gate_reruns_same_step(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
 
     class SpecProvider(FakeProvider):
-        def complete(self, messages, *, model, system=None, tools=None, **kw):
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
             from app.providers.base import ProviderResponse
             return ProviderResponse(text=json.dumps(
                 {"reply": "재생성", "layout_spec": {"visual_concept": "새 컨셉"}, "ready": True}),
