@@ -31,7 +31,6 @@ def test_gateway_blocks_marker_when_user_not_entitled(tmp_path):
     store = _store(tmp_path)
     gw = MarkerGateway(store,
                        entitlement_check=lambda uid: False,
-                       env_override=lambda: False,
                        provider_factory=lambda name: FakeProvider())
     req = HarnessRequest(run_id="r1", studio="design", user_prompt="x",
                          provider="fake", is_marker=True, user_id="alice")
@@ -45,7 +44,6 @@ def test_gateway_allows_marker_when_user_entitled(tmp_path):
     entitled = {"alice"}
     gw = MarkerGateway(store,
                        entitlement_check=lambda uid: uid in entitled,
-                       env_override=lambda: False,
                        provider_factory=lambda name: FakeProvider())
     req = HarnessRequest(run_id="r1", studio="design", user_prompt="x",
                          provider="fake", is_marker=True, user_id="alice")
@@ -59,7 +57,6 @@ def test_gateway_per_user_isolation(tmp_path):
     entitled = {"alice"}
     gw = MarkerGateway(store,
                        entitlement_check=lambda uid: uid in entitled,
-                       env_override=lambda: False,
                        provider_factory=lambda name: FakeProvider())
     ok = HarnessRequest(run_id="r1", studio="design", user_prompt="x",
                         provider="fake", is_marker=True, user_id="alice")

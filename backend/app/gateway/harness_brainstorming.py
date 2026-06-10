@@ -6,10 +6,11 @@ LLM 응답 프로토콜(JSON): {"reply": str, "document": str, "ask": {...}|null
 from __future__ import annotations
 
 import json
-import re
 
 from ..providers.base import Message
 from .harness import AskPayload, Harness, HarnessRequest, HarnessResult
+from .state import load_state, save_state
+from ..core.parsing import parse_json_block as _parse_json
 
 # O4 compaction (spec: docs/specs/2026-06-02-messages-compaction-o4-design.md)
 COMPACT_INPUT_TOKENS = 100_000   # 직전 응답 usage.input_tokens 임계
@@ -47,24 +48,6 @@ _PROTOCOL = (
     '"ask": null 또는 {"trigger":"a|b|c","question":"...","options":["..."]}, '
     '"ready": true/false}'
 )
-
-
-def _parse_json(text: str) -> dict:
-    """LLM 출력에서 첫 JSON 객체를 견고하게 추출."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    try:
-        return json.loads(text)
-    except Exception:
-        # greedy: 최외곽 중괄호 구간을 잡음(단일 JSON 객체 출력 가정). 다객체 텍스트엔 부적합.
-        m = re.search(r"\{.*\}", text, re.S)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return {}
-        return {}
 
 
 def _to_ask(ask: dict | None) -> "AskPayload | None":
@@ -113,15 +96,12 @@ class BrainstormingHarness(Harness):
         return f"/{run_id}/brainstorming"
 
     def _load_state(self, store, run_id: str) -> dict:
-        n = store.get(f"{self._base(run_id)}/_state.json")
-        if n and n.content_text:
-            return json.loads(n.content_text)
-        return {"stage": "A", "spec_locked": False, "plan_locked": False,
-                "pending_ask": None, "compaction": None, "last_input_tokens": 0}
+        return load_state(store, run_id, "brainstorming", default_factory=lambda: {
+            "stage": "A", "spec_locked": False, "plan_locked": False,
+            "pending_ask": None, "compaction": None, "last_input_tokens": 0})
 
     def _save_state(self, store, run_id: str, state: dict) -> None:
-        store.put(f"{self._base(run_id)}/_state.json", json.dumps(state, ensure_ascii=False),
-                  source="marker", mime="application/json")
+        save_state(store, run_id, "brainstorming", state)
 
     def _load_messages(self, store, run_id: str) -> list[dict]:
         n = store.get(f"{self._base(run_id)}/_messages.json")
@@ -245,7 +225,9 @@ class BrainstormingHarness(Harness):
         self._save_research(store, req.run_id, resp.citations)
         # spec.md는 document가 있을 때만 기록(A2): 빈/절단 출력으로 빈 파일을 만들거나 기존 spec을 지우지 않음.
         if document:
-            store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown")
+            store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown",
+                      meta={"grounds": [c.get("url") for c in (resp.citations or [])
+                                        if c.get("url")]})
             events.append({"type": "artifact", "path": f"{base}/spec.md"})
         # reply 폴백: 파싱 실패/빈 reply여도 사용자에게 무언가는 보여 침묵(휘발 체감)을 막는다.
         if not reply:

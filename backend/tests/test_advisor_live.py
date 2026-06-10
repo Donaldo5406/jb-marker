@@ -1,4 +1,4 @@
-"""AnthropicAdvisorProvider 단위 — SDK 모킹으로 tool_use 응답 → AdvisorHarness 계약 변환 검증."""
+"""AnthropicAdvisorProvider 단위 — SDK 모킹으로 tool_use 응답 → DeployAdvisor 계약 변환 검증."""
 from __future__ import annotations
 
 from types import SimpleNamespace

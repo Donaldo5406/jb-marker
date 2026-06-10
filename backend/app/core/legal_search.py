@@ -38,9 +38,9 @@ def apply_whitelist(findings: list[dict], whitelist: dict) -> tuple[list[dict], 
 
 
 import json as _json
-import re as _re
 
 from ..providers.base import Message, Provider
+from .parsing import parse_json_block as _parse_json
 
 
 PERSONA_A = (
@@ -53,23 +53,6 @@ PERSONA_A = (
     '"severity":"critical|warning","evidence":"..."}, ...]} '
     "위반/우려 없으면 findings=[]를 반환하세요."
 )
-
-
-def _parse_json(text: str) -> dict:
-    """M3/M4 _parse_json 미러 — 코드펜스 제거·greedy 폴백."""
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = _re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    try:
-        return _json.loads(text)
-    except Exception:
-        m = _re.search(r"\{.*\}", text, _re.S)
-        if not m:
-            return {}
-        try:
-            return _json.loads(m.group(0))
-        except Exception:
-            return {}
 
 
 def build_legal_messages(scene_copy: dict, metadata_md: str, whitelist: dict

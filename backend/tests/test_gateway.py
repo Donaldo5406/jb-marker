@@ -15,8 +15,8 @@ def store(tmp_path):
 
 
 def _gw(store, override=False):
-    return MarkerGateway(store, entitlement_check=lambda uid: False,
-                         env_override=override,
+    return MarkerGateway(store,
+                         entitlement_check=(lambda uid: True) if override else (lambda uid: False),
                          provider_factory=lambda name: FakeProvider())
 
 
@@ -55,7 +55,7 @@ def test_gateway_delegates_to_handle_turn_and_publishes_events():
     from app.providers.fake import FakeProvider
     from app.vfs.local import LocalVfsStore
     s = LocalVfsStore(); s.create_run("rg")
-    gw = MarkerGateway(s, entitlement_check=lambda uid: False, env_override=True,
+    gw = MarkerGateway(s, entitlement_check=lambda uid: True,
                        provider_factory=lambda name: FakeProvider())
     req = HarnessRequest(run_id="rg", studio="brainstorming", user_prompt="hi", provider="fake")
     res = gw.run(req, PassthroughHarness())

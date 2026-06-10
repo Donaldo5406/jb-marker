@@ -1,6 +1,7 @@
 """MarkerGateway — 모든 AI 호출의 경유점(엔타이틀먼트 choke + provider 팩토리).
 
 흐름: 엔타이틀먼트 검사 → provider 해석 → harness.handle_turn 위임.
+override 평가는 app.entitlement.is_entitled 내부(단일 choke).
 하네스 조립·provider 호출·VFS 영속(+meta.grounds)은 하네스(handle_turn) 책임.
 raw 프롬프트 직행 금지: 항상 하네스(최소 Passthrough) + 게이트웨이 경유.
 """
@@ -17,19 +18,16 @@ from .harness import Harness, HarnessRequest, HarnessResult
 class MarkerGateway:
     def __init__(self, store: VfsStore, *,
                  entitlement_check: "Callable[[str], bool]",
-                 env_override: "bool | Callable[[], bool]",
                  provider_factory: Callable[[str], Provider],
                  wrap_provider: "Callable[[Provider, HarnessRequest], Provider] | None" = None) -> None:
         self._store = store
         self._entitlement_check = entitlement_check
-        self._env_override = env_override
         self._provider_factory = provider_factory
         self._wrap_provider = wrap_provider
 
     def run(self, req: HarnessRequest, harness: Harness) -> HarnessResult:
-        env = self._env_override() if callable(self._env_override) else self._env_override
-        override = bool(env) or self._entitlement_check(req.user_id)
-        check_entitlement(is_marker=req.is_marker, override=override)
+        check_entitlement(is_marker=req.is_marker,
+                          override=self._entitlement_check(req.user_id))
         provider = self._provider_factory(req.provider)
         if self._wrap_provider is not None:
             provider = self._wrap_provider(provider, req)

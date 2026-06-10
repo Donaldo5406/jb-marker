@@ -1,4 +1,8 @@
-"""AdvisorHarness — D2 카피 적응 멀티턴 + 도구 화이트리스트 + grounding 출력 검증."""
+"""DeployAdvisor — D2 카피 적응 멀티턴 챗 + 도구 화이트리스트 + grounding 출력 검증.
+
+주의: 하네스가 아니다(deploy_studio.md '하네스 아님' 선언) — Harness ABC 미상속,
+게이트웨이 비경유, 비권위적 조언 전용. 과거 명명 AdvisorHarness를 T1-P1에서 교정.
+"""
 from __future__ import annotations
 
 import json
@@ -10,7 +14,7 @@ from app.deploy.advisor.prompt import SYSTEM_PROMPT
 from app.deploy.advisor.grounding import check as grounding_check
 
 
-class AdvisorHarness:
+class DeployAdvisor:
     """카드(packageId) 단위 멀티턴 챗 + write_d2_copy 출력 검증."""
 
     def __init__(self, *, provider, vfs_store, run_id: str):

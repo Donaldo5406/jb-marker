@@ -114,7 +114,7 @@ def test_advisor_mock_forces_scripted(monkeypatch):
     import app.server as srv
     client = TestClient(srv.create_app())
     rid = client.post("/runs", json={}).json()["run_id"]
-    # advisor는 entitlement.check 직접 통과 필요(override 무관) → dev pass 설정.
+    # advisor도 is_entitled 단일 choke(override 존중) — 여기선 override 없이 dev pass로 통과.
     client.put("/entitlement", json={"marker": True})
     # package copy.meta.json 준비(ctx_raw). channel은 package_id 접두("sms").
     client.put(f"/vfs/{rid}/deploy/packages/sms_ko/copy.meta.json",

@@ -16,6 +16,7 @@ from .auth import make_user_id_dep
 from .config import load_settings
 from .deploy.adapters.base import Package, ScheduleSpec
 from .deploy.adapters.registry import get_adapter
+from .deploy.advisor.chat import DeployAdvisor
 from .deploy.eligibility import build_eligibility
 from .deploy.ledger import load_ledger
 from .deploy.packager import package_channel
@@ -23,7 +24,6 @@ from .deploy.providers import get_provider as get_deploy_provider
 from .deploy.rules_engine import load_policies
 from .gateway.gateway import MarkerGateway
 from .gateway.harness import HarnessRequest, PassthroughHarness
-from .gateway.harness_advisor import AdvisorHarness
 from .gateway.harness_brainstorming import BrainstormingHarness
 from .gateway.harness_design import DesignHarness
 from .history.gallery import build_gallery
@@ -135,6 +135,7 @@ def create_app() -> FastAPI:
     from .entitlement import set_store
     from .entitlement_store import get_entitlement_store
     set_store(get_entitlement_store(settings))
+    entitlement.set_override_source(lambda: settings.entitlement_override)
 
     # provider_factory: settings의 모델 매핑 주입
     model_map = {"anthropic": settings.anthropic_model, "openai": settings.openai_model,
@@ -181,7 +182,7 @@ def create_app() -> FastAPI:
             out = self._inner.generate_image(prompt, aspect=aspect)
             usage_log.record_usage(
                 store, run_id=self._run_id, step=self._step,
-                model="gemini-2.5-flash-image" if self.name == "google" else self._model_for(),
+                model=settings.google_image_model if self.name == "google" else self._model_for(),
                 kind="image", images=1, meta={"aspect": aspect},
             )
             return out
@@ -199,8 +200,7 @@ def create_app() -> FastAPI:
         return _TrackedProvider(provider, run_id=req.run_id, step=req.studio or "gateway")
 
     gateway = MarkerGateway(store,
-                            entitlement_check=entitlement.check,
-                            env_override=lambda: settings.entitlement_override,
+                            entitlement_check=entitlement.is_entitled,
                             provider_factory=_ModelBoundProvider,
                             wrap_provider=_wrap_for_usage)
 
@@ -219,7 +219,7 @@ def create_app() -> FastAPI:
 
     @app.get("/entitlement")
     def get_entitlement(user_id: str = Depends(user_id_dep)) -> dict:
-        return {"marker": settings.entitlement_override or entitlement.check(user_id)}
+        return {"marker": entitlement.is_entitled(user_id)}
 
     @app.put("/entitlement")
     def put_entitlement(body: EntitlementPut, user_id: str = Depends(user_id_dep)) -> dict:
@@ -227,7 +227,7 @@ def create_app() -> FastAPI:
             entitlement.set_dev_pass(user_id)
         else:
             entitlement.reset(user_id)
-        return {"marker": settings.entitlement_override or entitlement.check(user_id)}
+        return {"marker": entitlement.is_entitled(user_id)}
 
     @app.post("/runs")
     def create_run(body: RunCreate, user_id: str = Depends(user_id_dep)) -> dict:
@@ -252,13 +252,19 @@ def create_app() -> FastAPI:
                              action=body.action, user_id=user_id,
                              bypass_map=body.bypass_map)
         media_name = "demo" if body.mock else "google"
+
+        def _media_provider():
+            # 주입형 image/vision provider도 usage 추적 래핑 (spec §7-2).
+            return _TrackedProvider(_ModelBoundProvider(media_name),
+                                    run_id=body.run_id, step=body.studio)
+
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:
-            harness = DesignHarness(image_provider=_ModelBoundProvider(media_name))
+            harness = DesignHarness(image_provider=_media_provider())
         elif body.studio == "review" and body.is_marker:
             from .gateway.harness_review import ReviewHarness
-            harness = ReviewHarness(vision_provider=_ModelBoundProvider(media_name))
+            harness = ReviewHarness(vision_provider=_media_provider())
         else:
             harness = PassthroughHarness()
         try:
@@ -272,7 +278,7 @@ def create_app() -> FastAPI:
         session_store.touch(body.run_id, body.studio, now, kind=kind)
         if reactivated:
             result.meta["session_event"] = "restored"
-            await _publish(body.run_id, {"kind": "restored",
+            await _publish(body.run_id, {"type": "session", "event": "restored",
                                          "studio": body.studio, "run_id": body.run_id})
         for ev in result.events:
             await _publish(body.run_id, ev)
@@ -434,7 +440,7 @@ def create_app() -> FastAPI:
         return {"package_id": package_id, "status": pkg["status"], "reason": pkg.get("reason")}
 
     class _ScriptedAdvisorProvider:
-        """AdvisorHarness 계약(.chat) 충족용 데모 advisor — ctx·channel 주입.
+        """DeployAdvisor 계약(.chat) 충족용 데모 advisor — ctx·channel 주입.
 
         키워드(압축·짧·줄여·shorten·shorter·compress) 감지 시 채널 한도에 맞게
         원본을 공백 단위 truncate(부분집합 보장) → write_d2_copy tool_call.
@@ -495,13 +501,13 @@ def create_app() -> FastAPI:
     def deploy_advisor_chat(run_id: str, body: AdvisorChatBody,
                             user_id: str = Depends(user_id_dep)) -> dict:
         require_owner(run_id, user_id)
-        if not entitlement.check(user_id):
+        if not entitlement.is_entitled(user_id):
             raise HTTPException(402, "Payment required (entitlement)")
         ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
         ctx = json.loads(ctx_raw) if ctx_raw else {}
         channel = body.package_id.split("_", 1)[0] if "_" in body.package_id else "sms"
         provider = _make_advisor_provider(ctx, channel, mock=body.mock)
-        h = AdvisorHarness(provider=provider, vfs_store=store, run_id=run_id)
+        h = DeployAdvisor(provider=provider, vfs_store=store, run_id=run_id)
         result = h.handle_turn(package_id=body.package_id, user_message=body.message)
         # advisor live LLM이 usage 노출 시 영속(scripted는 _usage 없음 → skip).
         if "_usage" in result:
@@ -511,6 +517,9 @@ def create_app() -> FastAPI:
                 kind="text", usage=result["_usage"],
                 meta={"package_id": body.package_id},
             )
+        # 내부 키는 영속(record_usage) 후 HTTP 응답에서 제거 — 명세 표면 위생 (spec §8.2).
+        result.pop("_usage", None)
+        result.pop("_model", None)
         return result
 
     @app.get("/runs/{run_id}/usage")
@@ -536,7 +545,7 @@ def create_app() -> FastAPI:
         require_owner(run_id, user_id)
         if not body.confirmed:
             raise HTTPException(400, "user confirm required")
-        if not entitlement.check(user_id):
+        if not entitlement.is_entitled(user_id):
             raise HTTPException(402, "Payment required (entitlement)")
 
         selected = json.loads(
@@ -617,7 +626,7 @@ def create_app() -> FastAPI:
             "matrix": json.loads(
                 store.get_text(f"/{run_id}/deploy/inputs/matrix.json") or "[]"
             ),
-            "dev_pass": entitlement.check(user_id),
+            "dev_pass": entitlement.is_entitled(user_id),
         }
 
     @app.websocket("/ws/{run_id}")
