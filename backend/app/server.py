@@ -17,6 +17,7 @@ from .config import load_settings
 from .deploy.adapters.base import Package, ScheduleSpec
 from .deploy.adapters.registry import get_adapter
 from .deploy.advisor.chat import DeployAdvisor
+from .deploy.advisor.scripted import ScriptedAdvisorProvider
 from .deploy.eligibility import build_eligibility
 from .deploy.ledger import load_ledger
 from .deploy.packager import package_channel
@@ -29,7 +30,7 @@ from .gateway.harness_design import DesignHarness
 from .history.gallery import build_gallery
 from .history.preview import build_preview_html
 from .observability import usage as usage_log
-from .providers.registry import get_provider
+from .providers.wrappers import ModelBoundProvider, TrackedProvider
 from .session.liveness import Thresholds
 from .session.store import SessionStore
 from .vfs.factory import get_vfs_store
@@ -138,70 +139,16 @@ def create_app() -> FastAPI:
     entitlement.set_override_source(lambda: settings.entitlement_override)
 
     # provider_factory: settings의 모델 매핑 주입
-    model_map = {"anthropic": settings.anthropic_model, "openai": settings.openai_model,
-                 "google": settings.google_model, "fake": "fake-1"}
-
-    class _ModelBoundProvider:
-        def __init__(self, name: str):
-            self.name = name  # legal_search.search_and_filter가 provider.name 사용
-            self._p = get_provider(name, settings)
-            self._model = model_map.get(name, "fake-1")
-
-        def complete(self, messages, *, model=None, system=None, **kw):
-            return self._p.complete(messages, model=self._model, system=system, **kw)
-
-        def generate_image(self, prompt, *, aspect="1:1"):
-            return self._p.generate_image(prompt, aspect=aspect)
-
-        def review_image(self, image_bytes, prompt, *, mime="image/png"):
-            return self._p.review_image(image_bytes, prompt, mime=mime)
-
-    class _TrackedProvider:
-        """ModelBoundProvider wrapper — 각 LLM/이미지 호출 직후 usage 영속."""
-
-        def __init__(self, inner, *, run_id: str, step: str) -> None:
-            self._inner = inner
-            self._run_id = run_id
-            self._step = step
-            # legal_search 등이 .name 속성을 검사하므로 노출.
-            self.name = getattr(inner, "name", "unknown")
-
-        def _model_for(self, fallback: str | None = None) -> str:
-            return getattr(self._inner, "_model", None) or fallback or "unknown"
-
-        def complete(self, messages, *, model=None, system=None, **kw):
-            resp = self._inner.complete(messages, model=model, system=system, **kw)
-            usage_log.record_usage(
-                store, run_id=self._run_id, step=self._step,
-                model=getattr(resp, "model", None) or self._model_for(),
-                kind="text", usage=getattr(resp, "usage", None),
-            )
-            return resp
-
-        def generate_image(self, prompt, *, aspect="1:1"):
-            out = self._inner.generate_image(prompt, aspect=aspect)
-            usage_log.record_usage(
-                store, run_id=self._run_id, step=self._step,
-                model=settings.google_image_model if self.name == "google" else self._model_for(),
-                kind="image", images=1, meta={"aspect": aspect},
-            )
-            return out
-
-        def review_image(self, image_bytes, prompt, *, mime="image/png"):
-            resp = self._inner.review_image(image_bytes, prompt, mime=mime)
-            usage_log.record_usage(
-                store, run_id=self._run_id, step=self._step,
-                model=getattr(resp, "model", None) or self._model_for(),
-                kind="vision", usage=getattr(resp, "usage", None),
-            )
-            return resp
+    def _provider_factory(name: str):
+        return ModelBoundProvider(name, settings)
 
     def _wrap_for_usage(provider, req):
-        return _TrackedProvider(provider, run_id=req.run_id, step=req.studio or "gateway")
+        return TrackedProvider(provider, store=store, run_id=req.run_id,
+                               step=req.studio or "gateway", settings=settings)
 
     gateway = MarkerGateway(store,
                             entitlement_check=entitlement.is_entitled,
-                            provider_factory=_ModelBoundProvider,
+                            provider_factory=_provider_factory,
                             wrap_provider=_wrap_for_usage)
 
     connections: dict[str, set[WebSocket]] = {}
@@ -255,8 +202,9 @@ def create_app() -> FastAPI:
 
         def _media_provider():
             # 주입형 image/vision provider도 usage 추적 래핑 (spec §7-2).
-            return _TrackedProvider(_ModelBoundProvider(media_name),
-                                    run_id=body.run_id, step=body.studio)
+            return TrackedProvider(ModelBoundProvider(media_name, settings),
+                                   store=store, run_id=body.run_id,
+                                   step=body.studio, settings=settings)
 
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
@@ -437,50 +385,13 @@ def create_app() -> FastAPI:
         )
         return {"package_id": package_id, "status": pkg["status"], "reason": pkg.get("reason")}
 
-    class _ScriptedAdvisorProvider:
-        """DeployAdvisor 계약(.chat) 충족용 데모 advisor — ctx·channel 주입.
-
-        키워드(압축·짧·줄여·shorten·shorter·compress) 감지 시 채널 한도에 맞게
-        원본을 공백 단위 truncate(부분집합 보장) → write_d2_copy tool_call.
-        실 LLM 배선은 M7 또는 ANTHROPIC_API_KEY 도입 시 별도 wrapper로 교체.
-        """
-
-        SHORTEN_KEYWORDS = ("압축", "짧", "줄여", "shorten", "shorter", "compress")
-        LIMITS = {"sms": 90, "email": 600, "kakao": 1000, "naver": 400, "google": 400, "instagram": 400}
-
-        def __init__(self, *, ctx: dict, channel: str) -> None:
-            self._ctx = ctx
-            self._channel = channel
-
-        def chat(self, *, system, messages, tools):
-            last = messages[-1].get("content", "") if messages else ""
-            wants_short = any(k in last for k in self.SHORTEN_KEYWORDS) or any(k in last.lower() for k in ("shorten", "shorter", "compress"))
-            original = self._ctx.get("original_text", "")
-            if wants_short and original:
-                limit = self.LIMITS.get(self._channel, 90)
-                tokens = original.split()
-                adapted = ""
-                for tok in tokens:
-                    candidate = (adapted + " " + tok).strip() if adapted else tok
-                    if len(candidate) > limit:
-                        break
-                    adapted = candidate
-                return {
-                    "text": f"원본 {len(original)}자 → {self._channel} 한도 {limit}자에 맞게 다듬었습니다.",
-                    "tool_calls": [{"name": "write_d2_copy", "input": {"adapted_text": adapted}}],
-                }
-            return {
-                "text": f"카드 컨텍스트를 불러왔어요. '{last}'에 대해 더 구체적으로 말씀해 주시면 카피를 다듬어 드릴게요.",
-                "tool_calls": [],
-            }
-
     def _make_advisor_provider(ctx: dict, channel: str, mock: bool = False):
         """advisor_mode 분기 — mock: 강제 scripted, auto: 키 있으면 live, scripted: 강제 scripted, live: 키 필수.
 
         실LLM 배선 실패(SDK import / 호출 예외)는 호출부에서 잡아 422로 변환.
         """
         if mock:
-            return _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
+            return ScriptedAdvisorProvider(ctx=ctx, channel=channel)
         mode = settings.advisor_mode
         has_key = bool(settings.anthropic_api_key)
         if mode == "live" or (mode == "auto" and has_key):
@@ -493,7 +404,7 @@ def create_app() -> FastAPI:
                 ctx=ctx,
                 channel=channel,
             )
-        return _ScriptedAdvisorProvider(ctx=ctx, channel=channel)
+        return ScriptedAdvisorProvider(ctx=ctx, channel=channel)
 
     @app.post("/runs/{run_id}/deploy/advisor/chat")
     def deploy_advisor_chat(run_id: str, body: AdvisorChatBody,

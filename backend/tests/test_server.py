@@ -150,23 +150,22 @@ def test_vfs_put_base64_invalid_returns_400(client):
     assert r.status_code == 400
 
 
-def test_model_bound_provider_has_name_and_review_image():
-    """_ModelBoundProvider 보강 회귀 — legal_search/vision 통합 위험 차단.
+def test_model_bound_provider_has_name_and_review_image(monkeypatch):
+    """P1 회귀 가드 — legal_search/vision 통합 위험 차단 (P4에서 wrappers.py로 추출됨).
 
     legal_search.search_and_filter는 provider.name으로 model 인자를 구성하고,
-    R1/R2 비전 호출은 review_image를 호출한다. 둘 다 _ModelBoundProvider에
+    R1/R2 비전 호출은 review_image를 호출한다. 둘 다 ModelBoundProvider에
     노출되어야 라이브 환경에서 AttributeError로 false live_unavailable 시그널이
     뜨지 않는다.
     """
     from app.server import create_app
-    # create_app 내부에서 정의된 클래스를 직접 가져올 수 없으므로 동일 패턴으로
-    # 구성 — 보강 의도가 코드에 반영됐는지 확인.
     create_app()  # smoke: 앱 빌드가 깨지지 않음
-    import inspect
-    from app import server as server_mod
-    src = inspect.getsource(server_mod.create_app)
-    assert "self.name = name" in src, "self.name 누락"
-    assert "def review_image(" in src, "review_image pass-through 누락"
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    from app.config import load_settings
+    from app.providers.wrappers import ModelBoundProvider
+    p = ModelBoundProvider("fake", load_settings())
+    assert p.name == "fake", "self.name 누락"
+    assert callable(getattr(p, "review_image", None)), "review_image pass-through 누락"
 
 
 def test_cors_allows_configured_origin(monkeypatch):
