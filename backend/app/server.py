@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import time
-import uuid
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -30,14 +29,12 @@ from .history.gallery import build_gallery
 from .history.preview import build_preview_html
 from .observability import usage as usage_log
 from .providers.wrappers import ModelBoundProvider, TrackedProvider
+from .routers import meta as meta_router
+from .routers import runs as runs_router
+from .routers.deps import require_owner_factory as _require_run_owner_factory
 from .session.liveness import Thresholds
 from .session.store import SessionStore
 from .vfs.factory import get_vfs_store
-
-
-class RunCreate(BaseModel):
-    title: str | None = None
-    languages: list[str] = []
 
 
 class GatewayRun(BaseModel):
@@ -57,10 +54,6 @@ class PutText(BaseModel):
     mime: str | None = None
     # "base64" → 백엔드가 디코드해 bytes로 저장 (PNG 등 바이너리 라운드트립용)
     content_encoding: str | None = None
-
-
-class EntitlementPut(BaseModel):
-    marker: bool
 
 
 # === M6 DeployStudio request bodies ===
@@ -91,18 +84,6 @@ def _node_dict(n) -> dict[str, Any]:
             "content_text": n.content_text, "meta": n.meta}
 
 
-def _require_run_owner_factory(store):
-    """run 소유권 가드. 소유자 불일치/부재 → 404(존재 노출 회피)."""
-    from fastapi import HTTPException
-
-    def _guard(run_id: str, user_id: str):
-        m = store.get_manifest(run_id)
-        if m is None or m.user_id != user_id:
-            raise HTTPException(404, "run not found")
-        return m
-    return _guard
-
-
 def create_app() -> FastAPI:
     app = FastAPI(title="JB Marker API")
     settings = load_settings()
@@ -125,6 +106,14 @@ def create_app() -> FastAPI:
         suspend_ms=settings.session_suspend_ms,
         retention_ms=settings.session_retention_ms,
     ))
+
+    # 라우터 공유 상태 — 모듈 싱글턴 금지, 전부 app.state 경유 (spec §8.1)
+    app.state.settings = settings
+    app.state.store = store
+    app.state.session_store = session_store
+
+    app.include_router(meta_router.router)
+    app.include_router(runs_router.router)
 
     def _now_ms() -> int:
         return int(time.time() * 1000)
@@ -158,35 +147,6 @@ def create_app() -> FastAPI:
                 await ws.send_json(event)
             except Exception:
                 connections.get(run_id, set()).discard(ws)
-
-    @app.get("/health")
-    def health() -> dict:
-        return {"status": "ok"}
-
-    @app.get("/entitlement")
-    def get_entitlement(user_id: str = Depends(user_id_dep)) -> dict:
-        return {"marker": entitlement.is_entitled(user_id)}
-
-    @app.put("/entitlement")
-    def put_entitlement(body: EntitlementPut, user_id: str = Depends(user_id_dep)) -> dict:
-        if body.marker:
-            entitlement.set_dev_pass(user_id)
-        else:
-            entitlement.reset(user_id)
-        return {"marker": entitlement.is_entitled(user_id)}
-
-    @app.post("/runs")
-    def create_run(body: RunCreate, user_id: str = Depends(user_id_dep)) -> dict:
-        run_id = uuid.uuid4().hex[:12]
-        m = store.create_run(run_id, user_id=user_id, title=body.title, languages=body.languages)
-        return {"run_id": m.run_id, "title": m.title}
-
-    @app.get("/runs")
-    def list_runs(user_id: str = Depends(user_id_dep)) -> dict:
-        runs = store.list_runs(user_id=user_id)
-        return {"runs": [{"run_id": m.run_id, "title": m.title,
-                          "created_at": m.created_at,
-                          "step_status": m.step_status} for m in runs]}
 
     @app.post("/gateway/run")
     async def gateway_run(body: GatewayRun, user_id: str = Depends(user_id_dep)) -> dict:
