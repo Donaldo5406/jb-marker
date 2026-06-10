@@ -33,11 +33,46 @@ class AskPayload:
 
 
 @dataclass
+class GateEnvelope:
+    """HITL 게이트 표준 봉투 (spec §4.1) — 스튜디오 3종 신호의 단일 wire 형식.
+
+    kind="ask"(brainstorming AskUser) / "confirm"(design step 게이트) /
+    "status"(review 판정). actions = 지금 보낼 수 있는 action 어휘의 서버 선언.
+    """
+    kind: str                                # "ask" | "confirm" | "status"
+    # kind="ask"
+    trigger: str | None = None               # "a" | "b" | "c"
+    question: str | None = None
+    options: list[str] | None = None
+    # kind="confirm"
+    step: str | None = None                  # 정지한 step ("S1"...)
+    critic: dict | None = None               # 게이트 사유(채점/ungrounded)
+    auto_advanced: list[str] | None = None   # bypass 연쇄 자동 통과 단계
+    # kind="status"
+    status: str | None = None                # "PASS" | "WARN" | "BLOCKED"
+    critical_count: int | None = None
+    warning_count: int | None = None
+    # 공통
+    actions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """wire 형태 — None 필드는 생략, kind·actions는 항상 포함."""
+        out = {"kind": self.kind, "actions": list(self.actions)}
+        for k in ("trigger", "question", "options", "step", "critic",
+                  "auto_advanced", "status", "critical_count", "warning_count"):
+            v = getattr(self, k)
+            if v is not None:
+                out[k] = v
+        return out
+
+
+@dataclass
 class HarnessResult:
     text: str
     output_path: str
     meta: dict
     ask: AskPayload | None = None
+    gate: "GateEnvelope | None" = None
     events: list[dict] = field(default_factory=list)
 
 

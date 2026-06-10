@@ -286,7 +286,8 @@ def create_app() -> FastAPI:
         if result.ask is not None:
             ask = {"trigger": result.ask.trigger, "question": result.ask.question, "options": result.ask.options}
         return {"output_path": result.output_path, "text": result.text,
-                "ask": ask, "meta": result.meta}
+                "ask": ask, "meta": result.meta,
+                "gate": result.gate.to_dict() if result.gate else None}
 
     @app.get("/runs/{run_id}/session/{studio}")
     def session_heartbeat(run_id: str, studio: str,
