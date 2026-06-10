@@ -24,9 +24,8 @@ from .deploy.packager import package_channel
 from .deploy.providers import get_provider as get_deploy_provider
 from .deploy.rules_engine import load_policies
 from .gateway.gateway import MarkerGateway
-from .gateway.harness import HarnessRequest, PassthroughHarness
-from .gateway.harness_brainstorming import BrainstormingHarness
-from .gateway.harness_design import DesignHarness
+from .gateway.harness import HarnessRequest
+from .gateway.registry import select_harness
 from .history.gallery import build_gallery
 from .history.preview import build_preview_html
 from .observability import usage as usage_log
@@ -206,15 +205,8 @@ def create_app() -> FastAPI:
                                    store=store, run_id=body.run_id,
                                    step=body.studio, settings=settings)
 
-        if body.studio == "brainstorming" and body.is_marker:
-            harness = BrainstormingHarness()
-        elif body.studio == "design" and body.is_marker:
-            harness = DesignHarness(image_provider=_media_provider())
-        elif body.studio == "review" and body.is_marker:
-            from .gateway.harness_review import ReviewHarness
-            harness = ReviewHarness(vision_provider=_media_provider())
-        else:
-            harness = PassthroughHarness()
+        harness = select_harness(body.studio, body.is_marker,
+                                 media_provider_factory=_media_provider)
         try:
             result = gateway.run(req, harness)
         except PermissionError as e:

@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 
+import app.gateway.registry as registry_mod
+
 
 def _client(monkeypatch):
     monkeypatch.setenv("VFS_BACKEND", "local")
@@ -41,14 +43,14 @@ def test_design_mock_injects_fake_image_provider(monkeypatch):
     monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "1")
     import app.server as srv
     captured = {}
-    real = srv.DesignHarness
+    real = registry_mod.DesignHarness
 
     class SpyDesign(real):
         def __init__(self, *a, image_provider=None, **k):
             captured["img"] = image_provider
             super().__init__(*a, image_provider=image_provider, **k)
 
-    monkeypatch.setattr(srv, "DesignHarness", SpyDesign)
+    monkeypatch.setattr(registry_mod, "DesignHarness", SpyDesign)
     client = TestClient(srv.create_app())
     rid = client.post("/runs", json={}).json()["run_id"]
     client.post("/gateway/run", json={
@@ -88,14 +90,14 @@ def test_design_no_mock_uses_google_image_provider(monkeypatch):
     monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "1")
     import app.server as srv
     captured = {}
-    real = srv.DesignHarness
+    real = registry_mod.DesignHarness
 
     class SpyDesign(real):
         def __init__(self, *a, image_provider=None, **k):
             captured["img"] = image_provider
             super().__init__(*a, image_provider=image_provider, **k)
 
-    monkeypatch.setattr(srv, "DesignHarness", SpyDesign)
+    monkeypatch.setattr(registry_mod, "DesignHarness", SpyDesign)
     client = TestClient(srv.create_app())
     rid = client.post("/runs", json={}).json()["run_id"]
     # provider=fake → text는 키 없이 동작(실 호출 회피). image_provider는 mock=false라 google이어야.
