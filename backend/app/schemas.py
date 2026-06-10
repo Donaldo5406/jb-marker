@@ -4,6 +4,9 @@
 tool_results·eligibility breakdown)은 dict로 두고 description으로 계약을
 문서화한다 — 모델화로 None 키가 추가되거나 미지 키가 탈락하면 행동
 변경(P2 wire 계약 위반). `response_model_exclude_none` 사용 금지.
+
+고정 키셋이라도 깊은 중첩(gallery groups/run 등)은 dict+description을 허용
+— 1단계 키셋만 모델화가 기준.
 """
 from __future__ import annotations
 
@@ -12,9 +15,18 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+# ── 공용 ──
+
 class ErrorOut(BaseModel):
     detail: str
 
+
+# 라우트 responses= 합성용 공용 상수 — 인증 라우트는 AUTH, run-scoped는 OWNER를 spread.
+AUTH_RESPONSES: dict = {401: {"model": ErrorOut}}
+OWNER_RESPONSES: dict = {**AUTH_RESPONSES, 404: {"model": ErrorOut}}
+
+
+# ── meta ──
 
 class HealthOut(BaseModel):
     status: str
@@ -23,6 +35,8 @@ class HealthOut(BaseModel):
 class EntitlementOut(BaseModel):
     marker: bool
 
+
+# ── runs ──
 
 class RunCreatedOut(BaseModel):
     run_id: str
@@ -41,6 +55,8 @@ class RunListOut(BaseModel):
     runs: list[RunSummaryOut]
 
 
+# ── vfs ──
+
 class VfsNodeOut(BaseModel):
     path: str
     mime: str | None
@@ -53,6 +69,8 @@ class VfsNodeOut(BaseModel):
 class VfsListOut(BaseModel):
     nodes: list[VfsNodeOut]
 
+
+# ── observability ──
 
 class UsageTotalsOut(BaseModel):
     input_tokens: int
@@ -68,6 +86,8 @@ class UsageSummaryOut(BaseModel):
         description="step별 집계 + by_model(동적 모델명 키) — 동적 키라 dict 유지")
     entries: list[dict[str, Any]]
 
+
+# ── history ──
 
 class GallerySectionOut(BaseModel):
     studio: str

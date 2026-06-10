@@ -6,7 +6,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from ..schemas import ErrorOut, RunCreatedOut, RunListOut
+from ..schemas import AUTH_RESPONSES, RunCreatedOut, RunListOut
 from .deps import get_user_id
 
 router = APIRouter(tags=["runs"])
@@ -18,7 +18,7 @@ class RunCreate(BaseModel):
 
 
 @router.post("/runs", response_model=RunCreatedOut, summary="run 생성",
-             responses={401: {"model": ErrorOut}})
+             responses=AUTH_RESPONSES)
 def create_run(body: RunCreate, request: Request,
                user_id: str = Depends(get_user_id)) -> dict:
     run_id = uuid.uuid4().hex[:12]
@@ -28,7 +28,7 @@ def create_run(body: RunCreate, request: Request,
 
 
 @router.get("/runs", response_model=RunListOut, summary="현재 사용자의 run 목록",
-            responses={401: {"model": ErrorOut}})
+            responses=AUTH_RESPONSES)
 def list_runs(request: Request, user_id: str = Depends(get_user_id)) -> dict:
     runs = request.app.state.store.list_runs(user_id=user_id)
     return {"runs": [{"run_id": m.run_id, "title": m.title,

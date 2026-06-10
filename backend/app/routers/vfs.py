@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from ..schemas import ErrorOut, VfsListOut, VfsNodeOut
+from ..schemas import ErrorOut, OWNER_RESPONSES, VfsListOut, VfsNodeOut
 from .deps import get_user_id, require_owner
 
 router = APIRouter(tags=["vfs"])
@@ -27,7 +27,7 @@ def _node_dict(n) -> dict[str, Any]:
 
 @router.get("/vfs/{run_id}", response_model=VfsListOut,
             summary="run의 VFS 노드 목록(prefix 필터)",
-            responses={401: {"model": ErrorOut}, 404: {"model": ErrorOut}})
+            responses=OWNER_RESPONSES)
 def vfs_list(run_id: str, request: Request, prefix: str | None = None,
              user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -35,14 +35,11 @@ def vfs_list(run_id: str, request: Request, prefix: str | None = None,
     return {"nodes": [_node_dict(n) for n in nodes]}
 
 
-@router.get("/vfs/{run_id}/{rest:path}",
+@router.get("/vfs/{run_id}/{rest:path}", response_model=VfsNodeOut,
             summary="노드 조회 — 텍스트는 JSON, blob은 바이너리",
-            responses={
-                200: {"description": "텍스트 노드는 VfsNodeOut JSON, blob 노드는 바이너리 스트림",
-                      "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VfsNodeOut"}},
-                                  "application/octet-stream": {},
-                                  "image/png": {}}},
-                401: {"model": ErrorOut}, 404: {"model": ErrorOut}})
+            responses={**OWNER_RESPONSES,
+                       200: {"description": "텍스트 노드는 VfsNodeOut JSON, blob 노드는 바이너리 스트림",
+                             "content": {"application/octet-stream": {}, "image/png": {}}}})
 def vfs_get(run_id: str, rest: str, request: Request,
             user_id: str = Depends(get_user_id)):
     require_owner(request, run_id, user_id)
@@ -57,8 +54,7 @@ def vfs_get(run_id: str, rest: str, request: Request,
 
 @router.put("/vfs/{run_id}/{rest:path}", response_model=VfsNodeOut,
             summary="텍스트/base64 노드 저장",
-            responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut},
-                       404: {"model": ErrorOut}})
+            responses={**OWNER_RESPONSES, 400: {"model": ErrorOut}})
 def vfs_put(run_id: str, rest: str, body: PutText, request: Request,
             user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)

@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from ..history.gallery import build_gallery
 from ..history.preview import build_preview_html
-from ..schemas import ErrorOut, GalleryOut
+from ..schemas import GalleryOut, OWNER_RESPONSES
 from .deps import get_user_id, require_owner
 
 router = APIRouter(tags=["history"])
@@ -14,7 +14,7 @@ router = APIRouter(tags=["history"])
 
 @router.get("/runs/{run_id}/gallery", response_model=GalleryOut,
             summary="run 산출물 갤러리(스튜디오별 섹션)",
-            responses={401: {"model": ErrorOut}, 404: {"model": ErrorOut}})
+            responses=OWNER_RESPONSES)
 def get_gallery(run_id: str, request: Request,
                 user_id: str = Depends(get_user_id)) -> dict:
     man = require_owner(request, run_id, user_id)
@@ -24,7 +24,7 @@ def get_gallery(run_id: str, request: Request,
 
 @router.get("/runs/{run_id}/preview", response_class=HTMLResponse,
             summary="디자인 시스템 셀프컨테인드 HTML 프리뷰",
-            responses={401: {"model": ErrorOut}, 404: {"model": ErrorOut}})
+            responses=OWNER_RESPONSES)
 def get_preview(run_id: str, request: Request,
                 user_id: str = Depends(get_user_id)):
     require_owner(request, run_id, user_id)
