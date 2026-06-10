@@ -346,7 +346,9 @@ class DesignHarness(Harness):
             spec["copy"][lang].update(fields or {})
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
-                  mime="application/json")
+                  mime="application/json",
+                  meta={"grounds": {"corpus": "factsheet",
+                                    "ungrounded": sorted(set(ungrounded))}})
         return HarnessResult(text="카피를 확정했습니다.",
             output_path=f"{base}/design-system/components/headline",
             meta={"source": "marker", "step": "S2b", "ungrounded": sorted(set(ungrounded))},

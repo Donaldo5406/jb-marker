@@ -225,7 +225,9 @@ class BrainstormingHarness(Harness):
         self._save_research(store, req.run_id, resp.citations)
         # spec.md는 document가 있을 때만 기록(A2): 빈/절단 출력으로 빈 파일을 만들거나 기존 spec을 지우지 않음.
         if document:
-            store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown")
+            store.put(f"{base}/spec.md", document, source="marker", mime="text/markdown",
+                      meta={"grounds": [c.get("url") for c in (resp.citations or [])
+                                        if c.get("url")]})
             events.append({"type": "artifact", "path": f"{base}/spec.md"})
         # reply 폴백: 파싱 실패/빈 reply여도 사용자에게 무언가는 보여 침묵(휘발 체감)을 막는다.
         if not reply:
