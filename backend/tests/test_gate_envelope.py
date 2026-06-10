@@ -2,6 +2,7 @@
 
 T1-P2 Task 1: 순수 가산 — passthrough 등 미전환 하네스는 gate=None.
 T1-P2 Task 2: brainstorming은 ask 대신 gate(kind="ask")를 채운다.
+T1-P2 Task 3: design은 meta["gate"] 대신 gate(kind="confirm")를 채운다.
 """
 import json
 
@@ -108,3 +109,58 @@ def test_brainstorming_events_carry_gate(monkeypatch, tmp_path):
     assert gate_events[0]["gate"]["kind"] == "ask"
     assert gate_events[0]["gate"]["actions"] == ["answer"]
     assert not [e for e in res.events if e.get("type") == "askuser"]
+
+
+def _design_store(tmp_path, run_id="rd"):
+    """test_design_gate.py의 _store 패턴 — plan.md 시드된 LocalVfsStore."""
+    from app.vfs.local import LocalVfsStore
+    s = LocalVfsStore(storage_dir=str(tmp_path))
+    s.create_run(run_id, languages=["ko"])
+    s.put(f"/{run_id}/brainstorming/plan.md",
+          "---\ncreative_direction:\n  palette: [\"#0A84FF\"]\n  font: Inter\n  aspect: \"1:1\"\n"
+          "factsheet:\n  rate: \"연 3.5%\"\n"
+          "material_matrix: [{channel: instagram, lang: ko}]\nlanguages: [ko]\n---\n본문",
+          source="marker", mime="text/markdown")
+    return s
+
+
+def _design_req(run_id="rd", action="advance"):
+    from app.gateway.harness import HarnessRequest
+    return HarnessRequest(run_id=run_id, studio="design", user_prompt="",
+                          provider="fake", is_marker=True, action=action)
+
+
+def test_design_gate_stop_returns_confirm_envelope(tmp_path):
+    """T1-P2 Task 3: design 게이트 정지 → gate=GateEnvelope(kind="confirm"),
+    meta["gate"] 구 신호는 소멸."""
+    from app.gateway.harness_design import DesignHarness
+    from app.providers.fake import FakeProvider
+    s = _design_store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_design_req(), provider=FakeProvider(), store=s)
+    assert res.gate is not None
+    assert res.gate.kind == "confirm"
+    assert res.gate.step == "S1"                       # S0 비게이트 통과 후 S1 정지
+    assert res.gate.actions == ["confirm", "regenerate"]
+    assert "gate" not in res.meta
+
+
+def test_design_bypass_chain_done_has_no_gate(tmp_path):
+    """T1-P2 Task 3: 전 step bypass 연쇄 done → gate=None,
+    auto_advanced는 meta 평탄 키로 이동, meta["gate"] 소멸."""
+    from app.gateway.harness_design import DesignHarness
+    from app.providers.fake import FakeProvider
+    s = _design_store(tmp_path)
+    s.put("/rd/design/_state.json", json.dumps(
+        {"step": "S1", "gate": None, "confirmed": {},
+         "bypass": {k: True for k in ("S1", "S2a", "S2b", "S2c", "S3")},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/rd/design/rough/layout.spec.json", json.dumps({"copy": {"ko": {}}}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_design_req(), provider=FakeProvider(), store=s)
+    assert res.meta["step"] == "done"
+    assert res.gate is None
+    assert res.meta["auto_advanced"] == ["S1", "S2a", "S2b", "S2c", "S3"]
+    assert "gate" not in res.meta

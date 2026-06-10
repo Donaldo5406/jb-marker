@@ -94,7 +94,7 @@ def test_bypass_chains_through_to_next_gate(tmp_path):
     st = json.loads(s.get("/r1/design/_state.json").content_text)
     assert st["step"] == "S2b" and st["gate"] == "S2b"
     assert st["confirmed"]["S1"] and st["confirmed"]["S2a"]
-    assert res.meta["gate"]["auto_advanced"] == ["S1", "S2a"]
+    assert res.gate.auto_advanced == ["S1", "S2a"]
 
 
 def test_bypass_full_chain_to_done(tmp_path):
@@ -181,7 +181,7 @@ def test_regenerate_at_gate_reruns_same_step(tmp_path):
     assert spec["visual_concept"] == "새 컨셉"             # S1 재생성
     st = json.loads(s.get("/r1/design/_state.json").content_text)
     assert st["step"] == "S1" and st["gate"] == "S1"      # 정지 유지
-    assert res.meta["gate"]["step"] == "S1"
+    assert res.gate.step == "S1"
 
 
 def test_empty_poll_at_gate_does_not_regenerate(tmp_path):
@@ -204,7 +204,7 @@ def test_empty_poll_at_gate_does_not_regenerate(tmp_path):
     assert calls["n"] == 0                                 # 재생성 없음
     spec = json.loads(s.get("/r1/design/rough/layout.spec.json").content_text)
     assert spec["visual_concept"] == "keep"               # 보존
-    assert res.meta["gate"]["step"] == "S1"
+    assert res.gate.step == "S1"
 
 
 def test_gate_meta_critic_shape_and_no_premature_done(tmp_path):
@@ -212,17 +212,17 @@ def test_gate_meta_critic_shape_and_no_premature_done(tmp_path):
     h = DesignHarness(image_provider=FakeProvider())
     # S0→S1 게이트: S1은 CRITIC_STEP → gate.critic에 판정 dict
     res = h.handle_turn(_req(), provider=FakeProvider(), store=s)
-    assert res.meta["gate"]["step"] == "S1"
-    assert res.meta["gate"]["critic"] is not None
-    assert "pass" in res.meta["gate"]["critic"]
+    assert res.gate.step == "S1"
+    assert res.gate.critic is not None
+    assert "pass" in res.gate.critic
     # confirm S1 → S2a 게이트: S2a는 critic 단계 아님 → gate.critic None
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
-    assert res.meta["gate"]["step"] == "S2a"
-    assert res.meta["gate"]["critic"] is None
+    assert res.gate.step == "S2a"
+    assert res.gate.critic is None
     # S2a→S2b→S2c→S3 게이트까지 전진
     for _ in range(3):
         res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
-    assert res.meta["gate"]["step"] == "S3"
+    assert res.gate.step == "S3"
     # S3 게이트 정지 중에는 매니페스트가 done이면 안 됨(조기 done 금지)
     assert s.get_manifest("r1").step_status.get("design") != "done"
     # confirm S3 → done. 이제서야 매니페스트 done
