@@ -29,15 +29,16 @@ export type PipelineRailProps = {
 /** Design 헤더: 세그먼트 진행 바(StepProgress) + critic 배지 + 재생성/다음 + ⚙ 스킵 스코프 토글. */
 export function PipelineRail({ step, onAdvance, onRegenerate, gate, busy, settingsOpen, onToggleSettings }: PipelineRailProps) {
   const gated = !!gate && gate.step === step;
-  const critic = gate?.critic as { pass?: boolean; avg?: number } | null | undefined;
+  // CriticVerdict 봉투(spec §6): {passed, issues, scores?:{avg, scores}}
+  const critic = gate?.critic as { passed?: boolean; scores?: { avg?: number } } | null | undefined;
   return (
     <div className="flex items-center gap-3 border-b border-outline-variant bg-surface-container-low px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <StepProgress steps={STEPS} currentId={step} busy={busy} />
       </div>
-      {gated && critic && typeof critic.avg === "number" && (
-        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-caption", critic.pass ? "bg-severity-ok-bg text-severity-ok-fg" : "bg-severity-warning-bg text-severity-warning-fg")}>
-          critic {critic.avg.toFixed(1)} {critic.pass ? "통과" : "주의"}
+      {gated && critic && typeof critic.scores?.avg === "number" && (
+        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-caption", critic.passed ? "bg-severity-ok-bg text-severity-ok-fg" : "bg-severity-warning-bg text-severity-warning-fg")}>
+          critic {critic.scores.avg.toFixed(1)} {critic.passed ? "통과" : "주의"}
         </span>
       )}
       {step !== "done" && (

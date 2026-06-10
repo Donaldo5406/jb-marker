@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 from ..providers.base import Message
+from .critic import CriticVerdict
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
 from .state import load_state, save_state
@@ -97,21 +98,24 @@ class BrainstormingHarness(Harness):
     def system_prompt(self) -> str:
         return PERSONA
 
-    def critic(self, plan_md: str) -> list[str]:
-        """⓪계약 검증: 누락된 REQUIRED_PLAN_FIELDS를 정렬해 반환.
+    def critic(self, plan_md: str) -> CriticVerdict:
+        """⓪계약 검증: plan.md frontmatter의 REQUIRED_PLAN_FIELDS 누락을 검사.
 
-        주의: 베이스 Harness.critic(draft)->str(텍스트 패스스루)을 의도적으로 재정의.
-        여기선 plan.md의 frontmatter 키를 검사해 '부족한 필드 목록'을 돌려준다.
+        CriticVerdict(spec §6) 반환 — issues=정렬된 누락 필드 목록, passed=누락 없음.
+        (T6에서 베이스 Harness.critic이 제거됨 — 이 critic 패밀리의 출력 봉투는
+        gateway/critic.py CriticVerdict로 표준화.)
         """
-        return sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
+        missing = sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
+        return CriticVerdict(passed=not missing, issues=missing)
 
-    def critic_spec(self, spec_md: str) -> list[str]:
-        """충분성 게이트: spec.md frontmatter에서 누락된 REQUIRED_SPEC_FIELDS를 정렬 반환.
+    def critic_spec(self, spec_md: str) -> CriticVerdict:
+        """충분성 게이트: spec.md frontmatter의 REQUIRED_SPEC_FIELDS 누락을 검사.
 
-        critic(plan)과 대칭. Stage A에서 ready라도 누락이 있으면 (c) 보충으로 유도해
-        '충분조건이 모두 모이지 않은 spec'이 확정(b)으로 넘어가는 것을 막는다.
+        critic(plan)과 대칭(CriticVerdict 반환). Stage A에서 ready라도 누락이 있으면
+        (c) 보충으로 유도해 '충분조건이 모두 모이지 않은 spec'이 확정(b)으로 넘어가는 것을 막는다.
         """
-        return sorted(REQUIRED_SPEC_FIELDS - _frontmatter_keys(spec_md))
+        missing = sorted(REQUIRED_SPEC_FIELDS - _frontmatter_keys(spec_md))
+        return CriticVerdict(passed=not missing, issues=missing)
 
     # --- 상태 I/O (stateless 재개의 단일 소스) ---
     def _base(self, run_id: str) -> str:
@@ -254,7 +258,7 @@ class BrainstormingHarness(Harness):
         # ready(+document) → 충분성 게이트. 누락 필드가 있으면 보충(c), 충족하면 확정(b).
         # bypass 경로는 제거됨 — 모든 spec은 충분성 검증 + 사람 confirm을 거친다.
         if ready and document and not ask:
-            missing = self.critic_spec(document)
+            missing = self.critic_spec(document).issues
             if missing:
                 ask = {"trigger": "c",
                        "question": f"기획(spec)에 다음 필수 항목이 빠졌습니다: {', '.join(missing)}. 보충할까요?",
@@ -336,7 +340,7 @@ class BrainstormingHarness(Harness):
                      if not document else "계획 초안입니다. 확인해 주세요.")
 
         # 3) ⓪계약 검증
-        missing = self.critic(document)
+        missing = self.critic(document).issues
         if missing:
             ask = {"trigger": "c", "question": f"계획에 다음 필수 요소가 빠졌습니다: {', '.join(missing)}. 보충할까요?",
                    "options": ["보충하기", "수동 편집"]}

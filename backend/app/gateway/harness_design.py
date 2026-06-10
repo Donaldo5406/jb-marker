@@ -20,6 +20,7 @@ from ..core.lang import normalize_languages
 from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, read_json_node
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
+from .critic import CriticVerdict
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
 from .state import load_state, save_state
@@ -242,12 +243,20 @@ class DesignHarness(Harness):
                              events=events)
 
     def _critic_gate(self, step, req, provider, store) -> dict:
-        """단계별 품질 판정. {'passed': bool, 'critic': dict|None}. spec §3.3/§3.4."""
+        """단계별 품질 판정. {'passed': bool, 'critic': dict|None}. spec §3.3/§3.4.
+
+        'critic'은 CriticVerdict 표준 봉투(spec §6) — wire(GateEnvelope.critic)에
+        그대로 실린다. S1/S3는 raw 채점을 scores 페이로드로, S2b는 ungrounded
+        수치를 issues로 담는다.
+        """
         base = self._base(req.run_id)
         if step in CRITIC_STEPS:                 # S1/S3 — 7항목 시각 critic
             spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-            verdict = self._run_critic(req, provider, spec)
-            return {"passed": bool(verdict["pass"]), "critic": verdict}
+            verdict = self._run_critic(provider, spec)
+            p = bool(verdict["pass"])
+            return {"passed": p, "critic": CriticVerdict(
+                passed=p, scores={"scores": verdict["scores"],
+                                  "avg": verdict["avg"]}).to_dict()}
         if step == "S2b":                        # grounding — ungrounded 비어야 pass
             plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
             fm = _frontmatter(plan.content_text if plan else "")
@@ -257,7 +266,8 @@ class DesignHarness(Harness):
             for fields in (spec.get("copy") or {}).values():
                 for role in ("headline", "body", "cta"):
                     bad += find_ungrounded((fields or {}).get(role, ""), corpus)
-            return {"passed": not bad, "critic": {"ungrounded": sorted(set(bad))}}
+            return {"passed": not bad, "critic": CriticVerdict(
+                passed=not bad, issues=sorted(set(bad))).to_dict()}
         return {"passed": True, "critic": None}  # S2a/S2c — critic 없음
 
     def _run_step(self, step, req, provider, store, state) -> HarnessResult:
@@ -429,7 +439,7 @@ class DesignHarness(Harness):
         copy = spec.get("copy", {})
         langs = state.get("languages", ["ko"])
         # M7: 자기-크리틱 실행(자문용·비차단). 게이트 의미론은 spec §13으로 유보.
-        critic = self._run_critic(req, provider, spec)
+        critic = self._run_critic(provider, spec)
         lines = ["---", f"languages: {langs}", "---", "# 디자인 메타데이터", ""]
         for lang in langs:
             c = copy.get(lang, {})
@@ -456,12 +466,17 @@ class DesignHarness(Harness):
             lines.append(f"- 위반 {v['rule']}({v['severity']}): {v['evidence']}")
         store.put(f"{base}/metadata.md", "\n".join(lines),
                   source="marker", mime="text/markdown")
+        # meta.critic은 wire로 나가는 값 — CriticVerdict 봉투로 통일(spec §6).
+        # metadata.md 렌더(위)는 raw 판정(critic['avg'] 등)을 그대로 사용.
+        verdict = CriticVerdict(passed=bool(critic["pass"]),
+                                scores={"scores": critic["scores"],
+                                        "avg": critic["avg"]}).to_dict()
         return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
             output_path=f"{base}/metadata.md",
-            meta={"source": "marker", "step": "done", "critic": critic},
+            meta={"source": "marker", "step": "done", "critic": verdict},
             events=[{"type": "artifact", "path": f"{base}/metadata.md"}])
 
-    def _run_critic(self, req, provider, spec) -> dict:
+    def _run_critic(self, provider, spec) -> dict:
         """텍스트 provider에 7항목 자기-크리틱 JSON을 요청 → critic() 판정(자문용)."""
         # 조립 순서(D6): persona → [자기-크리틱] 지시 — 인라인 시절과 동일.
         pspec = PromptSpec(persona=self.system_prompt(),

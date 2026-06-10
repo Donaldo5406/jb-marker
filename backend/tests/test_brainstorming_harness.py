@@ -29,16 +29,18 @@ def test_critic_reports_missing_plan_fields():
     from app.gateway.harness_brainstorming import BrainstormingHarness
     h = BrainstormingHarness()
     md = "---\ncreative_direction: x\nlanguages: [ko]\n---\n본문"
-    missing = h.critic(md)
-    assert "factsheet" in missing and "slots" in missing
-    assert "creative_direction" not in missing
+    v = h.critic(md)
+    assert v.passed is False
+    assert "factsheet" in v.issues and "slots" in v.issues
+    assert "creative_direction" not in v.issues
 
 
 def test_critic_empty_when_all_present():
     from app.gateway.harness_brainstorming import BrainstormingHarness, REQUIRED_PLAN_FIELDS
     h = BrainstormingHarness()
     fm = "\n".join(f"{k}: v" for k in REQUIRED_PLAN_FIELDS)
-    assert h.critic(f"---\n{fm}\n---\nbody") == []
+    v = h.critic(f"---\n{fm}\n---\nbody")
+    assert v.passed is True and v.issues == []
 
 
 def test_state_roundtrip_default_stage_a():

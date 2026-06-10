@@ -398,7 +398,7 @@ def test_s3_runs_and_records_critic_without_blocking(tmp_path):
           source="marker", mime="application/json")
     h = DesignHarness(image_provider=FakeProvider())
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
-    assert res.meta.get("critic", {}).get("pass") in (True, False)
+    assert res.meta.get("critic", {}).get("passed") in (True, False)   # CriticVerdict 봉투
     md = s.get("/r1/design/metadata.md").content_text
     assert "크리틱" in md
     st = json.loads(s.get("/r1/design/_state.json").content_text)

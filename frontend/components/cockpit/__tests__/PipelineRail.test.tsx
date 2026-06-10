@@ -28,7 +28,7 @@ describe("PipelineRail", () => {
     render(
       <PipelineRail
         step="S1"
-        gate={{ step: "S1", critic: { pass: true, avg: 4.2 }, auto_advanced: [] }}
+        gate={{ step: "S1", critic: { passed: true, issues: [], scores: { avg: 4.2, scores: {} } }, auto_advanced: [] }}
         onAdvance={() => {}}
         onRegenerate={() => {}}
       />,

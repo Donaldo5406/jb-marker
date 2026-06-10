@@ -72,7 +72,7 @@ class Harness(ABC):
     """계약: handle_turn(필수) + output_path + (선택) system_prompt.
 
     종전 6요소 선언 중 프롬프트 요소(constraints·references·structured_output)는
-    PromptSpec(gateway/prompt.py)의 필드로, critic 출력은 CriticVerdict(T8 예정)로
+    PromptSpec(gateway/prompt.py)의 필드로, critic 출력은 CriticVerdict(gateway/critic.py)로
     실체화 — 선언만 있고 구현 없던 메서드들은 제거.
     """
 
