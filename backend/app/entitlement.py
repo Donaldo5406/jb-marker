@@ -1,6 +1,7 @@
 """entitlement — EntitlementStore 위임. 기본 Local 싱글턴(테스트·오프라인).
 
 server.create_app이 supabase 모드면 set_store()로 교체.
+override 포함 단일 판정은 is_entitled() 하나만 사용한다.
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ def is_entitled(user_id: str) -> bool:
     return _store.check(user_id)
 
 
+# 주의: check()는 store 단독 판정(override 미반영) — 신규 코드는 is_entitled()를 사용할 것.
 def check(user_id: str) -> bool:
     return _store.check(user_id)
 

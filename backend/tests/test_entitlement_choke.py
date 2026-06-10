@@ -1,7 +1,17 @@
 """엔타이틀먼트 단일 choke — is_entitled(env override OR store) + 서버 경로 정합 (spec §7-1)."""
 import json
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _clean_entitlement_globals():
+    """이 파일의 서버 테스트가 create_app 경유로 남기는 override 클로저·dev_pass 정리."""
+    yield
+    from app import entitlement
+    entitlement.set_override_source(None)
+    entitlement.reset()
 
 
 def test_is_entitled_env_override():
@@ -20,7 +30,6 @@ def test_is_entitled_store_check():
     assert entitlement.is_entitled("u1") is False
     entitlement.set_dev_pass("u1")
     assert entitlement.is_entitled("u1") is True
-    entitlement.reset()
 
 
 def _client(monkeypatch, tmp_path, override: str | None):
@@ -48,7 +57,7 @@ def test_advisor_respects_env_override(monkeypatch, tmp_path):
     _seed_package(c, rid)
     r = c.post(f"/runs/{rid}/deploy/advisor/chat",
                json={"package_id": "sms_ko", "message": "안녕", "mock": True})
-    assert r.status_code != 402
+    assert r.status_code == 200
 
 
 def test_advisor_402_without_entitlement(monkeypatch, tmp_path):
