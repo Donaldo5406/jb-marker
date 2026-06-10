@@ -12,8 +12,10 @@ _SUPPORTED_ASPECTS = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "
 class GoogleProvider(Provider):
     name = "google"
 
-    def __init__(self, api_key: str | None) -> None:
+    def __init__(self, api_key: str | None, *,
+                 image_model: str = "gemini-2.5-flash-image") -> None:
         self._api_key = api_key
+        self._image_model = image_model
 
     def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
         from google import genai
@@ -49,7 +51,7 @@ class GoogleProvider(Provider):
             cfg = types.GenerateContentConfig(
                 image_config=types.ImageConfig(aspect_ratio=aspect))
         resp = client.models.generate_content(
-            model="gemini-2.5-flash-image", contents=full, config=cfg)
+            model=self._image_model, contents=full, config=cfg)
         for part in resp.candidates[0].content.parts:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):

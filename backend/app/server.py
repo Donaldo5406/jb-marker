@@ -182,7 +182,7 @@ def create_app() -> FastAPI:
             out = self._inner.generate_image(prompt, aspect=aspect)
             usage_log.record_usage(
                 store, run_id=self._run_id, step=self._step,
-                model="gemini-2.5-flash-image" if self.name == "google" else self._model_for(),
+                model=settings.google_image_model if self.name == "google" else self._model_for(),
                 kind="image", images=1, meta={"aspect": aspect},
             )
             return out
@@ -252,13 +252,19 @@ def create_app() -> FastAPI:
                              action=body.action, user_id=user_id,
                              bypass_map=body.bypass_map)
         media_name = "demo" if body.mock else "google"
+
+        def _media_provider():
+            # 주입형 image/vision provider도 usage 추적 래핑 (spec §7-2).
+            return _TrackedProvider(_ModelBoundProvider(media_name),
+                                    run_id=body.run_id, step=body.studio)
+
         if body.studio == "brainstorming" and body.is_marker:
             harness = BrainstormingHarness()
         elif body.studio == "design" and body.is_marker:
-            harness = DesignHarness(image_provider=_ModelBoundProvider(media_name))
+            harness = DesignHarness(image_provider=_media_provider())
         elif body.studio == "review" and body.is_marker:
             from .gateway.harness_review import ReviewHarness
-            harness = ReviewHarness(vision_provider=_ModelBoundProvider(media_name))
+            harness = ReviewHarness(vision_provider=_media_provider())
         else:
             harness = PassthroughHarness()
         try:
