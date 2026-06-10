@@ -466,7 +466,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     await refreshTree();
     const st = res.meta?.step;
     if (typeof st === "string") setDesignStep(st);
-    applyGate(res.gate);   // confirm 봉투 → designGate 매핑(단일 적용점)
+    // confirm 봉투 → designGate 매핑(단일 적용점). gate=null(done 등)은 적용하지 않음 —
+    // default 분기(setPendingGate(null))가 무관한 brainstorming ask 토스트를 닫는 교차 오염 차단.
+    // done 시 designGate 클리어는 아래 `if (st === "done")`이 담당.
+    if (res.gate) applyGate(res.gate);
     // S3→done: 백엔드 layout.spec 완성 → plan 전체 언어 scene 일괄 조립(R2 4언어 비교) +
     // 현재 언어 자동 open(C1). 언어는 design/_state.json(=plan frontmatter languages)이 정본.
     if (st === "done") {
