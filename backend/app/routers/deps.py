@@ -8,6 +8,9 @@ Swagger Authorize 버튼 활성화 전용이다. 실제 검증은 종전대로
 auth.resolve_user_id(raw Authorization 헤더)가 수행한다 — 보존해야 할
 행동 3가지: ① local 모드는 헤더 무시·무조건 "demo" ② 스킴 없는 생토큰
 수용 ③ 토큰 부재 401 detail. (auth.py는 불변)
+
+예외: entitlement는 의도된 모듈 싱글턴(create_app가 set_store로 매번 교체 —
+test_entitlement_choke 의미론). app.state로 옮기지 말 것.
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_user_id(
     request: Request,
+    # OpenAPI 표기 전용 — 값 미사용(검증은 resolve_user_id)
     _cred: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> str:
     return resolve_user_id(request.headers.get("authorization"),
