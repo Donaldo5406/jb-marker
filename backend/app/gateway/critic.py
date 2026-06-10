@@ -13,3 +13,9 @@ class CriticVerdict:
         if self.scores is not None:
             out["scores"] = self.scores
         return out
+
+    @classmethod
+    def from_scores(cls, raw: dict) -> "CriticVerdict":
+        """design raw 채점({scores, avg, pass}) → wire 봉투. 변환 지점 단일화."""
+        return cls(passed=bool(raw["pass"]),
+                   scores={"scores": raw["scores"], "avg": raw["avg"]})

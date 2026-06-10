@@ -253,10 +253,8 @@ class DesignHarness(Harness):
         if step in CRITIC_STEPS:                 # S1/S3 — 7항목 시각 critic
             spec = read_json_node(store, f"{base}/rough/layout.spec.json")
             verdict = self._run_critic(provider, spec)
-            p = bool(verdict["pass"])
-            return {"passed": p, "critic": CriticVerdict(
-                passed=p, scores={"scores": verdict["scores"],
-                                  "avg": verdict["avg"]}).to_dict()}
+            env = CriticVerdict.from_scores(verdict)
+            return {"passed": env.passed, "critic": env.to_dict()}
         if step == "S2b":                        # grounding — ungrounded 비어야 pass
             plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
             fm = _frontmatter(plan.content_text if plan else "")
@@ -468,9 +466,7 @@ class DesignHarness(Harness):
                   source="marker", mime="text/markdown")
         # meta.critic은 wire로 나가는 값 — CriticVerdict 봉투로 통일(spec §6).
         # metadata.md 렌더(위)는 raw 판정(critic['avg'] 등)을 그대로 사용.
-        verdict = CriticVerdict(passed=bool(critic["pass"]),
-                                scores={"scores": critic["scores"],
-                                        "avg": critic["avg"]}).to_dict()
+        verdict = CriticVerdict.from_scores(critic).to_dict()
         return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
             output_path=f"{base}/metadata.md",
             meta={"source": "marker", "step": "done", "critic": verdict},

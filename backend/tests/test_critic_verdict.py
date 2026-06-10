@@ -10,6 +10,15 @@ def test_verdict_to_dict_omits_none_scores():
     assert d == {"passed": False, "issues": ["factsheet"], "scores": {"avg": 2.1}}
 
 
+def test_from_scores_wraps_design_raw_grading():
+    # design raw 채점({scores, avg, pass}) → wire 봉투 변환 지점 단일화
+    raw = {"scores": {"layout": 4, "contrast": 3}, "avg": 3.5, "pass": 1}
+    v = CriticVerdict.from_scores(raw)
+    assert v.passed is True and isinstance(v.passed, bool)
+    assert v.to_dict() == {"passed": True, "issues": [],
+                           "scores": {"scores": {"layout": 4, "contrast": 3}, "avg": 3.5}}
+
+
 def test_brainstorming_critic_returns_verdict():
     from app.gateway.harness_brainstorming import BrainstormingHarness
     v = BrainstormingHarness().critic("---\ngoal: x\n---\n본문")
