@@ -25,6 +25,7 @@ from ..core.severity import (  # T7: import-only, 사용은 T11/T14
 from ..core.visual_rules import evaluate_visual_compliance
 from ..providers.base import Message, Provider
 from .harness import Harness, HarnessRequest, HarnessResult
+from .state import load_state, save_state
 
 
 def _verdict_id(node: str, clause_or_kind: str, slot: str, lang: str | None) -> str:
@@ -66,25 +67,20 @@ class ReviewHarness(Harness):
         return f"/{run_id}/review"
 
     def _load_state(self, store, run_id: str) -> dict:
-        n = store.get(f"{self._base(run_id)}/_state.json")
-        if n and n.content_text:
-            st = json.loads(n.content_text)
-            # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
-            st["languages"] = normalize_languages(st.get("languages"))
-            return st
-        return {
+        st = load_state(store, run_id, "review", default_factory=lambda: {
             "step": "R0", "languages": ["ko"], "matrix": {},
             "bypass": {}, "acknowledged": False, "last_run_at": None,
             "live_unavailable": False, "parse_failed": False,
             "vision_failed": False, "step_failed": "",
             "vision_skipped": [], "dropped_findings_count": 0,
             "r2_skipped": "",
-        }
+        })
+        # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
+        st["languages"] = normalize_languages(st.get("languages"))
+        return st
 
     def _save_state(self, store, run_id: str, state: dict) -> None:
-        store.put(f"{self._base(run_id)}/_state.json",
-                  json.dumps(state, ensure_ascii=False),
-                  source="marker", mime="application/json")
+        save_state(store, run_id, "review", state)
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)

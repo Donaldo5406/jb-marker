@@ -21,6 +21,7 @@ from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, 
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
 from .harness import Harness, HarnessRequest, HarnessResult
+from .state import load_state, save_state
 
 STEPS = ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
 
@@ -110,20 +111,16 @@ class DesignHarness(Harness):
         return f"/{run_id}/design"
 
     def _load_state(self, store, run_id: str) -> dict:
-        n = store.get(f"{self._base(run_id)}/_state.json")
-        if n and n.content_text:
-            st = json.loads(n.content_text)
-            st.setdefault("gate", None)   # 레거시 run 백필(spec §6)
-            # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
-            st["languages"] = normalize_languages(st.get("languages"))
-            return st
-        return {"step": "S0", "gate": None, "confirmed": {}, "bypass": {},
-                "languages": ["ko"], "pending_ask": None}
+        st = load_state(store, run_id, "design", default_factory=lambda: {
+            "step": "S0", "gate": None, "confirmed": {}, "bypass": {},
+            "languages": ["ko"], "pending_ask": None})
+        st.setdefault("gate", None)   # 레거시 run 백필(spec §6)
+        # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
+        st["languages"] = normalize_languages(st.get("languages"))
+        return st
 
     def _save_state(self, store, run_id: str, state: dict) -> None:
-        store.put(f"{self._base(run_id)}/_state.json",
-                  json.dumps(state, ensure_ascii=False),
-                  source="marker", mime="application/json")
+        save_state(store, run_id, "design", state)
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)

@@ -9,6 +9,7 @@ import json
 
 from ..providers.base import Message
 from .harness import AskPayload, Harness, HarnessRequest, HarnessResult
+from .state import load_state, save_state
 from ..core.parsing import parse_json_block as _parse_json
 
 # O4 compaction (spec: docs/specs/2026-06-02-messages-compaction-o4-design.md)
@@ -95,15 +96,12 @@ class BrainstormingHarness(Harness):
         return f"/{run_id}/brainstorming"
 
     def _load_state(self, store, run_id: str) -> dict:
-        n = store.get(f"{self._base(run_id)}/_state.json")
-        if n and n.content_text:
-            return json.loads(n.content_text)
-        return {"stage": "A", "spec_locked": False, "plan_locked": False,
-                "pending_ask": None, "compaction": None, "last_input_tokens": 0}
+        return load_state(store, run_id, "brainstorming", default_factory=lambda: {
+            "stage": "A", "spec_locked": False, "plan_locked": False,
+            "pending_ask": None, "compaction": None, "last_input_tokens": 0})
 
     def _save_state(self, store, run_id: str, state: dict) -> None:
-        store.put(f"{self._base(run_id)}/_state.json", json.dumps(state, ensure_ascii=False),
-                  source="marker", mime="application/json")
+        save_state(store, run_id, "brainstorming", state)
 
     def _load_messages(self, store, run_id: str) -> list[dict]:
         n = store.get(f"{self._base(run_id)}/_messages.json")
