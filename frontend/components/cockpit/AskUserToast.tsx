@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import { MessageCircleQuestion, X } from "lucide-react";
-import type { AskPayload } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 
+/** View가 기대하는 ask 모양(구 페이로드와 동형) — 봉투에서 컨테이너가 매핑해 전달. */
+type AskView = { trigger: "a" | "b" | "c"; question: string; options: string[] };
+
 export function AskUserToastView({ ask, onSelect, onClose }: {
-  ask: AskPayload | null; onSelect: (choice: string) => void; onClose: () => void;
+  ask: AskView | null; onSelect: (choice: string) => void; onClose: () => void;
 }) {
   if (!ask) return null;
   const tone = ask.trigger === "c" ? "border-severity-warning" : "border-outline-variant";
@@ -36,5 +38,11 @@ export function AskUserToastView({ ask, onSelect, onClose }: {
 
 export function AskUserToast() {
   const c = useCockpit();
-  return <AskUserToastView ask={c.pendingAsk} onSelect={(choice) => void c.answerAsk(choice)} onClose={c.closeAsk} />;
+  // ask 봉투(kind==="ask")를 View 기대 모양으로 명시 매핑 — 필수 필드 누락 봉투는 렌더하지 않음.
+  const g = c.pendingGate;
+  const ask: AskView | null =
+    g?.kind === "ask" && g.trigger && g.question && g.options
+      ? { trigger: g.trigger, question: g.question, options: g.options }
+      : null;
+  return <AskUserToastView ask={ask} onSelect={(choice) => void c.answerAsk(choice)} onClose={c.closeAsk} />;
 }

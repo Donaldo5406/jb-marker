@@ -20,7 +20,7 @@ from ..core.lang import normalize_languages
 from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, read_json_node
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
-from .harness import Harness, HarnessRequest, HarnessResult
+from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .state import load_state, save_state
 
 STEPS = ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
@@ -160,8 +160,7 @@ class DesignHarness(Harness):
                 self._save_state(store, req.run_id, state)
                 store.set_step_status(req.run_id, "design", "done")
                 meta = {"source": "marker", "step": "done",
-                        "gate": {"step": "done", "critic": None,
-                                 "auto_advanced": auto_advanced}}
+                        "auto_advanced": auto_advanced}
                 if warnings:
                     meta["warnings"] = warnings
                 return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
@@ -198,11 +197,14 @@ class DesignHarness(Harness):
         out = last.output_path if last is not None else f"{base}/_state.json"
         meta = dict(last.meta) if last is not None else {"source": "marker"}
         meta["step"] = gate
-        meta["gate"] = {"step": gate, "critic": critic, "auto_advanced": auto_advanced or []}
         if warnings:
             meta["warnings"] = warnings
         text = last.text if last is not None else "확정 대기 중입니다."
-        return HarnessResult(text=text, output_path=out, meta=meta, events=events)
+        return HarnessResult(text=text, output_path=out, meta=meta,
+                             gate=GateEnvelope(kind="confirm", step=gate, critic=critic,
+                                               auto_advanced=auto_advanced or None,
+                                               actions=["confirm", "regenerate"]),
+                             events=events)
 
     def _critic_gate(self, step, req, provider, store) -> dict:
         """단계별 품질 판정. {'passed': bool, 'critic': dict|None}. spec §3.3/§3.4."""

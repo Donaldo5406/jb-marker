@@ -67,7 +67,8 @@ def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
 
     # 턴1: 리서치 + 첫 질문(a). spec 아직 미작성.
     r1 = turn("정기예금 캠페인 기획하자")
-    assert (r1.get("ask") or {}).get("trigger") == "a"
+    assert (r1.get("gate") or {}).get("kind") == "ask"
+    assert (r1.get("gate") or {}).get("trigger") == "a"
     assert client.get(f"/vfs/{rid}/brainstorming/spec.md").status_code == 404
     # 리서치 산출물 저장 확인
     src = client.get(f"/vfs/{rid}/brainstorming/assets/research/article/src_0.md")
@@ -75,23 +76,23 @@ def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
 
     # 턴2: 두 번째 질문(a).
     r2 = turn("2030 사회초년생", answer="2030 사회초년생")
-    assert (r2.get("ask") or {}).get("trigger") == "a"
+    assert (r2.get("gate") or {}).get("trigger") == "a"
 
     # 턴3: 전체 spec + spec-lock 질문(b).
     r3 = turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
-    assert (r3.get("ask") or {}).get("trigger") == "b"
+    assert (r3.get("gate") or {}).get("trigger") == "b"
     spec = client.get(f"/vfs/{rid}/brainstorming/spec.md")
     assert spec.status_code == 200 and "goal:" in spec.json()["content_text"]
 
     # 턴4: spec 확정 → plan 1차 초안(누락) + 보충 질문(c).
     r4 = turn("예, plan으로", answer="예, plan으로")
-    assert (r4.get("ask") or {}).get("trigger") == "c"
+    assert (r4.get("gate") or {}).get("trigger") == "c"
     plan_partial = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
     assert "disclosures:" not in plan_partial   # 1차 누락
 
     # 턴5: 보충 → 완성 plan + plan-lock 질문(b).
     r5 = turn("보충하기", answer="보충하기")
-    assert (r5.get("ask") or {}).get("trigger") == "b"
+    assert (r5.get("gate") or {}).get("trigger") == "b"
     plan_full = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
     assert "creative_direction:" in plan_full and "disclosures:" in plan_full
 
@@ -130,14 +131,16 @@ def test_review_demo_blocks_on_staged_violations(monkeypatch):
     for _ in range(6):  # 정상 4단계 + 여유(무한루프 방지)
         r = _run(client, rid, "review", "검토 시작")
         assert r.status_code == 200
-        meta = r.json().get("meta") or {}
-        if meta.get("gate"):
-            gate = meta["gate"]
-        last_step = meta.get("step")
+        body = r.json()
+        g = body.get("gate")
+        if g:
+            gate = g
+        last_step = (body.get("meta") or {}).get("step")
         if last_step == "R3":
             break
     # R3 종단 도달 + 스테이징 위반 적발 → BLOCKED(critical ≥ 1).
     assert last_step == "R3"
+    assert gate.get("kind") == "status"   # T1-P2: 응답 top-level GateEnvelope
     assert gate.get("status") == "BLOCKED"
     assert gate.get("critical_count", 0) >= 1
     # 검토 보고서 생성 + state done 확인(BLOCKED여도 검토 단계 자체는 완주).
@@ -171,10 +174,11 @@ def _drive_review(client, rid, restart_first=False):
         kw = {"action": "restart"} if (restart_first and i == 0) else {}
         r = _run(client, rid, "review", "검토 시작", **kw)
         assert r.status_code == 200
-        meta = r.json().get("meta") or {}
-        if meta.get("gate"):
-            gate = meta["gate"]
-        last_step = meta.get("step")
+        body = r.json()
+        g = body.get("gate")
+        if g:
+            gate = g
+        last_step = (body.get("meta") or {}).get("step")
         if last_step == "R3":
             break
     return last_step, gate

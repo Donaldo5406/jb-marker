@@ -93,7 +93,7 @@ def test_brain_marker_uses_brainstorming_harness_and_writes_spec():
     # fake provider는 비-JSON echo라 document가 비어 spec.md는 쓰지 않음(대화-우선) —
     # 실제 spec 생성은 test_brainstorming_harness가 StubProvider로 커버.
     assert f"/{rid}/brainstorming/_state.json" in paths
-    assert "ask" in r.json()
+    assert "gate" in r.json()
 
 
 def test_free_brain_uses_passthrough():

@@ -51,21 +51,22 @@ function installFetch() {
         && method === "GET") {
       return { ok: false, status: 404, json: async () => ({}) };
     }
-    // gateway POST → meta.step/gate 응답
+    // gateway POST → meta.step + top-level gate 봉투 응답(T1-P2 §4.4)
     if (url.endsWith("/gateway/run") && method === "POST") {
       gatewayCalls.push(body);
       // ack/restart 액션은 단순 OK.
       if (body?.action === "ack" || body?.action === "restart") {
-        return ok({ output_path: "", text: "ok", meta: { step: body.action === "restart" ? "R0" : "R1" } });
+        return ok({ output_path: "", text: "ok", gate: null, meta: { step: body.action === "restart" ? "R0" : "R1" } });
       }
-      // 무액션 review 호출: 호출마다 한 단계 전진. R3에서 gate 포함(종단).
+      // 무액션 review 호출: 호출마다 한 단계 전진. R3에서 status 봉투 포함(종단).
       const st = REVIEW_STEPS[Math.min(reviewStep, REVIEW_STEPS.length - 1)];
       reviewStep += 1;
-      const meta: any = { step: st };
       // 백엔드 wire 형식(severity.py:91) — critical_count/warning_count. 0이 아닌 값으로
       // 프론트 매핑(CockpitProvider) 회귀(필드명 불일치→롤업 0)를 잡는다.
-      if (st === "R3") meta.gate = { status: "WARN", critical_count: 1, warning_count: 2 };
-      return ok({ output_path: "", text: `${st} 완료`, meta });
+      const gate = st === "R3"
+        ? { kind: "status", actions: ["ack", "regenerate", "restart"], status: "WARN", critical_count: 1, warning_count: 2 }
+        : null;
+      return ok({ output_path: "", text: `${st} 완료`, gate, meta: { step: st } });
     }
     return ok({});
   });

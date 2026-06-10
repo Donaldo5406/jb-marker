@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, authedFetch, type AskPayload, type Manifest, type Provider, type VfsNode } from "@/lib/api";
+import { api, authedFetch, type GateEnvelope, type Manifest, type Provider, type VfsNode } from "@/lib/api";
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
@@ -62,7 +62,7 @@ export type CockpitContextValue = {
   entitlement: Entitlement;
   upsellOpen: boolean;
   messages: ChatMessage[];
-  pendingAsk: AskPayload | null;
+  pendingGate: GateEnvelope | null;   // kind==="ask" 봉투만 보관(AskUserToast 소비)
   brainStage: string | null;          // _state.json.stage
   designStep: string;                 // "S0".."done"
   designLang: string;                 // 현재 편집 언어
@@ -70,7 +70,7 @@ export type CockpitContextValue = {
   switchDesignLang: (lang: string) => Promise<void>;   // 언어 전환 + 해당 언어 scene 재조립/열기(I4)
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
-  designGate: DesignGate | null;          // meta.gate — 현재 confirm 게이트 상태(critic/auto_advanced)
+  designGate: DesignGate | null;          // confirm 봉투 매핑 — 현재 confirm 게이트 상태(critic/auto_advanced)
   regenConfirm: { open: boolean; onConfirm: () => void; onCancel: () => void };   // scene-wins 재생성 confirm 게이트
   // ---- review state (M5 spec §8.3) ----
   reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
@@ -92,7 +92,7 @@ export type CockpitContextValue = {
   closeFile: () => void;
   saveFile: () => Promise<void>;
   sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean })
-    => Promise<{ text?: string; ask?: AskPayload | null } | null>;
+    => Promise<{ text?: string; gate?: GateEnvelope | null } | null>;
   runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
   runReview: () => Promise<{ text: string }>;
   ackReview: () => Promise<void>;
@@ -152,7 +152,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false, deploy: false });
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [pendingAsk, setPendingAsk] = useState<AskPayload | null>(null);
+  const [pendingGate, setPendingGate] = useState<GateEnvelope | null>(null);
   const [brainStage, setBrainStage] = useState<string | null>(null);
   const [designStep, setDesignStep] = useState("S0");
   const [designLang, setDesignLang] = useState("ko");
@@ -241,9 +241,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       const st = await vfsGetRetry(id, "brainstorming/_state.json");
       const parsed = st.content_text ? JSON.parse(st.content_text) : null;
       setBrainStage(parsed?.stage ?? null);
-      setPendingAsk(parsed?.pending_ask ?? null);
+      // _state.json의 pending_ask는 구 dict 형식 {trigger, question, options}(내부 상태) —
+      // 복원 시 ask 봉투로 매핑한다(T1-P2 §4.4).
+      const pa = parsed?.pending_ask;
+      setPendingGate(pa ? {
+        kind: "ask", actions: ["answer"],
+        trigger: pa.trigger, question: pa.question, options: pa.options,
+      } : null);
     } catch (e) {
-      if ((e as { status?: number }).status === 404) { setBrainStage(null); setPendingAsk(null); }
+      if ((e as { status?: number }).status === 404) { setBrainStage(null); setPendingGate(null); }
     }
   }, []);
 
@@ -266,7 +272,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setOpenFile(null);
       // run 전환 시 이전 run의 챗/stage를 즉시 비운다 — 복원이 일시 실패해도 다른 run의
       // 대화가 잘못 표시되지 않도록(loadBrainState는 일시 오류 시 기존 값을 보존하므로 선행 리셋 필요).
-      setMessages([]); setBrainStage(null); setPendingAsk(null);
+      setMessages([]); setBrainStage(null); setPendingGate(null);
       // M5 spec §7.4: run 전환 시 review state 3 필드 리셋 — 이전 run의 stale ack가
       // T18 isDeployUnlocked를 거짓 해제하지 않도록.
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
@@ -289,7 +295,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setManifest({ run_id, title: title ?? null, created_at: null, step_status: {} });
       setNodes([]);
       setOpenFile(null);
-      setMessages([]); setPendingAsk(null); setBrainStage("A");
+      setMessages([]); setPendingGate(null); setBrainStage("A");
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
@@ -382,6 +388,30 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     await refreshTree();
   }, [openFile, refreshTree]);
 
+  /** 게이트 봉투 단일 적용점(T1-P2 §4.4) — kind별로 해당 스튜디오 상태에 매핑.
+   *  null/undefined는 ask 게이트만 해소 — designGate/reviewGate는 각 스튜디오 플로가 관리. */
+  const applyGate = useCallback((gate: GateEnvelope | null | undefined) => {
+    switch (gate?.kind) {
+      case "ask":
+        setPendingGate(gate);
+        break;
+      case "confirm":
+        // 기존 DesignGate 모양 유지 — 소비자(PipelineRail 등) 무변경.
+        setDesignGate({ step: gate.step ?? "", critic: gate.critic ?? null, auto_advanced: gate.auto_advanced ?? [] });
+        break;
+      case "status":
+        // 백엔드 compute_gate는 critical_count/warning_count로 내보낸다(severity.py:91).
+        setReviewGate({
+          status: String(gate.status ?? ""),
+          critical: gate.critical_count ?? 0,
+          warning: gate.warning_count ?? 0,
+        });
+        break;
+      default:
+        setPendingGate(null);
+    }
+  }, []);
+
   const sendChat = useCallback(
     async (p: { prompt: string; provider: Provider; isMarker: boolean }) => {
       const id = runIdRef.current;
@@ -394,17 +424,17 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
           mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
-        setPendingAsk(res.ask ?? null);
+        applyGate(res.gate);
         // loadManifest: step_status 변경(D8 done→design 활성)을 ProcessBar에 세션 내 반영.
         await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
-        return { text: res.text, ask: res.ask ?? null };
+        return { text: res.text, gate: res.gate ?? null };
       } catch (e) {
         const status = (e as { status?: number }).status;
         if (status === 402) { setUpsellOpen(true); return null; }
         throw e;
       }
     },
-    [activeStudio, refreshTree, loadBrainState, loadManifest],
+    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
@@ -436,10 +466,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     await refreshTree();
     const st = res.meta?.step;
     if (typeof st === "string") setDesignStep(st);
-    setDesignGate((res.meta?.gate as DesignGate) ?? null);   // 게이트 상태 보존(meta.gate)
+    // confirm 봉투 → designGate 매핑(단일 적용점). gate=null(done 등)은 적용하지 않음 —
+    // default 분기(setPendingGate(null))가 무관한 brainstorming ask 토스트를 닫는 교차 오염 차단.
+    // done 시 designGate 클리어는 아래 `if (st === "done")`이 담당.
+    if (res.gate) applyGate(res.gate);
     // S3→done: 백엔드 layout.spec 완성 → plan 전체 언어 scene 일괄 조립(R2 4언어 비교) +
     // 현재 언어 자동 open(C1). 언어는 design/_state.json(=plan frontmatter languages)이 정본.
     if (st === "done") {
+      setDesignGate(null);   // done은 gate=null(봉투 없음) — confirm 게이트 명시 해소.
       let langs: string[] = [];
       try {
         const sn = await api.vfsGet(id, "design/_state.json");
@@ -450,7 +484,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       await assembleScenes(langs, designLang);
     }
     return { text: res.text };
-  }, [refreshTree, designBypass, designStep, assembleScenes, designLang]);
+  }, [refreshTree, designBypass, designStep, assembleScenes, designLang, applyGate]);
 
   const setDesignBypass = useCallback(
     (id: string, on: boolean) => setDesignBypassState((m) => ({ ...m, [id]: on })),
@@ -487,33 +521,24 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const nextStage = (st: string): ReviewStage =>
       st === "R0" ? "R1" : st === "R1" ? "R2" : "R3";
     let lastText = "";
-    let gate: any = null;
+    let gate: GateEnvelope | null = null;
     for (let i = 0; i < STEP_GUARD; i++) {
       const res = await api.gatewayRun({
         run_id: id, studio: "review", prompt: i === 0 ? "검토 시작" : "계속",
         provider: "anthropic", is_marker: true, mock: mockModeRef.current,
       });
       lastText = res.text ?? lastText;
-      const g = (res.meta as any)?.gate;
-      if (g && typeof g === "object") gate = g;
+      if (res.gate?.kind === "status") gate = res.gate;   // R3 status 봉투 수집
       await refreshTree();                       // 단계 산출물(legal/·i18n/·report.md) 즉시 반영
       const st = res.meta?.step;
       if (st === "R3") { setReviewStage("done"); break; }   // R3=종단(state→done)
       setReviewStage(nextStage(typeof st === "string" ? st : "R0"));   // 진행 표시
     }
-    // 4) 게이트·manifest 반영.
-    if (gate) {
-      // 백엔드 compute_gate는 critical_count/warning_count로 내보낸다(severity.py:91).
-      // 과거 critical/warning만 읽어 롤업이 항상 0이던 버그 → wire 키 우선 폴백.
-      setReviewGate({
-        status: String(gate.status ?? ""),
-        critical: Number(gate.critical_count ?? gate.critical ?? 0),
-        warning: Number(gate.warning_count ?? gate.warning ?? 0),
-      });
-    }
+    // 4) 게이트·manifest 반영 — 마지막 status 봉투를 단일 적용점(applyGate)으로.
+    if (gate) applyGate(gate);
     await loadManifest(id);
     return { text: lastText };
-  }, [refreshTree, loadManifest]);
+  }, [refreshTree, loadManifest, applyGate]);
 
   /** WARN ack(spec §8.3): backend acknowledged flag 갱신 + 클라이언트 플래그 set. */
   const ackReview = useCallback(async () => {
@@ -577,25 +602,25 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const answerAsk = useCallback(async (choice: string) => {
     const id = runIdRef.current;
-    if (!id || !pendingAsk) return;
+    if (!id || pendingGate?.kind !== "ask") return;
     setMessages((m) => [...m, { role: "user", content: choice }]);
-    setPendingAsk(null);
+    setPendingGate(null);
     try {
       const res = await api.gatewayRun({
         run_id: id, studio: "brainstorming", prompt: choice,
         provider: "anthropic", is_marker: true, answer: choice, mock: mockModeRef.current,
       });
       if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
-      setPendingAsk(res.ask ?? null);
+      applyGate(res.gate);
       // loadManifest: plan-lock(D8 done)이 ProcessBar/design 활성에 세션 내 반영되도록.
       await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 402) setUpsellOpen(true);
     }
-  }, [pendingAsk, refreshTree, loadBrainState, loadManifest]);
+  }, [pendingGate, applyGate, refreshTree, loadBrainState, loadManifest]);
 
-  const closeAsk = useCallback(() => setPendingAsk(null), []);
+  const closeAsk = useCallback(() => setPendingGate(null), []);
 
   const setStudio = useCallback((s: Studio) => setActiveStudio(s), []);
   const setView = useCallback(
@@ -744,12 +769,12 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- WS: askuser → pendingAsk, artifact/poll → 트리 재조회 ----
+  // ---- WS: gate → applyGate(봉투 단일 적용점), artifact/poll → 트리 재조회 ----
   // artifact(백엔드 쓰기)는 캐시 무효화도 수행 — 재생성된 파일이 stale 캐시로 가려지지 않도록.
   // poll(쓰기 아님)은 트리만 갱신해 캐시를 보존(#3 딜레이 해소 핵심).
   useRunSocket(runId, (e) => {
-    if (e.type === "askuser" && e.ask) {
-      setPendingAsk(e.ask);
+    if (e.type === "gate" && e.gate) {
+      applyGate(e.gate);
     } else if (e.type === "artifact") {
       if (e.path) {
         fileCacheRef.current.delete(e.path);
@@ -775,7 +800,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     entitlement,
     upsellOpen,
     messages,
-    pendingAsk,
+    pendingGate,
     brainStage,
     designStep,
     designLang,

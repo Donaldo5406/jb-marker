@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from ..providers.base import Message
-from .harness import AskPayload, Harness, HarnessRequest, HarnessResult
+from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .state import load_state, save_state
 from ..core.parsing import parse_json_block as _parse_json
 
@@ -50,12 +50,14 @@ _PROTOCOL = (
 )
 
 
-def _to_ask(ask: dict | None) -> "AskPayload | None":
+def _to_gate(ask: dict | None) -> "GateEnvelope | None":
     if not ask:
         return None
-    return AskPayload(trigger=str(ask.get("trigger", "")),
-                      question=str(ask.get("question", "")),
-                      options=list(ask.get("options") or []))
+    return GateEnvelope(kind="ask",
+                        trigger=str(ask.get("trigger", "")),
+                        question=str(ask.get("question", "")),
+                        options=list(ask.get("options") or []),
+                        actions=["answer"])
 
 
 def _frontmatter_keys(md: str) -> set[str]:
@@ -250,13 +252,11 @@ class BrainstormingHarness(Harness):
         self._save_messages(store, req.run_id, msgs)
         state["pending_ask"] = ask
         self._save_state(store, req.run_id, state)
-        ask_obj = _to_ask(ask)
-        if ask_obj:
-            events.append({"type": "askuser", "ask": {"trigger": ask_obj.trigger,
-                                                       "question": ask_obj.question,
-                                                       "options": ask_obj.options}})
+        gate_obj = _to_gate(ask)
+        if gate_obj:
+            events.append({"type": "gate", "gate": gate_obj.to_dict()})
         return HarnessResult(text=reply, output_path=f"{base}/spec.md",
-                             meta={"source": "marker", "stage": "A"}, ask=ask_obj, events=events)
+                             meta={"source": "marker", "stage": "A"}, gate=gate_obj, events=events)
 
     def _is_yes(self, answer: str | None) -> bool:
         if not answer:
@@ -328,12 +328,11 @@ class BrainstormingHarness(Harness):
         self._save_messages(store, req.run_id, msgs)
         state["pending_ask"] = ask
         self._save_state(store, req.run_id, state)
-        ask_obj = _to_ask(ask)
-        if ask_obj:
-            events.append({"type": "askuser", "ask": {"trigger": ask_obj.trigger,
-                          "question": ask_obj.question, "options": ask_obj.options}})
+        gate_obj = _to_gate(ask)
+        if gate_obj:
+            events.append({"type": "gate", "gate": gate_obj.to_dict()})
         return HarnessResult(text=reply, output_path=f"{base}/plan.md",
-                             meta={"source": "marker", "stage": "B"}, ask=ask_obj, events=events)
+                             meta={"source": "marker", "stage": "B"}, gate=gate_obj, events=events)
 
     def _stage_done(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict]) -> HarnessResult:
         base = self._base(req.run_id)

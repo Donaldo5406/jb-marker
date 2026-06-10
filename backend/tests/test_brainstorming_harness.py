@@ -63,7 +63,7 @@ def test_stage_a_writes_spec_and_research_and_returns_reply():
     req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="30대 적금 캠페인", provider="fake", is_marker=True)
     res = h.handle_turn(req, provider=stub, store=s)
     assert res.text == "주력 채널은 무엇인가요?"
-    assert res.ask is not None and res.ask.trigger == "a"
+    assert res.gate is not None and res.gate.kind == "ask" and res.gate.trigger == "a"
     assert s.get("/rb/brainstorming/spec.md").content_text.startswith("---")
     research = s.list("/rb/brainstorming/assets/research")
     assert len(research) >= 1 and research[0].meta.get("source_url") == "https://x.com"
@@ -83,7 +83,7 @@ def test_stage_a_conversation_turn_writes_no_spec():
     res = h.handle_turn(req, provider=stub, store=s)
     assert res.text == "어떤 연령대를 타겟하나요?"
     assert s.get("/rb/brainstorming/spec.md") is None  # 빈 document → spec 미생성
-    assert res.ask is not None and res.ask.trigger == "a"
+    assert res.gate is not None and res.gate.kind == "ask" and res.gate.trigger == "a"
 
 
 def test_stage_a_parse_failure_falls_back_and_keeps_spec():
@@ -109,7 +109,7 @@ def test_stage_a_ready_full_spec_proposes_b():
         {"reply": "정리했습니다.", "document": full_spec, "ask": None, "ready": True})}])
     req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="좋아 정리해줘", provider="fake", is_marker=True)
     res = h.handle_turn(req, provider=stub, store=s)
-    assert res.ask is not None and res.ask.trigger == "b"
+    assert res.gate is not None and res.gate.kind == "ask" and res.gate.trigger == "b"
     assert h._load_state(s, "rb")["stage"] == "A"  # 아직 전환 전(사용자 확정 대기)
 
 
@@ -122,8 +122,8 @@ def test_stage_a_ready_missing_fields_asks_c():
         {"reply": "정리했습니다.", "document": "---\ngoal: x\n---\n본문", "ask": None, "ready": True})}])
     req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="좋아 정리해줘", provider="fake", is_marker=True)
     res = h.handle_turn(req, provider=stub, store=s)
-    assert res.ask is not None and res.ask.trigger == "c"      # 누락 → 보충
-    assert "target_segments" in res.ask.question               # 누락 필드 안내
+    assert res.gate is not None and res.gate.kind == "ask" and res.gate.trigger == "c"  # 누락 → 보충
+    assert "target_segments" in res.gate.question              # 누락 필드 안내
     assert h._load_state(s, "rb")["stage"] == "A"
 
 
@@ -147,7 +147,7 @@ def test_b_accepts_spec_lock_from_pending_b_then_runs():
     res = h.handle_turn(req, provider=stub, store=s)
     assert s.get("/rb/brainstorming/plan.md") is not None
     assert h._load_state(s, "rb")["stage"] == "B"   # plan 확정 전(다음 b 대기)
-    assert res.ask is not None and res.ask.trigger == "b"  # plan lock 확인 요청
+    assert res.gate is not None and res.gate.kind == "ask" and res.gate.trigger == "b"  # plan lock 확인 요청
 
 
 def test_b_missing_contract_field_asks_c():
@@ -158,8 +158,8 @@ def test_b_missing_contract_field_asks_c():
     stub = StubProvider([{"text": json.dumps({"reply": "초안", "document": partial, "ask": None, "ready": True})}])
     req = HarnessRequest(run_id="rb", studio="brainstorming", user_prompt="계획 짜줘", provider="fake", is_marker=True)
     res = h.handle_turn(req, provider=stub, store=s)
-    assert res.ask is not None and res.ask.trigger == "c"
-    assert "factsheet" in res.ask.question  # 누락 필드 안내
+    assert res.gate is not None and res.gate.kind == "ask" and res.gate.trigger == "c"
+    assert "factsheet" in res.gate.question  # 누락 필드 안내
 
 
 def test_b_plan_lock_sets_step_done():
@@ -197,7 +197,7 @@ def test_a_to_done_via_confirm_no_bypass():
                                       provider="fake", is_marker=True, answer="예, plan으로"),
                        provider=StubProvider([{"text": json.dumps(
                            {"reply": "plan 완료", "document": full_plan, "ask": None, "ready": True})}]), store=s)
-    assert r2.ask is not None and r2.ask.trigger == "b"
+    assert r2.gate is not None and r2.gate.kind == "ask" and r2.gate.trigger == "b"
     assert h._load_state(s, "rb")["stage"] == "B"
 
     # 턴3: plan 확정(예) → done (LLM 불필요)

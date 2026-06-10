@@ -282,11 +282,9 @@ def create_app() -> FastAPI:
                                          "studio": body.studio, "run_id": body.run_id})
         for ev in result.events:
             await _publish(body.run_id, ev)
-        ask = None
-        if result.ask is not None:
-            ask = {"trigger": result.ask.trigger, "question": result.ask.question, "options": result.ask.options}
         return {"output_path": result.output_path, "text": result.text,
-                "ask": ask, "meta": result.meta}
+                "gate": result.gate.to_dict() if result.gate else None,
+                "meta": result.meta}
 
     @app.get("/runs/{run_id}/session/{studio}")
     def session_heartbeat(run_id: str, studio: str,
