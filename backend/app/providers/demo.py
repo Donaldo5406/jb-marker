@@ -278,7 +278,9 @@ def _detect(system: str, messages=None) -> str:
 class DemoProvider(Provider):
     name = "demo"
 
-    def complete(self, messages, *, model, system=None, tools=None, **kwargs) -> ProviderResponse:
+    def complete(self, messages: list[Message], *, model: str | None = None,
+                 system: str | None = None, tools: list[dict] | None = None,
+                 meta: dict | None = None, **kwargs) -> ProviderResponse:
         s = system or ""
         if "[Stage A]" in s:                      # 브레인스토밍 Stage A — 리서치+멀티턴
             text, citations = _stage_a_brainstorm(messages, s)
