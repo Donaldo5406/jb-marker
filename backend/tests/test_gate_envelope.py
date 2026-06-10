@@ -16,7 +16,7 @@ from app.providers.base import ProviderResponse
 class StubProvider:
     """미리 정한 JSON 텍스트를 순서대로 반환(LLM 대체) — test_brainstorming_harness.py 패턴."""
     def __init__(self, responses): self._r = list(responses); self.calls = []
-    def complete(self, messages, *, model, system=None, tools=None, **kw):
+    def complete(self, messages, *, model=None, system=None, tools=None, **kw):
         self.calls.append({"system": system, "tools": tools, "messages": messages})
         r = self._r.pop(0)
         return ProviderResponse(text=r["text"], model=model,

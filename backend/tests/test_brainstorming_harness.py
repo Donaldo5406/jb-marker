@@ -6,8 +6,9 @@ from app.providers.base import ProviderResponse
 class StubProvider:
     """미리 정한 JSON 텍스트를 순서대로 반환(LLM 대체)."""
     def __init__(self, responses): self._r = list(responses); self.calls = []
-    def complete(self, messages, *, model, system=None, tools=None, **kw):
-        self.calls.append({"system": system, "tools": tools, "messages": messages})
+    def complete(self, messages, *, model=None, system=None, tools=None, **kw):
+        self.calls.append({"system": system, "tools": tools, "messages": messages,
+                           "meta": kw.get("meta")})
         r = self._r.pop(0)
         return ProviderResponse(text=r["text"], model=model,
                                citations=r.get("citations", []), usage=r.get("usage"))
@@ -478,6 +479,46 @@ def test_save_research_falls_back_to_title_url_when_no_snippet():
     body = research[0].content_text
     assert "금리표" in body and "https://x.com" in body
     assert research[0].meta.get("source_url") == "https://x.com"
+
+
+def test_stage_a_system_is_preserved_and_meta_passed():
+    # T1-P3 D6: PromptSpec 전환 후에도 system 문자열 구성·순서가 현행과 동일해야 하고,
+    # meta={"studio","step"} 명시 신호가 provider.complete로 전달돼야 한다.
+    import app.gateway.harness_brainstorming as hb
+    from app.gateway.harness import HarnessRequest
+    h = hb.BrainstormingHarness(); s = _store()
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "r", "document": "", "ask": None, "ready": False})}])
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming",
+                  user_prompt="hi", provider="fake", is_marker=True),
+                  provider=stub, store=s)
+    sysp = stub.calls[0]["system"]
+    assert sysp.startswith(hb.PERSONA)                      # ① persona가 선두
+    i_instr = sysp.index("[Stage A]")                       # ② 블록 순서 보존
+    i_proto = sysp.index(hb._PROTOCOL)
+    i_ref = sysp.index("[현재 spec.md]")
+    assert i_instr < i_proto < i_ref
+    assert stub.calls[0].get("meta") == {"studio": "brainstorming", "step": "stage_a"}  # ③
+
+
+def test_stage_b_system_is_preserved_and_meta_passed():
+    # T1-P3 D6: Stage B도 persona→지시→_PROTOCOL→[확정 spec]→[현재 plan] 순서 보존 + meta 전달.
+    import app.gateway.harness_brainstorming as hb
+    from app.gateway.harness import HarnessRequest
+    h = hb.BrainstormingHarness(); s = _store(); _seed_stage_b(h, s)
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "초안", "document": "", "ask": None, "ready": False})}])
+    h.handle_turn(HarnessRequest(run_id="rb", studio="brainstorming",
+                  user_prompt="계획 짜줘", provider="fake", is_marker=True),
+                  provider=stub, store=s)
+    sysp = stub.calls[0]["system"]
+    assert sysp.startswith(hb.PERSONA)
+    i_instr = sysp.index("[Stage B]")
+    i_proto = sysp.index(hb._PROTOCOL)
+    i_spec = sysp.index("[확정 spec.md]")
+    i_plan = sysp.index("[현재 plan.md]")
+    assert i_instr < i_proto < i_spec < i_plan
+    assert stub.calls[0].get("meta") == {"studio": "brainstorming", "step": "stage_b"}
 
 
 def test_stage_a_system_prompt_allows_websearch():
