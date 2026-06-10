@@ -135,6 +135,7 @@ def create_app() -> FastAPI:
     from .entitlement import set_store
     from .entitlement_store import get_entitlement_store
     set_store(get_entitlement_store(settings))
+    entitlement.set_override_source(lambda: settings.entitlement_override)
 
     # provider_factory: settings의 모델 매핑 주입
     model_map = {"anthropic": settings.anthropic_model, "openai": settings.openai_model,
@@ -199,8 +200,7 @@ def create_app() -> FastAPI:
         return _TrackedProvider(provider, run_id=req.run_id, step=req.studio or "gateway")
 
     gateway = MarkerGateway(store,
-                            entitlement_check=entitlement.check,
-                            env_override=lambda: settings.entitlement_override,
+                            entitlement_check=entitlement.is_entitled,
                             provider_factory=_ModelBoundProvider,
                             wrap_provider=_wrap_for_usage)
 
@@ -219,7 +219,7 @@ def create_app() -> FastAPI:
 
     @app.get("/entitlement")
     def get_entitlement(user_id: str = Depends(user_id_dep)) -> dict:
-        return {"marker": settings.entitlement_override or entitlement.check(user_id)}
+        return {"marker": entitlement.is_entitled(user_id)}
 
     @app.put("/entitlement")
     def put_entitlement(body: EntitlementPut, user_id: str = Depends(user_id_dep)) -> dict:
@@ -227,7 +227,7 @@ def create_app() -> FastAPI:
             entitlement.set_dev_pass(user_id)
         else:
             entitlement.reset(user_id)
-        return {"marker": settings.entitlement_override or entitlement.check(user_id)}
+        return {"marker": entitlement.is_entitled(user_id)}
 
     @app.post("/runs")
     def create_run(body: RunCreate, user_id: str = Depends(user_id_dep)) -> dict:
@@ -495,7 +495,7 @@ def create_app() -> FastAPI:
     def deploy_advisor_chat(run_id: str, body: AdvisorChatBody,
                             user_id: str = Depends(user_id_dep)) -> dict:
         require_owner(run_id, user_id)
-        if not entitlement.check(user_id):
+        if not entitlement.is_entitled(user_id):
             raise HTTPException(402, "Payment required (entitlement)")
         ctx_raw = store.get_text(f"/{run_id}/deploy/packages/{body.package_id}/copy.meta.json")
         ctx = json.loads(ctx_raw) if ctx_raw else {}
@@ -536,7 +536,7 @@ def create_app() -> FastAPI:
         require_owner(run_id, user_id)
         if not body.confirmed:
             raise HTTPException(400, "user confirm required")
-        if not entitlement.check(user_id):
+        if not entitlement.is_entitled(user_id):
             raise HTTPException(402, "Payment required (entitlement)")
 
         selected = json.loads(
@@ -617,7 +617,7 @@ def create_app() -> FastAPI:
             "matrix": json.loads(
                 store.get_text(f"/{run_id}/deploy/inputs/matrix.json") or "[]"
             ),
-            "dev_pass": entitlement.check(user_id),
+            "dev_pass": entitlement.is_entitled(user_id),
         }
 
     @app.websocket("/ws/{run_id}")
