@@ -10,7 +10,7 @@ tool_results·eligibility breakdown)은 dict로 두고 description으로 계약�
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -103,3 +103,123 @@ class GalleryOut(BaseModel):
     run: dict[str, Any] = Field(
         description="run 메타: run_id·title·created_at·current_step·step_status·languages")
     sections: list[GallerySectionOut]
+
+
+# ── session ──
+# heartbeat는 단일 모델 불가 — "세션 없음"은 정확 4키(status: None 포함),
+# "있음"은 정확 8키(liveness 파생 뷰). Union[구체형 우선]로 응답.
+
+class SessionMissingOut(BaseModel):
+    kind: Literal["heartbeat"]
+    exists: Literal[False]
+    status: None = None
+    resumable: bool
+
+
+class SessionLivenessOut(BaseModel):
+    kind: Literal["heartbeat"]
+    exists: Literal[True]
+    liveness: str
+    status: str
+    # warn_at/suspend_at = rec.updated_at_ms + 임계(ms) — int 확정 (liveness.py heartbeat_view)
+    warn_at: int
+    suspend_at: int
+    expires_at: int | None
+    resumable: bool
+
+
+class SessionRestoredOut(BaseModel):
+    kind: Literal["restored"]
+    run_id: str
+    studio: str
+    status: str
+
+
+class SessionExpiredOut(BaseModel):
+    kind: Literal["expired"]
+    reason: str
+
+
+class SessionSuspendOut(BaseModel):
+    kind: Literal["suspended"]
+    status: str
+
+
+class SessionListItemOut(BaseModel):
+    studio: str
+    status: str
+    updated_at_ms: int
+    expires_at: int | None
+
+
+class SessionListOut(BaseModel):
+    kind: Literal["session_list"]
+    sessions: list[SessionListItemOut]
+
+
+# ── deploy ──
+
+class MatrixCellOut(BaseModel):
+    channel: str
+    lang: str
+
+
+class DeploySetupOut(BaseModel):
+    matrix: list[MatrixCellOut]
+    step_status: str
+
+
+class EligibilityOut(BaseModel):
+    total: int
+    eligible_count: int
+    excluded_count: int
+    breakdown: list[dict[str, Any]] = Field(
+        description="정책별(§50/§15·§16) 사유 분해 — 항목 형태 "
+                    "{policy,label,citation,count,reasons:[{status,label,count}]} "
+                    "(eligibility.py _build_breakdown, _POLICY_ORDER 순)")
+
+
+class PackageOut(BaseModel):
+    package_id: str
+    status: str
+    reason: str | None
+
+
+class AdvisorOkOut(BaseModel):
+    status: Literal["ok"]
+    text: str
+    tool_results: list[dict[str, Any]] = Field(
+        description="도구 실행 결과 — 항목 형태 가변({name,status[,reason]}|{name,output}|{name,status,failures})")
+
+
+class AdvisorErrorOut(BaseModel):
+    status: Literal["error"]
+    message: str
+
+
+class DispatchOut(BaseModel):
+    step_status: Literal["PASS"]
+    simulation: list[dict[str, Any]] = Field(
+        description="채널×언어 셀 결과 — {channel,lang,status,message,recipients_count} 또는 skipped 셀 {channel,lang,status,reason}")
+
+
+class DemoPaymentOut(BaseModel):
+    dev_pass: bool
+
+
+class DeployStateOut(BaseModel):
+    step_status: str
+    selected_providers: list[str]
+    matrix: list[MatrixCellOut]
+    dev_pass: bool
+
+
+# ── gateway ──
+
+class GatewayRunOut(BaseModel):
+    output_path: str | None
+    text: str
+    gate: dict[str, Any] | None = Field(
+        description="GateEnvelope(P2 wire 계약): kind=ask|confirm|status + actions, "
+                    "None 필드 생략(가변 키) — 모델화 금지, dict 유지")
+    meta: dict[str, Any]

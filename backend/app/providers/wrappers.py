@@ -72,3 +72,9 @@ class TrackedProvider:
             kind="vision", usage=getattr(resp, "usage", None),
         )
         return resp
+
+
+def tracked_provider(name: str, settings, *, store, run_id: str, step: str) -> TrackedProvider:
+    """주입형 provider 표준 조립 — 모델 바인딩 + usage 추적 (spec §7-2)."""
+    return TrackedProvider(ModelBoundProvider(name, settings),
+                           store=store, run_id=run_id, step=step, settings=settings)

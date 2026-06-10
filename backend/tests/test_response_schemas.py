@@ -115,3 +115,84 @@ def test_preview_returns_html(local_client):
     r = local_client.get(f"/runs/{rid}/preview")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
+
+
+# ── T8: session·deploy·gateway response_model 직렬화 회귀 가드 ──
+
+def test_session_heartbeat_missing_exact_dict(local_client):
+    """'세션 없음'은 정확 4키 — status: None 키가 있어야 하고
+    liveness/warn_at/suspend_at/expires_at은 없어야 함 (Union이 Missing으로 매칭)."""
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    r = local_client.get(f"/runs/{rid}/session/review")
+    assert r.status_code == 200
+    assert r.json() == {"kind": "heartbeat", "exists": False,
+                        "status": None, "resumable": False}
+
+
+def test_session_heartbeat_exists_exact_keyset(local_client):
+    """'세션 있음'은 정확 8키(liveness 파생 뷰) — Union이 Liveness로 매칭."""
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    local_client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design",
+        "prompt": "x", "provider": "fake", "is_marker": False})
+    r = local_client.get(f"/runs/{rid}/session/design")
+    assert r.status_code == 200
+    assert set(r.json().keys()) == {
+        "kind", "exists", "liveness", "status",
+        "warn_at", "suspend_at", "expires_at", "resumable"}
+
+
+def test_gateway_run_mock_exact_keyset_and_gate_none_omission(local_client):
+    """gateway 응답 정확 4키 + gate 봉투(P2 wire)는 None 필드 생략 보존 —
+    brainstorming ask 봉투엔 confirm/status 계열 필드가 없어야 함."""
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    # is_marker 게이트 통과용 dev_pass (entitlement choke)
+    local_client.post(f"/runs/{rid}/deploy/demo-payment")
+    r = local_client.post("/gateway/run", json={
+        "run_id": rid, "studio": "brainstorming",
+        "prompt": "정기예금 캠페인", "provider": "anthropic",
+        "is_marker": True, "mock": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"output_path", "text", "gate", "meta"}
+    gate = body["gate"]
+    assert gate["kind"] == "ask"
+    assert "step" not in gate       # confirm 전용 필드 생략
+    assert "status" not in gate     # status 전용 필드 생략
+
+
+def test_gateway_run_unknown_studio_422(local_client):
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    r = local_client.post("/gateway/run", json={
+        "run_id": rid, "studio": "x", "prompt": "hi"})
+    assert r.status_code == 422
+
+
+def test_gateway_run_unknown_provider_422(local_client):
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    r = local_client.post("/gateway/run", json={
+        "run_id": rid, "studio": "brainstorming", "prompt": "hi",
+        "provider": "claude"})
+    assert r.status_code == 422
+
+
+def test_gateway_run_unknown_action_422(local_client):
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    r = local_client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design", "prompt": "",
+        "provider": "fake", "action": "next"})
+    assert r.status_code == 422
+
+
+def test_deploy_setup_and_state_exact_keysets(local_client):
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    r = local_client.post(f"/runs/{rid}/deploy/setup",
+                          json={"selected_providers": ["sms"], "languages": ["ko"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"matrix", "step_status"}
+    assert set(body["matrix"][0].keys()) == {"channel", "lang"}
+    r = local_client.get(f"/runs/{rid}/deploy/_state")
+    assert r.status_code == 200
+    assert set(r.json().keys()) == {
+        "step_status", "selected_providers", "matrix", "dev_pass"}

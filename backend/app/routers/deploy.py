@@ -17,6 +17,18 @@ from ..deploy.packager import package_channel
 from ..deploy.providers import get_provider as get_deploy_provider
 from ..deploy.rules_engine import load_policies
 from ..observability import usage as usage_log
+from ..schemas import (
+    OWNER_RESPONSES,
+    AdvisorErrorOut,
+    AdvisorOkOut,
+    DemoPaymentOut,
+    DeploySetupOut,
+    DeployStateOut,
+    DispatchOut,
+    EligibilityOut,
+    ErrorOut,
+    PackageOut,
+)
 from .deps import get_user_id, require_owner
 
 router = APIRouter(tags=["deploy"])
@@ -68,7 +80,9 @@ def _make_advisor_provider(ctx: dict, channel: str, settings, mock: bool = False
 
 
 # === M6 DeployStudio routes ===
-@router.post("/runs/{run_id}/deploy/setup")
+@router.post("/runs/{run_id}/deploy/setup", response_model=DeploySetupOut,
+             summary="배포 매트릭스(채널×언어) 설정",
+             responses=OWNER_RESPONSES)
 def deploy_setup(run_id: str, body: DeploySetupBody, request: Request,
                  user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -86,7 +100,9 @@ def deploy_setup(run_id: str, body: DeploySetupBody, request: Request,
     return {"matrix": matrix, "step_status": "in_progress"}
 
 
-@router.post("/runs/{run_id}/deploy/eligibility")
+@router.post("/runs/{run_id}/deploy/eligibility", response_model=EligibilityOut,
+             summary="수신자 적격성(D1) 산출 — 정책 룰 엔진",
+             responses=OWNER_RESPONSES)
 def deploy_eligibility(run_id: str, request: Request,
                        user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -125,7 +141,9 @@ def deploy_eligibility(run_id: str, request: Request,
     }
 
 
-@router.post("/runs/{run_id}/deploy/packages")
+@router.post("/runs/{run_id}/deploy/packages", response_model=PackageOut,
+             summary="채널×언어 패키지(카피 적응) 생성",
+             responses=OWNER_RESPONSES)
 def deploy_packages(run_id: str, body: DeployPackageBody, request: Request,
                     user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -162,7 +180,11 @@ def deploy_packages(run_id: str, body: DeployPackageBody, request: Request,
     return {"package_id": package_id, "status": pkg["status"], "reason": pkg.get("reason")}
 
 
-@router.post("/runs/{run_id}/deploy/advisor/chat")
+@router.post("/runs/{run_id}/deploy/advisor/chat",
+             response_model=AdvisorOkOut | AdvisorErrorOut,
+             summary="D2 어드바이저 멀티턴 챗(도구 화이트리스트·grounding 검증)",
+             responses={**OWNER_RESPONSES, 402: {"model": ErrorOut},
+                        422: {"model": ErrorOut}})
 def deploy_advisor_chat(run_id: str, body: AdvisorChatBody, request: Request,
                         user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -188,7 +210,10 @@ def deploy_advisor_chat(run_id: str, body: AdvisorChatBody, request: Request,
     return result
 
 
-@router.post("/runs/{run_id}/deploy/dispatch")
+@router.post("/runs/{run_id}/deploy/dispatch", response_model=DispatchOut,
+             summary="발송 시뮬레이션 디스패치(확인 필수)",
+             responses={**OWNER_RESPONSES, 400: {"model": ErrorOut},
+                        402: {"model": ErrorOut}})
 def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
                     user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -259,7 +284,9 @@ def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
     return {"step_status": "PASS", "simulation": simulation}
 
 
-@router.post("/runs/{run_id}/deploy/demo-payment")
+@router.post("/runs/{run_id}/deploy/demo-payment", response_model=DemoPaymentOut,
+             summary="데모 결제 — dev_pass 부여",
+             responses=OWNER_RESPONSES)
 def deploy_demo_payment(run_id: str, request: Request,
                         user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
@@ -267,7 +294,9 @@ def deploy_demo_payment(run_id: str, request: Request,
     return {"dev_pass": True}
 
 
-@router.get("/runs/{run_id}/deploy/_state")
+@router.get("/runs/{run_id}/deploy/_state", response_model=DeployStateOut,
+            summary="배포 스튜디오 상태 스냅샷",
+            responses=OWNER_RESPONSES)
 def deploy_state(run_id: str, request: Request,
                  user_id: str = Depends(get_user_id)) -> dict:
     m = require_owner(request, run_id, user_id)
