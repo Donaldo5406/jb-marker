@@ -3,7 +3,7 @@
 - ctx(copy.meta.json) + channel을 system prompt에 embed → LLM이 read_review 없이도 컨텍스트 보유
 - TOOL_SCHEMAS 그대로 Anthropic API에 전달, tool_use 블록을 DeployAdvisor가 기대하는
   `{"text": ..., "tool_calls": [{"name", "input"}]}` 형태로 변환
-- 키 없을 때는 server.py 라우트가 _ScriptedAdvisorProvider로 fallback
+- 키 없을 때는 routers/deploy.py 라우트가 ScriptedAdvisorProvider(deploy/advisor/scripted.py)로 fallback
 """
 from __future__ import annotations
 
