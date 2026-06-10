@@ -125,4 +125,4 @@ def test_advisor_mock_forces_scripted(monkeypatch):
         "package_id": "sms_ko", "message": "짧게 줄여줘", "mock": True,
     })
     assert r.status_code == 200
-    assert "_usage" not in r.json()   # scripted는 usage 미노출(server.py:501 분기)
+    assert "_usage" not in r.json()   # scripted는 usage 미노출(routers/deploy.py 분기)

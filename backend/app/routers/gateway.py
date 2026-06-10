@@ -1,0 +1,107 @@
+"""[gateway] POST /gateway/run + WS /ws/{run_id} (spec §8.1).
+
+connections(run_id→WebSocket set)와 _publish는 app.state.connections를 공유 —
+gateway_run의 이벤트 릴레이와 WS 수명주기가 같은 dict를 봐야 한다
+(test_golden_passthrough의 artifact 이벤트가 게이트).
+"""
+from __future__ import annotations
+
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+
+from ..gateway.harness import HarnessRequest
+from ..gateway.registry import select_harness
+from ..providers.wrappers import ModelBoundProvider, TrackedProvider
+from .deps import get_user_id, require_owner
+
+router = APIRouter(tags=["gateway"])
+
+
+class GatewayRun(BaseModel):
+    run_id: str
+    studio: str
+    prompt: str
+    provider: str = "fake"
+    is_marker: bool = False
+    answer: str | None = None
+    action: str | None = None
+    bypass_map: dict | None = None
+    mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+async def _publish(connections: dict, run_id: str, event: dict) -> None:
+    for ws_conn in list(connections.get(run_id, set())):
+        try:
+            await ws_conn.send_json(event)
+        except Exception:
+            connections.get(run_id, set()).discard(ws_conn)
+
+
+@router.post("/gateway/run")
+async def gateway_run(body: GatewayRun, request: Request,
+                      user_id: str = Depends(get_user_id)) -> dict:
+    require_owner(request, body.run_id, user_id)
+    provider_name = "demo" if body.mock else body.provider
+    req = HarnessRequest(run_id=body.run_id, studio=body.studio,
+                         user_prompt=body.prompt, provider=provider_name,
+                         is_marker=body.is_marker, answer=body.answer,
+                         action=body.action, user_id=user_id,
+                         bypass_map=body.bypass_map)
+    media_name = "demo" if body.mock else "google"
+
+    def _media_provider():
+        # 주입형 image/vision provider도 usage 추적 래핑 (spec §7-2).
+        return TrackedProvider(ModelBoundProvider(media_name, request.app.state.settings),
+                               store=request.app.state.store, run_id=body.run_id,
+                               step=body.studio, settings=request.app.state.settings)
+
+    harness = select_harness(body.studio, body.is_marker,
+                             media_provider_factory=_media_provider)
+    try:
+        result = request.app.state.gateway.run(req, harness)
+    except PermissionError as e:
+        raise HTTPException(402, str(e))
+    now = _now_ms()
+    kind = "ask_answer" if body.answer is not None else "user_turn"
+    hb = request.app.state.session_store.heartbeat(body.run_id, body.studio, now)
+    reactivated = bool(hb.get("exists")) and hb.get("status") != "active"
+    request.app.state.session_store.touch(body.run_id, body.studio, now, kind=kind)
+    if reactivated:
+        result.meta["session_event"] = "restored"
+        await _publish(request.app.state.connections, body.run_id,
+                       {"type": "session", "event": "restored",
+                        "studio": body.studio, "run_id": body.run_id})
+    for ev in result.events:
+        await _publish(request.app.state.connections, body.run_id, ev)
+    return {"output_path": result.output_path, "text": result.text,
+            "gate": result.gate.to_dict() if result.gate else None,
+            "meta": result.meta}
+
+
+@router.websocket("/ws/{run_id}")
+async def ws(websocket: WebSocket, run_id: str):
+    token = websocket.query_params.get("token")
+    from ..auth import resolve_user_id, AuthError
+    try:
+        uid = resolve_user_id(f"Bearer {token}" if token else None,
+                              websocket.app.state.settings)
+        m = websocket.app.state.store.get_manifest(run_id)
+        if m is None or m.user_id != uid:
+            await websocket.close(code=4404)
+            return
+    except AuthError:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    websocket.app.state.connections.setdefault(run_id, set()).add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        websocket.app.state.connections.get(run_id, set()).discard(websocket)
