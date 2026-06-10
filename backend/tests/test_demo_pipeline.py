@@ -131,14 +131,16 @@ def test_review_demo_blocks_on_staged_violations(monkeypatch):
     for _ in range(6):  # 정상 4단계 + 여유(무한루프 방지)
         r = _run(client, rid, "review", "검토 시작")
         assert r.status_code == 200
-        meta = r.json().get("meta") or {}
-        if meta.get("gate"):
-            gate = meta["gate"]
-        last_step = meta.get("step")
+        body = r.json()
+        g = body.get("gate")
+        if g:
+            gate = g
+        last_step = (body.get("meta") or {}).get("step")
         if last_step == "R3":
             break
     # R3 종단 도달 + 스테이징 위반 적발 → BLOCKED(critical ≥ 1).
     assert last_step == "R3"
+    assert gate.get("kind") == "status"   # T1-P2: 응답 top-level GateEnvelope
     assert gate.get("status") == "BLOCKED"
     assert gate.get("critical_count", 0) >= 1
     # 검토 보고서 생성 + state done 확인(BLOCKED여도 검토 단계 자체는 완주).
@@ -172,10 +174,11 @@ def _drive_review(client, rid, restart_first=False):
         kw = {"action": "restart"} if (restart_first and i == 0) else {}
         r = _run(client, rid, "review", "검토 시작", **kw)
         assert r.status_code == 200
-        meta = r.json().get("meta") or {}
-        if meta.get("gate"):
-            gate = meta["gate"]
-        last_step = meta.get("step")
+        body = r.json()
+        g = body.get("gate")
+        if g:
+            gate = g
+        last_step = (body.get("meta") or {}).get("step")
         if last_step == "R3":
             break
     return last_step, gate

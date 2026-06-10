@@ -3,6 +3,7 @@
 T1-P2 Task 1: 순수 가산 — passthrough 등 미전환 하네스는 gate=None.
 T1-P2 Task 2: brainstorming은 ask 대신 gate(kind="ask")를 채운다.
 T1-P2 Task 3: design은 meta["gate"] 대신 gate(kind="confirm")를 채운다.
+T1-P2 Task 4: review R3는 meta["gate"] 대신 gate(kind="status")+허용 actions를 채운다.
 """
 import json
 
@@ -142,6 +143,63 @@ def test_design_gate_stop_returns_confirm_envelope(tmp_path):
     assert res.gate.kind == "confirm"
     assert res.gate.step == "S1"                       # S0 비게이트 통과 후 S1 정지
     assert res.gate.actions == ["confirm", "regenerate"]
+    assert "gate" not in res.meta
+
+
+def test_actions_for_status_table():
+    """T1-P2 Task 4: 게이트 status별 허용 후속 액션 테이블 (spec §4.2)."""
+    from app.gateway.harness_review import _actions_for
+    assert _actions_for("WARN") == ["ack", "regenerate", "restart"]
+    assert _actions_for("BLOCKED") == ["regenerate", "restart"]
+    assert _actions_for("PASS") == []
+
+
+def _review_store(tmp_path, run_id="rr"):
+    """test_review_harness.py의 _setup_run 패턴 — plan.md·design 산출·렌더 시드(모노링구얼 ko)."""
+    from app.vfs.factory import make_local_store
+    s = make_local_store(tmp_path)
+    s.create_run(run_id, languages=["ko"])
+    s.put(f"/{run_id}/brainstorming/plan.md",
+          "---\nlanguages: [ko]\ndisclosures: []\n---\n# Plan\n",
+          source="marker", mime="text/markdown")
+    s.put(f"/{run_id}/design/final/ko/main.scene",
+          json.dumps({"copy": {"ko": {"headline": "쉽고 빠르게"}}}),
+          source="marker", mime="application/json")
+    s.put(f"/{run_id}/design/metadata.md", "", source="marker", mime="text/markdown")
+    s.put(f"/{run_id}/design/design-system/components/visual/v1.png",
+          b"\x89PNG\x00fake", source="gemini", mime="image/png")
+    s.put(f"/{run_id}/review/_render/ko.png", b"\x89PNG-ko",
+          source="frontend", mime="image/png")
+    return s
+
+
+def test_review_r3_returns_status_gate_envelope(tmp_path, make_scripted):
+    """T1-P2 Task 4: review R3 종단 → gate=GateEnvelope(kind="status")+허용 actions,
+    meta["gate"] 구 신호는 소멸. (warning 1건·트리거 0 → 결정론 WARN)"""
+    from app.gateway.harness import HarnessRequest
+    from app.gateway.harness_review import ReviewHarness, _actions_for
+    from app.providers.fake import FakeProvider
+    s = _review_store(tmp_path)
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="rr", studio="review", user_prompt="검토 시작",
+                         provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=s)              # R0
+    h.handle_turn(req, provider=make_scripted(complete_responses=[    # R1: warning 1건
+        ProviderResponse(text=('{"findings":[{"location":{"slot":"headline","lang":"ko"},'
+                               '"clause":"§X","official_source_url":"https://law.go.kr/x",'
+                               '"severity":"warning","evidence":"x"}]}'), model="x")]),
+        store=s)
+    h.handle_turn(req, provider=FakeProvider(), store=s)              # R2 (모노링구얼 스킵)
+    res = h.handle_turn(req, provider=make_scripted(complete_responses=[
+        ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
+                         model="x")]), store=s)                        # R3 종단
+    assert res.gate is not None
+    assert res.gate.kind == "status"
+    assert res.gate.status in ("PASS", "WARN", "BLOCKED")
+    assert res.gate.status == "WARN"
+    assert res.gate.critical_count == 0
+    assert res.gate.warning_count >= 1
+    assert res.gate.actions == _actions_for(res.gate.status)
     assert "gate" not in res.meta
 
 

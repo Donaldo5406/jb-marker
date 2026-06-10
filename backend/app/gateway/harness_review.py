@@ -24,7 +24,7 @@ from ..core.severity import (  # T7: import-only, 사용은 T11/T14
 )
 from ..core.visual_rules import evaluate_visual_compliance
 from ..providers.base import Message, Provider
-from .harness import Harness, HarnessRequest, HarnessResult
+from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .state import load_state, save_state
 
 
@@ -36,6 +36,16 @@ def _verdict_id(node: str, clause_or_kind: str, slot: str, lang: str | None) -> 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _actions_for(status: str) -> list[str]:
+    """게이트 status별 허용 후속 액션 (spec §4.2). 프론트 버튼 노출 계약."""
+    if status == "WARN":
+        return ["ack", "regenerate", "restart"]
+    if status == "BLOCKED":
+        return ["regenerate", "restart"]
+    return []
+
 
 STEPS = ("R0", "R1", "R2", "R3", "done")
 
@@ -574,7 +584,11 @@ class ReviewHarness(Harness):
             text=f"검토 완료 — {gate['status']} "
                  f"(critical {gate['critical_count']}, warning {gate['warning_count']}).",
             output_path=f"{base}/report.md",
-            meta={"source": "marker", "step": "R3", "gate": gate},
+            meta={"source": "marker", "step": "R3"},
+            gate=GateEnvelope(kind="status", status=gate["status"],
+                              critical_count=gate["critical_count"],
+                              warning_count=gate["warning_count"],
+                              actions=_actions_for(gate["status"])),
             events=[{"type": "artifact", "path": f"{base}/report.md"}])
 
     def _restart(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
