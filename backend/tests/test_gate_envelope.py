@@ -177,7 +177,7 @@ def test_review_r3_returns_status_gate_envelope(tmp_path, make_scripted):
     """T1-P2 Task 4: review R3 종단 → gate=GateEnvelope(kind="status")+허용 actions,
     meta["gate"] 구 신호는 소멸. (warning 1건·트리거 0 → 결정론 WARN)"""
     from app.gateway.harness import HarnessRequest
-    from app.gateway.harness_review import ReviewHarness, _actions_for
+    from app.gateway.harness_review import ReviewHarness
     from app.providers.fake import FakeProvider
     s = _review_store(tmp_path)
     h = ReviewHarness(vision_provider=FakeProvider())
@@ -195,11 +195,10 @@ def test_review_r3_returns_status_gate_envelope(tmp_path, make_scripted):
                          model="x")]), store=s)                        # R3 종단
     assert res.gate is not None
     assert res.gate.kind == "status"
-    assert res.gate.status in ("PASS", "WARN", "BLOCKED")
     assert res.gate.status == "WARN"
     assert res.gate.critical_count == 0
     assert res.gate.warning_count >= 1
-    assert res.gate.actions == _actions_for(res.gate.status)
+    assert res.gate.actions == ["ack", "regenerate", "restart"]
     assert "gate" not in res.meta
 
 
