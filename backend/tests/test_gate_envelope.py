@@ -3,9 +3,22 @@
 T1-P2 Task 1: 순수 가산 — passthrough 등 미전환 하네스는 gate=None.
 T1-P2 Task 2: brainstorming은 ask 대신 gate(kind="ask")를 채운다.
 """
+import json
+
 from fastapi.testclient import TestClient
 
 from app.gateway.harness import GateEnvelope, HarnessResult
+from app.providers.base import ProviderResponse
+
+
+class StubProvider:
+    """미리 정한 JSON 텍스트를 순서대로 반환(LLM 대체) — test_brainstorming_harness.py 패턴."""
+    def __init__(self, responses): self._r = list(responses); self.calls = []
+    def complete(self, messages, *, model, system=None, tools=None, **kw):
+        self.calls.append({"system": system, "tools": tools, "messages": messages})
+        r = self._r.pop(0)
+        return ProviderResponse(text=r["text"], model=model,
+                               citations=r.get("citations", []), usage=r.get("usage"))
 
 
 def test_to_dict_omits_none_fields():
@@ -70,3 +83,28 @@ def test_brainstorming_mock_turn_returns_ask_gate(monkeypatch, tmp_path):
     assert gate["kind"] == "ask"
     assert gate["actions"] == ["answer"]
     assert "trigger" in gate
+
+
+def test_brainstorming_events_carry_gate(monkeypatch, tmp_path):
+    """T1-P2 Task 2 리뷰 후속: WS로 릴레이되는 HarnessResult.events에
+    {"type":"gate","gate":{...}} 이벤트가 실리고 askuser는 소멸했는지 직접 단언."""
+    monkeypatch.setenv("JBM_STORAGE_DIR", str(tmp_path))
+    from app.gateway.harness import HarnessRequest
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    from app.vfs.local import LocalVfsStore
+    h = BrainstormingHarness()
+    s = LocalVfsStore(); s.create_run("rb")
+    stub = StubProvider([{"text": json.dumps(
+        {"reply": "주력 채널은 무엇인가요?",
+         "document": "---\ngoal: 적금 캠페인\n---\n# 기획",
+         "ask": {"trigger": "a", "question": "주력 채널?", "options": ["카톡", "이메일"]},
+         "ready": False})}])
+    req = HarnessRequest(run_id="rb", studio="brainstorming",
+                         user_prompt="30대 적금 캠페인", provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=stub, store=s)
+    assert res.gate is not None and res.gate.kind == "ask"
+    gate_events = [e for e in res.events if e.get("type") == "gate"]
+    assert len(gate_events) == 1
+    assert gate_events[0]["gate"]["kind"] == "ask"
+    assert gate_events[0]["gate"]["actions"] == ["answer"]
+    assert not [e for e in res.events if e.get("type") == "askuser"]
