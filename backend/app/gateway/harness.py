@@ -20,7 +20,7 @@ class HarnessRequest:
     is_marker: bool = False
     history: list[Message] = field(default_factory=list)
     answer: str | None = None      # AskUser 응답(다음 턴 재개)
-    action: str | None = None      # design step 액션: advance|confirm|regenerate|chat|answer
+    action: str | None = None      # action: advance|confirm(design) | regenerate(design·review) | restart|ack(review)
     user_id: str = "demo"          # 게이트(entitlement) 평가 대상. 기본 demo(로컬-우선)
     bypass_map: dict | None = None  # design 단계별 게이트 OFF 맵(프론트 전체 전송)
 

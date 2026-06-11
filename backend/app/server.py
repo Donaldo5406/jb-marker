@@ -24,7 +24,21 @@ from .vfs.factory import get_vfs_store
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="JB Marker API")
+    app = FastAPI(
+        title="JB Marker API",
+        version="0.4.0",
+        description="JB marker 마케팅 스튜디오 백엔드 — brainstorming/design/review 하네스 게이트웨이 + VFS + deploy.",
+        openapi_tags=[
+            {"name": "meta", "description": "헬스체크·엔타이틀먼트"},
+            {"name": "runs", "description": "run 수명주기"},
+            {"name": "gateway", "description": "하네스 게이트웨이 (GateEnvelope 봉투 반환)"},
+            {"name": "session", "description": "세션 liveness (UI 미연결 — 헤드리스 계약)"},
+            {"name": "vfs", "description": "run 파일시스템 CRUD"},
+            {"name": "deploy", "description": "배포 스튜디오 — 패키징·어드바이저·디스패치"},
+            {"name": "observability", "description": "usage 집계"},
+            {"name": "history", "description": "갤러리·프리뷰"},
+        ],
+    )
     settings = load_settings()
     # 분리형 배포: env로 명시한 origin(예: https://*.vercel.app) 화이트리스트 +
     # localhost regex 폴백. allow_credentials=True라 wildcard("*") 불가 → 명시 리스트.

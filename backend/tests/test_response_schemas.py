@@ -1,8 +1,10 @@
-"""response_model 직렬화 회귀 가드 — wire 불변 (P4 T7, spec §8.2).
+"""wire 계약 가드 — 직렬화 회귀 + 요청 검증 422 (P4 T7·T8, spec §8.2).
 
-response_model 적용 후에도 분해 전 wire와 JSON 키셋·값이 동일해야 한다.
-미지 키 탈락(모델 필드 누락)·None 키 추가(모델 필드 과잉) 양쪽을 정확
-키셋 단언으로 핀한다. local_client fixture는 conftest.py 공용.
+① 직렬화 회귀: response_model 적용 후에도 분해 전 wire와 JSON 키셋·값이
+동일해야 한다. 미지 키 탈락(모델 필드 누락)·None 키 추가(모델 필드 과잉)
+양쪽을 정확 키셋 단언으로 핀한다.
+② 요청 검증: GatewayRun Literal 밖 어휘(studio/provider/action)는 422.
+local_client fixture는 conftest.py 공용.
 """
 from __future__ import annotations
 
@@ -159,6 +161,18 @@ def test_gateway_run_mock_exact_keyset_and_gate_none_omission(local_client):
     assert gate["kind"] == "ask"
     assert "step" not in gate       # confirm 전용 필드 생략
     assert "status" not in gate     # status 전용 필드 생략
+
+
+def test_gateway_run_gate_none_key_present(local_client):
+    """게이트 없는 턴(Passthrough, is_marker=False)에도 gate 키는 존재하며
+    값이 None — GatewayRunOut이 gate: ... | None 키를 생략하지 않음을 핀."""
+    rid = local_client.post("/runs", json={}).json()["run_id"]
+    r = local_client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design",
+        "prompt": "x", "provider": "fake", "is_marker": False})
+    assert r.status_code == 200
+    body = r.json()
+    assert "gate" in body and body["gate"] is None
 
 
 def test_gateway_run_unknown_studio_422(local_client):

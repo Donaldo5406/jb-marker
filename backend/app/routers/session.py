@@ -26,8 +26,9 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-# Union 순서는 구체형(8키 Liveness) 우선 — smart union이 "없음" 4키 dict는
-# Missing으로, "있음" 8키 dict는 Liveness로 매칭(정확 키셋 wire 보존).
+# exists Literal(True/False)이 배타 판별 — 순서 비의존(smart union).
+# "있음" 8키 dict는 Liveness(exists=True)로, "없음" 4키 dict는
+# Missing(exists=False)으로 구조적으로 매칭(정확 키셋 wire 보존).
 @router.get("/runs/{run_id}/session/{studio}",
             response_model=SessionLivenessOut | SessionMissingOut,
             summary="세션 하트비트 — liveness 파생 뷰",

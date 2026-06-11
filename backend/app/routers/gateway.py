@@ -34,6 +34,7 @@ class GatewayRun(BaseModel):
     # action 어휘 = 하네스 소비 전수 — design: advance·confirm·regenerate
     # (harness_design.py — confirm 게이트가 actions=["confirm","regenerate"]를 선언),
     # review: restart·ack·regenerate (harness_review.py)
+    # ask 게이트의 actions=["answer"]는 action이 아니라 answer 필드로 응답(wire 관례).
     action: Literal["advance", "confirm", "regenerate", "restart", "ack"] | None = None
     bypass_map: dict | None = None
     mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
