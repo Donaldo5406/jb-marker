@@ -35,7 +35,7 @@
 
 ## 2. 의도적 보존 항목과 사유 (9건)
 
-T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그인가?" 하고 다시 조사하는 낭비를 막기 위해 위치와 사유를 고정한다.
+T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그인가?" 하고 다시 조사하는 낭비를 막기 위해 위치와 사유를 고정한다. §1 18건 중 상태가 '의도 보존'인 것은 18번(D4) 1건이며, 본 절의 9건은 18건 목록 밖에서 추가로 결정·발견된 보존 항목이다.
 
 | # | 항목 | 현행 위치 | 사유 |
 | --- | --- | --- | --- |
@@ -64,6 +64,9 @@ T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그�
 | `_ModelBoundProvider`·`_TrackedProvider` (server.py 내부) | `providers/wrappers.py` `ModelBoundProvider`·`TrackedProvider` (공개) |
 | server.py 하네스 선택 if/elif | `gateway/registry.py` `select_harness` |
 | `GatewayRun.action` 어휘 | **현행 Literal 5종 `advance`·`confirm`·`regenerate`·`restart`·`ack`** (routers/gateway.py:38) |
+| 6요소 ABC 메서드(constraints·references·structured_output_schema·askuser_hook) | `PromptSpec`(gateway/prompt.py:12-30) — 죽은 ABC 메서드는 제거(§1 표 1번) |
+| critic 반환 3종(str/list/dict) | `CriticVerdict`(gateway/critic.py:6-21) |
+| `pendingAsk`(프론트 구 상태) | `applyGate` 단일 적용점+kind별 상태 3분배(CockpitProvider.tsx:393-413) |
 
 > ⚠️ **stale 경고**: spec §4.2(:95)는 action 어휘에 "chat"을 표기하나 이는 stale(현행 어휘에서 소멸 — Literal 5종에 없음). 또한 `answer`는 action이 아니라 **별도 필드**다(routers/gateway.py:33 · :37 — ask 게이트 회신은 `answer` 필드로 보내는 wire 관례).
 
