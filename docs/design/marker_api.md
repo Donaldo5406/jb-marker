@@ -143,7 +143,7 @@ JB Marker는 기존 03의 LangGraph(StateGraph + SqliteSaver)를 **쓰지 않는
 
 해소된 항목(기록 보존):
 - ~~03 `graph.py` 그래프 배선 제거 + 노드 로직을 평범한 함수로 재사용~~ — **해소**: `graph.py` 부재. 스튜디오는 하네스 3종 + `registry.select_harness`(`gateway/registry.py:15`) 구조(§2).
-- ~~`VfsStore` 논리경로 ↔ (`runs`/`vfs_nodes`) 매핑 규격 상세~~ — **구현됨**: `vfs/supabase.py` — `runs`/`vfs_nodes` 테이블 + Storage 블롭, `grounds`·`hash`·`blob_path`·`meta` 컬럼.
+- ~~`VfsStore` 논리경로 ↔ (`runs`/`vfs_nodes`) 매핑 규격 상세~~ — **구현됨**: `vfs/supabase.py` — `runs`/`vfs_nodes` 테이블 + Storage 블롭, `grounds`(예약 — 실데이터는 `meta.grounds` 키)·`hash`·`blob_path`·`meta` 컬럼.
 - ~~오프라인/테스트 impl ↔ 라이브 impl 동등성 계약~~ — 공유 ABC(`vfs/base.py`) + 공용 테스트로 담보. 현행 백엔드 **523 passed**(P4 머지 기준).
 
 잔존 미결:
