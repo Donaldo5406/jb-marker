@@ -30,7 +30,7 @@
 | 다국어 분기 | 다국적 타겟 플래그 + 언어 목록 (Refactor 49줄 트리거) |
 | S2b grounding | factsheet(rate/maturity/fee) + 필수 고지 |
 
-→ **검증은 두 겹**(구현): (1) **Stage B 매 턴** critic(plan_md)이 `REQUIRED_PLAN_FIELDS` 9키의 frontmatter 누락을 검사 → 누락 시 ② AskUser trigger (c)로 보충(harness_brainstorming.py:342-351 — 'Stage B 끝 1회'가 아니라 매 턴). (2) **Stage A 충분성 게이트 `critic_spec`**(`REQUIRED_SPEC_FIELDS` 9키, :24-34) — LLM이 ready=true여도 누락 시 확정(b) 대신 보충(c)을 띄운다(:258-268). 두 critic의 출력은 `CriticVerdict` 봉투(gateway/critic.py:5-21). DesignStudio가 "계획 요소 없음"으로 막히는 것을 원천 차단.
+→ **검증은 두 겹**(구현): (1) **Stage B 매 턴** critic(plan_md)이 `REQUIRED_PLAN_FIELDS` 9키의 frontmatter 누락을 검사 → 누락 시 ② AskUser trigger (c)로 보충(harness_brainstorming.py:342-351 — 'Stage B 끝 1회'가 아니라 매 턴). (2) **Stage A 충분성 게이트 `critic_spec`**(`REQUIRED_SPEC_FIELDS` 9키, :31-34) — LLM이 ready=true여도 누락 시 확정(b) 대신 보충(c)을 띄운다(:258-268). 두 critic의 출력은 `CriticVerdict` 봉투(gateway/critic.py:5-21). DesignStudio가 "계획 요소 없음"으로 막히는 것을 원천 차단.
 
 ## ① 2-스테이지 워크플로 (요소 1)
 
@@ -49,7 +49,7 @@
   - (a) 기획 분기 의사결정 — 타겟 우선순위·채널 믹스·톤·다국어 여부 등 모호성 임계 초과.
   - (b) 스테이지 전환 확정 — spec lock / plan lock.
   - (c) 계약 검증 실패 — 누락 요소 보충.
-- 브레인스토밍 게이트는 **bypass 불가** — 모든 spec/plan 확정은 충분성·계약 critic + 사람 confirm(ask trigger b)을 반드시 거친다(harness_brainstorming.py:258-259 주석 'bypass 경로는 제거됨'). `HarnessRequest.bypass_map`은 design 전용(harness.py:25 주석·소비처 harness_design.py:163-164). (설계 당시 bypass 허용안은 구현에서 제거됨.)
+- 브레인스토밍 게이트는 **bypass 불가** — 모든 spec/plan 확정은 충분성·계약 critic + 사람 confirm(ask trigger b)을 반드시 거친다(합성 확정 게이트 기준 — LLM이 자체 발화한 ask는 패스스루, harness_brainstorming.py:241·:260 `ready and document and not ask`. 상세 @ws_protocol.md §4.2)(harness_brainstorming.py:258-259 주석 'bypass 경로는 제거됨'). `HarnessRequest.bypass_map`은 design 전용(harness.py:25 주석·소비처 harness_design.py:163-164). (설계 당시 bypass 허용안은 구현에서 제거됨.)
 
 ## ③ 마케팅물 기획자 페르소나 (요소 4)
 
