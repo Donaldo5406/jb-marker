@@ -94,7 +94,7 @@ S3 Final    백엔드 _s3_final은 metadata.md만 생성(scene 합성 없음, �
 | **레퍼런스(few-shot)** | 프로 마케팅물 예시 주입 | **구현됨** — `_load_references`(backend/app/references/design/*.json, harness_design.py:289-296)가 S1 프롬프트 references 블록에 주입(:306-314) |
 | **구조화 출력** | 레이아웃 스펙 JSON (픽셀 아님) | Fabric scene 조립용(프론트 sceneAssembler.ts) |
 | **크리틱 패스** | 시니어 아트디렉터 루브릭 채점 → 재생성 | bypass 시 자동 품질 게이트 |
-| **AskUser 훅** | design은 ask 게이트 없음(게이트는 kind=confirm만) — ask는 brainstorming 전용 | state의 `pending_ask` 키는 잔재(읽는 코드 없음 — @harness_audit.md §2) |
+| **AskUser 훅** | design은 ask 게이트 없음(게이트는 kind=confirm만) — ask는 brainstorming 전용(설계 당시 의도는 디자인 분기용 웹소켓 선택 UI — 구현에서 미채택) | state의 `pending_ask` 키는 잔재(읽는 코드 없음 — @harness_audit.md §2) |
 | **파일시스템 CRUD 스킬** | 가상 폴더 트리 read/write/update/delete (visuals·scenes·exports·meta 저장/갱신, 사용자 추가 asset 읽기) | BrainStorming Marker 하네스와 **공유 스킬**(@brainstorm_subharness.md ④). 실체 = @marker_api.md §3-1 `VfsStore` |
 
 - **실체 매핑**: 프롬프트 4요소(시스템 프롬프트·디자인 토큰·레퍼런스·구조화 출력)=`PromptSpec`(gateway/prompt.py) 조립, 크리틱 패스=`CriticVerdict`(gateway/critic.py) 표준 봉투, AskUser/confirm 게이트=`GateEnvelope`(gateway/harness.py).
@@ -110,7 +110,7 @@ S3 Final    백엔드 _s3_final은 metadata.md만 생성(scene 합성 없음, �
 
 ```
 /{runId}/design/
-  _state.json            # 하네스 상태 단일주인(step·gate·confirmed·bypass·languages)
+  _state.json            # 하네스 상태 단일주인(step·gate·confirmed·bypass·languages)(+잔재 pending_ask — 읽는 코드 없음, @harness_audit.md §2)
   _material_matrix.json  # S0: 소재 매트릭스(:517)
   rough/                 # S1: layout.spec.json — 단일 소스(S2b 카피·S2c 고지가 [copy][lang]에 병합 :374-385·:418-427)
   design-system/         # S0·S2: 토큰 + 컴포넌트 카탈로그 (History 시각화)
@@ -134,3 +134,4 @@ S3 Final    백엔드 _s3_final은 metadata.md만 생성(scene 합성 없음, �
 - scene **스키마와 Marker 레이아웃 스펙 JSON의 매핑** 규격 → **확정(Fabric)**: `assembleScene`(sceneAssembler.ts:49-73) + `swapLanguage`(:75-90).
 - 가상 폴더 트리 **CRUD API 표면** → **확정**: `VfsStore` ABC — BrainStorming Marker 하네스와 공유(@brainstorm_subharness.md ④와 동일 스킬), 인터페이스 = @marker_api.md §3-1.
 - **ReviewStudio iteration 수신 — 미결 유지**: `review/revise/` 권장을 DesignStudio가 받아 수정하는 경로(수정 모드/자동수정 귀속). design `regenerate` 액션이 부분 대체하나 정식 경로는 후속 과제. @review_subharness.md③ 미결과 연결.
+- **done 통지 UI(구상)**: 현재 done은 HTTP 응답 text·meta로만 표면화 — 별도 알림 UI는 미구현(후속 과제).
