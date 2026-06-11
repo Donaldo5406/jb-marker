@@ -43,7 +43,7 @@ D0 셋업      design/final + metadata.md + plan.md + consent_ledger 로드
 D1 발송 적법성  다중 정책 규칙엔진(evaluate_recipient · 결정론적 · LLM 아님)
    (§50+pipa)   policies/infomatics.yaml(§50): opt_out / 무동의(동종상품 6개월 예외) / 야간(21~08)
              + policies/pipa.yaml(개인정보보호법 §15·§16): purpose_violation / retention_expired
-             정책별 평가 합성 — 가장 강한 BLOCK 채택(_BLOCK_PRIORITY, deploy/rules_engine.py:56-87)
+             정책별 평가 합성 — 가장 강한 BLOCK 채택(_BLOCK_PRIORITY(deploy/rules_engine.py:13-19)·합성 평가(:56-87))
              → 발송대상 · 제외목록(사유+법 인용) · 정책별 breakdown(routers/deploy.py:140) · 24시간 캘린더
              → deploy/eligibility/
 
@@ -93,7 +93,7 @@ D3 발송 어댑터  DeployAdapter 인터페이스 호출 (MVP = StubAdapter)
   eligibility/                             # D1: recipients.json · excluded.json · calendar.json (:124-135)
   packages/{channel}_{lang}/               # D2: 평면 package_id 디렉터리 — copy.md · copy.meta.json · package.meta.json (:158-179)
   advisor/transcripts/{package_id}.jsonl   # D2: 어드바이저 챗 transcript (chat.py:28-29)
-  dispatch/                                # D3: plan.json · simulation.json (:269-282)
+  dispatch/                                # D3: plan.json · simulation.json (:269-276)
   report.md                                # D3: 발송 계획·시뮬 결과 종합
 ```
 
@@ -122,7 +122,7 @@ D3 발송 어댑터  DeployAdapter 인터페이스 호출 (MVP = StubAdapter)
 - ~~② D2 카피 적응 **LLM 보조 사용 여부**~~ → **채택**: DeployAdvisor `write_d2_copy`(§7) — Review 통과 텍스트·grounding 불변 계약은 grounding.check로 강제.
 - ~~③ `consent_ledger` 출처~~ → **해소**: 데모 fixture(`deploy/consent_ledger.json` · `ledger.py`).
 - ~~⑤ §50 외 추가 발송규제 **확장 여부**~~ → **해소**: 개인정보보호법 채택(`policies/pipa.yaml` §15·§16) — 다중 정책 합성(§1·D1).
-- ~~⑥ 어드바이저 챗 **권한 경계 강제 방식**~~ → **해소**: 도구 화이트리스트(ALLOWED+assert_allowed, tools.py:44-46) + grounding.check + 프롬프트 금지 조항(prompt.py:8-12).
+- ~~⑥ 어드바이저 챗 **권한 경계 강제 방식**~~ → **해소**: 도구 화이트리스트(ALLOWED(tools.py:11)+assert_allowed(:44-46)) + grounding.check + 프롬프트 금지 조항(prompt.py:8-12).
 - ~~⑦ 프로바이더 레지스트리 **소스/스키마**~~ → **해소**: `providers.yaml` + Pydantic `Provider` 모델(id·name·logo_path·channel_type·adapter_status·priority·credentials_schema·spec — `deploy/providers.py:11-43`).
 
 잔존:
