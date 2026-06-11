@@ -21,7 +21,7 @@
 | BrainStorming | ~4 (완주 최소 2 + 다듬기) | 0 | 0 | — | `harness_brainstorming.py:214,296` |
 | Design | ~5 (S1생성+S1critic+S2b+S3critic×2) | 1 | 0 | S0 | `harness_design.py:258,279,300,366` |
 | Review | 3 (R1+R2+R3, R1 web_search 최대 3라운드) | 0 | 1+N_lang(=5) | — | `harness_review.py:251,382,467` |
-| Deploy | advisor ~8턴(채널×조정) | 0 | 0 | **rules·eligibility 전부** | `harness_advisor.py:58`, `rules_engine.py` |
+| Deploy | advisor ~8턴(채널×조정) | 0 | 0 | **rules·eligibility 전부** | `deploy/advisor/chat.py`, `rules_engine.py` |
 
 - 모델: 텍스트=`claude-sonnet-4-6`, 이미지=`gemini-2.5-flash-image`, 비전=`gemini-2.5-flash` (서버 바인딩 `server.py:139-140,255,258`).
 - max_tokens: 텍스트 8192, advisor 2048.
