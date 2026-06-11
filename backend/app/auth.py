@@ -12,7 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 import jwt
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 
 from .config import Settings
 
@@ -93,10 +93,3 @@ def resolve_user_id(authorization: str | None, settings: Settings) -> str:
     if not uid:
         raise AuthError("auth api returned no id")
     return uid
-
-
-def make_user_id_dep(settings: Settings):
-    """server.create_app에서 settings를 클로저로 묶어 의존성 생성."""
-    def _dep(request: Request) -> str:
-        return resolve_user_id(request.headers.get("authorization"), settings)
-    return _dep

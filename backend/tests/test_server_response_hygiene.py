@@ -27,13 +27,13 @@ def test_advisor_response_has_no_internal_underscore_keys(monkeypatch, tmp_path)
 
 
 def test_ws_restored_event_uses_type_key():
-    """server.py의 restored publish dict가 type 키 체계를 따른다 — 소스 레벨 가드.
+    """routers/gateway.py의 restored publish dict가 type 키 체계를 따른다 — 소스 레벨 가드.
 
     (WS 통합 재현은 세션 suspend 타이밍 의존이라 소스 단언으로 회귀를 막는다.
     이벤트 스키마의 단일 문서화는 P5 ws_protocol.md.)
     """
     import inspect
-    import app.server as server_mod
-    src = inspect.getsource(server_mod)
+    import app.routers.gateway as gateway_mod
+    src = inspect.getsource(gateway_mod)
     assert '{"kind": "restored"' not in src
     assert '"type": "session"' in src

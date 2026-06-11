@@ -1,4 +1,4 @@
-"""server.py advisor 라우트의 mode 분기 검증 — env 조작으로 scripted/live/auto 흐름 확인."""
+"""routers/deploy.py advisor 라우트의 mode 분기 검증 — env 조작으로 scripted/live/auto 흐름 확인."""
 from __future__ import annotations
 
 import os

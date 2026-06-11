@@ -34,7 +34,7 @@ class Provider(ABC):
         """공통 completion 표면.
 
         meta: 하네스 명시 신호 {studio, step} — DemoProvider만 소비(T7), 다른 구현체는 무시.
-        model: None이면 호출자가 모델 미지정 — 프로덕션은 _ModelBoundProvider가 주입.
+        model: None이면 호출자가 모델 미지정 — 프로덕션은 ModelBoundProvider(providers/wrappers.py)가 주입.
         """
         ...
 

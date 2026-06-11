@@ -12,6 +12,14 @@ def client():
     return TestClient(create_app())
 
 
+@pytest.fixture()
+def local_client(monkeypatch, tmp_path):
+    """env 오염(.env supabase 모드)에도 견디는 local 모드 TestClient — wire 계약 테스트용."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("JBM_STORAGE_DIR", str(tmp_path))
+    return TestClient(create_app())
+
+
 class ScriptedProvider(Provider):
     """결정론 테스트용 — complete/review_image 호출에 미리 큐잉된 응답을 pop.
 
