@@ -97,6 +97,7 @@ mvp 03 리팩토링 계획을 세웁니다. 이것은 새로 git init 될 예정
 | @vfs.md | 가상 폴더트리 SSOT (/{runId}/{studio}/... · manifest + sidecar 메타) | 백기획#4 |
 | @marker_api.md | 저장 매개체(Supabase) + Marker API(내부 VfsStore CRUD + AI 게이트웨이) + **오케스트레이션** | 백기획#4, 핵심아키텍처 |
 | @navigate.md | 스튜디오 네비게이션 (프로세스바=네비게이터 · manifest 상태 게이팅) | 콕핏 ↔ 기능페이지 이동 |
+| @../specs/2026-06-10-harness-correction-openapi-design.md | T1 하네스 원리 교정 + OpenAPI 명세화 (GateEnvelope 게이트 봉투 · PromptSpec · is_entitled choke · routers 8분할 — 위 설계 문서들의 교정 기준. 점검 보고서 @harness_audit.md · WS 레퍼런스 @ws_protocol.md) | 백기획 전반, 핵심아키텍처 |
 
 ## 확정된 핵심 결정 (리팩토링 시 재논의 불필요)
 
