@@ -27,12 +27,12 @@
 
 ## ① 검토 파이프라인 (3 페르소나 + 게이트)
 
-- **입력**: 카피 = `design/final/{lang}/main.scene` 복원 + `layout.spec.json[copy][lang]` 폴백(backend/app/gateway/harness_review.py:218-249 — @design_subharness.md cross-actor 계약) + `design/metadata.md`(텍스트+콘티) + `plan.md` frontmatter(languages·disclosures). 추가 입력: `design-system/components/visual/v1.png` · `review/_render/{lang}.png` matrix(:156-162).
+- **입력**: 카피 = `design/final/{lang}/main.scene` 복원 + `layout.spec.json[copy][lang]` 폴백(backend/app/gateway/harness_review.py:218-249 — @design_subharness.md cross-actor 계약) + `design/metadata.md`(텍스트+콘티) + `plan.md` frontmatter(languages·disclosures). 추가 입력: `design-system/components/visual/v1.png` · `review/_render/{lang}.png` matrix(:151-161).
 - **출력**: `review/{legal, i18n, revise, report.md}` — **권장만, 수정하지 않음**.
 
 ```
 R0 셋업    plan.md frontmatter의 languages를 정규화해 사용 — multinational 플래그 미사용(:143-146)
-           멱등 cleanup 후 검토 매트릭스(언어별 scene/render + 컴포넌트, :156-162)
+           멱등 cleanup 후 검토 매트릭스(언어별 scene/render + 컴포넌트, :151-161)
 
 R1 법률 검토 (페르소나 A — 전문 법률 검토관) — 4갈래
            호출0 = 결정론 시각 적법성 룰(core/visual_rules — layout.spec.json의
@@ -41,7 +41,7 @@ R1 법률 검토 (페르소나 A — 전문 법률 검토관) — 4갈래
            호출2 = 컴포넌트 단독 비전(design-system/components/visual/v1.png, :302-335)
            호출3 = 언어별 합성 렌더 비전(review/_render/{lang}.png — 프론트가 Fabric 씬을
                    PNG로 렌더해 업로드하는 cross-actor 입력(frontend/lib/sceneRender.ts:66·
-                   CockpitProvider.tsx:494-517), :337-372)
+                   CockpitProvider.tsx:494-518), :337-372)
            위반 포인팅: 자산 / 위치 / 조항 → review/legal/law_{id}/
            severity: critical | warning · 비전 실패는 graceful(vision_failed/vision_skipped → WARN 강등)
            영상(video) 검수는 미구현
@@ -66,11 +66,13 @@ R3 통합 검토 (페르소나 C — reconciler)            ← 신규(명세 4)
             BLOCKED→[regenerate,restart]·PASS→[])로 발신(:594-597)
            기존 'warning→pass' 단순 통과 서술은 부정확 — WARN은 ack 필요(사용자 확인 후
            deploy 해제, state.acknowledged · WARN 외 상태에서 ack 무시, :613-630)
+           BLOCKED는 ack 불가(regenerate/restart만) — deploy 탭 잠금 유지(frontend/lib/
+           cockpit-nav.ts:21·:35: PASS=해제·WARN=ack 후 해제·BLOCKED/pending=잠금)
            manifest step_status 기록(:585)은 유지되나 wire 계약은 봉투
 ```
 
 - 비전 AI = **Gemini**(생성 시 주입된 vision_provider — harness_review.py:4·:74-75). R1 호출2(컴포넌트 단독)·호출3(언어별 합성 렌더) 2패스로 시각적 위반을 검수. 비전 실패는 graceful: vision_failed/vision_skipped 플래그 → PASS→WARN 강등. **영상(video) 검수는 미구현**.
-- 페르소나 조립: 3 페르소나(PERSONA_A/B/C, harness_review.py:53-69)는 PromptSpec(persona, studio="review", step="R1/R2/R3")로 조립되어 provider.complete(system=assemble(), meta=) 전달(:411-414·:498-501) — meta가 DemoProvider 단계 감지 계약. R1 텍스트 패스는 search_and_filter에 meta 직접 명시(:282-284).
+- 페르소나 조립: 3 페르소나(PERSONA_A/B/C, harness_review.py:53-70)는 PromptSpec(persona, studio="review", step="R1/R2/R3")로 조립되어 provider.complete(system=assemble(), meta=) 전달(:411-414·:498-501) — meta가 DemoProvider 단계 감지 계약. R1 텍스트 패스는 search_and_filter에 meta 직접 명시(:282-284).
 - wire 상세 @ws_protocol.md — 주의: review status 게이트는 HTTP 응답 gate 전용(WS gate 이벤트는 brainstorming만).
 
 ## ② Iteration 루프 (명세 6)
