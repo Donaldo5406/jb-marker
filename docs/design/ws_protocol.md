@@ -72,7 +72,7 @@ backend/app에서 `_publish`·`connections` 사용처는 routers/gateway.py와 s
 
 ### 4.1 artifact
 
-- `path` = VFS 절대 경로(`/{run_id}/{studio}/...`) 또는 디렉터리 접두(review `legal/`·`i18n/` — trailing slash)·폴더 경로(design `components/headline`).
+- `path` = VFS 절대 경로(`/{run_id}/{studio}/...`) 또는 디렉터리 접두(review `legal/`·`i18n/` — trailing slash)·폴더 경로(design `design-system/components/headline`).
 - 하네스가 `HarnessResult.events`(harness.py:68)에 담아 반환 → 라우터가 릴레이(routers/gateway.py:91-92).
 - 생성처 전수:
 
@@ -83,7 +83,7 @@ backend/app에서 `_publish`·`connections` 사용처는 routers/gateway.py와 s
 | brainstorming | harness_brainstorming.py:306 · :335 | `plan.md` |
 | design S0 | harness_design.py:527 | `design-system/tokens.json` |
 | design S1 | harness_design.py:325 | `rough/layout.spec.json` |
-| design S2a | harness_design.py:349 | `visual/v1.png` |
+| design S2a | harness_design.py:349 | `design-system/components/visual/v1.png` |
 | design S2b | harness_design.py:389 | `design-system/components/headline` |
 | design S2c | harness_design.py:431-432 | `design-system/components/disclosure` |
 | design S3 | harness_design.py:473 | `metadata.md` |
@@ -101,7 +101,7 @@ backend/app에서 `_publish`·`connections` 사용처는 routers/gateway.py와 s
 - **⚠️ WS gate 이벤트는 brainstorming(kind="ask")만 발행한다** — harness_brainstorming.py:276(Stage A) · :359(Stage B). 같은 봉투가 HTTP 응답 `gate`에도 동시 탑재된다(:278 · :361).
 - design confirm·review status 게이트는 **HTTP 응답 `gate` 필드 전용** — harness_design.py:239-243 · harness_review.py:594-598에 `events.append` 없음(grep 전수 확인된 비대칭). 즉 confirm/status 봉투는 WS로는 절대 오지 않고 HTTP 응답으로만 도착한다.
 - 발생 시점(brainstorming):
-  - Stage A: `ready`+`document` 시 `critic_spec` 누락 → trigger `c`(보충) / 충족 → `b`(확정 확인) (harness_brainstorming.py:260-268).
+  - Stage A: LLM이 직접 낸 ask(trigger `"a"` 등)는 그대로 게이트로 패스스루(harness_brainstorming.py:241). 합성 게이트(c/b)는 `ready and document and not ask`일 때만(:260) — `critic_spec` 누락 → trigger `c`(보충) / 충족 → `b`(확정 확인) (:260-268).
   - Stage B: 계약 검증 누락 → `c`(:344-346) · `ready` → `b`(:347-349) · LLM ask 패스스루(:351).
 
 ### 4.3 session
