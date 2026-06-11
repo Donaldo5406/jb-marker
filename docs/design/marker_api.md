@@ -48,7 +48,7 @@ vfs_nodes                    # 트리의 모든 파일/노드
   content_text?,             #   md/json 텍스트 (블롭이면 null)
   blob_path?,                #   Storage 객체 키 (텍스트면 null)
   meta jsonb,                #   ← sidecar *.meta.json 을 컬럼으로 흡수
-  grounds?, hash, created_at #   grounds = grounding 인용 추적(@vfs.md 메타 스키마)
+  grounds?, hash, created_at #   grounds 컬럼 = 예약(미사용) — 실데이터는 meta.grounds 키(@vfs.md 메타 스키마)
 ```
 - **sidecar `*.meta.json` → `meta jsonb` 컬럼으로 흡수**: 별도 파일 불필요, 논리경로엔 여전히 `*.meta.json`로 노출 가능. @vfs.md 메타 스키마 그대로.
 - **`manifest.json` → `runs` 테이블 row**: History 전체 목록·상태 필터·재개가 쿼리로 즉시(파일 스캔 불요).
@@ -118,7 +118,7 @@ JB Marker는 기존 03의 LangGraph(StateGraph + SqliteSaver)를 **쓰지 않는
 - **프로바이더**: Literal 5종 `anthropic`·`openai`·`google`·`fake`·`demo`(`routers/gateway.py:30-31`). IMG.LY는 백엔드 프로바이더가 아님(프론트 에디터 영역 — 현 구현은 Fabric.js). 미디어 provider(`google`, mock 시 `demo`)는 `tracked_provider` 래핑으로 usage 기록(`routers/gateway.py:68-76`·`providers/wrappers.py`).
 - **raw 프롬프트 직행 금지** — 게이트웨이 경유 강제로 **구현됨**(`gateway/gateway.py` docstring "raw 프롬프트 직행 금지: 항상 하네스(최소 Passthrough) + 게이트웨이 경유"). 과거 mvp/03의 조잡함(`prompt_builder.py` 단일샷)은 이렇게 원천 차단됐다.
 - **response 서빙·영속 책임**: 게이트웨이 = 엔타이틀먼트 choke + provider 팩토리/래핑 + 하네스 위임(`gateway/gateway.py:28-34` — put 호출 없음). **VFS 영속(+`meta.grounds`)은 하네스(`handle_turn`) 책임**(`gateway.py:3-6` docstring). 프론트 서빙 = REST 응답 4키 `{output_path, text, gate, meta}`(`routers/gateway.py:93-95`) + WS 이벤트 3종 artifact/gate/session(`_publish` 현행 위치 `routers/gateway.py:47-52`) — WS 단일 레퍼런스 @ws_protocol.md.
-- **`meta.grounds` 기록 — 이행 완료**. 기록 지점 3곳: Passthrough `grounds: []`(`gateway/harness.py:101`) · brainstorming 리서치 citation(`harness_brainstorming.py:249-251`) · design S2b `{corpus:"factsheet", ungrounded:[...]}`(`harness_design.py:381-385`). Supabase `grounds` 컬럼(`vfs/supabase.py:45·99`).
+- **`meta.grounds` 기록 — 이행 완료**. 기록 지점 3곳: Passthrough `grounds: []`(`gateway/harness.py:101`) · brainstorming 리서치 citation(`harness_brainstorming.py:249-251`) · design S2b `{corpus:"factsheet", ungrounded:[...]}`(`harness_design.py:381-385`). grounds는 **meta jsonb로 영속**(전용 `grounds` 컬럼은 예약 상태 — 채우는 코드 없어 upsert 시 항상 None, `vfs/supabase.py:99`).
 - 원칙: **AI 산출물은 항상 VFS를 경유해 서빙** → grounding·메타·History가 자동으로 따라붙음.
 - **엔타이틀먼트 게이트**(Refactor C4): Marker 하네스 · DeployStudio 어드바이저 호출은 **유료 티어($100/월)** 전용(무료 = raw Claude/GPT/Gemini만). 판정 함수 = `app/entitlement.py` `is_entitled(user_id)`(`:28-36`, env override OR store) **단일 choke**. 소비자 5곳: gateway 배선(`server.py:93`)·advisor chat(`routers/deploy.py:191`)·dispatch(`:222`)·GET/PUT `/entitlement`(`routers/meta.py:27·38`)·deploy `_state`(`:311`). `check()`(`:39-41`)는 store 단독 판정 — 신규 사용 금지 주석. 모델 선택은 Claude/GPT/Gemini 공통 지원(C2).
 

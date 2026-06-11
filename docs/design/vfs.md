@@ -12,7 +12,7 @@
 
 1. **run(job) 단위 격리** — 최상위 = `runId`. History·멀티작업·세션 재개의 전제(Refactor 27줄).
 2. **스튜디오 = 1급 디렉터리** — STUDIOS = (brainstorming, design, review, deploy, **usage**)(backend/app/vfs/types.py:7 — 경로 검증 대상, vfs/paths.py:21-22). brainstorming/design/review/deploy는 파이프라인 스텝과 1:1. usage는 파이프라인 스텝과 1:1이 아닌 호출 사용량 **집계 뷰**이며 LIFECYCLE_STUDIOS 제외(types.py:9 — 세션 수명주기 비대상, §내부 노드 `_session.json`의 "(usage 제외)" 서술과 정합).
-3. **asset 메타 = VfsNode 내장 `meta` dict(+별도 `grounds` 필드)** — 출처 추적·grounding 인용·검색(backend/app/vfs/types.py:22-23). 설계 당시 A안(sidecar `*.meta.json`)이었으나 구현은 노드 내장으로 수렴 — 스토어 레벨 sidecar 파일은 생성되지 않는다(§노드 메타 스키마).
+3. **asset 메타 = VfsNode 내장 `meta` dict** — 출처 추적·grounding 인용·검색(backend/app/vfs/types.py:22). grounds도 별도 필드가 아니라 **meta dict의 `grounds` 키**(`meta["grounds"]`)로 기록된다(§노드 메타 스키마). 설계 당시 A안(sidecar `*.meta.json`)이었으나 구현은 노드 내장으로 수렴 — 스토어 레벨 sidecar 파일은 생성되지 않는다(§노드 메타 스키마).
 4. **run 메타 = `manifest.json`** — 제목·현재스텝·파이프라인 상태·언어·시각. History·프로세스바(Refactor 30줄)·재개.
 5. **design = 단계(rough/final) + design-system(토큰+컴포넌트 카탈로그)** — 컴포넌트를 한 곳에 모아 History 시각화 용이.
 
@@ -58,24 +58,27 @@
 │   ├── dispatch/                       # D3: plan.json · simulation.json
 │   └── report.md                       # D3: 발송계획·시뮬결과·어댑터 상태
 └── usage/                              # 집계 뷰 — 파이프라인 스텝과 1:1 아님
+    │                                   #   (FileTree에서는 별도 숨김 — frontend/components/cockpit/FileTree.tsx:94-98이
+    │                                   #    `_` 접두와 `usage` 세그먼트를 함께 숨김. 비용 표면은 GET /runs/{id}/usage)
     └── log.jsonl                       # TrackedProvider·advisor record_usage 기록처 (observability/usage.py:15-16)
 ```
 
 ## 노드 메타 스키마 (VfsNode 내장 — sidecar 아님)
 
-스토어 레벨 sidecar `*.meta.json` 파일은 생성되지 않는다(설계 당시 A안 → 구현은 노드 내장으로 수렴). meta는 **VfsNode 내장 `meta` dict(+별도 `grounds` 필드)**(backend/app/vfs/types.py:22-23), supabase는 `vfs_nodes` 테이블의 meta·grounds 컬럼(vfs/supabase.py:95-101). 조회 = `read_meta`(vfs/base.py:36). 예외: deploy 라우터만 `*.meta.json` "이름의 일반 텍스트 노드"를 직접 쓴다(라우트 관례 — 스토어 불변식 아님, routers/deploy.py:164-179).
+스토어 레벨 sidecar `*.meta.json` 파일은 생성되지 않는다(설계 당시 A안 → 구현은 노드 내장으로 수렴). meta는 **VfsNode 내장 `meta` dict**(backend/app/vfs/types.py:22) — grounds 데이터도 이 dict의 `grounds` 키로 들어가며, supabase에서는 `vfs_nodes`의 **meta jsonb 컬럼 경유로 영속**된다(vfs/supabase.py:95-101). `VfsNode.grounds` 필드(types.py:23)와 supabase 전용 grounds 컬럼은 **선언만 된 예약 상태** — 채우는 코드가 없어 upsert 시 항상 None(supabase.py:99), 읽기 매핑만 존재(supabase.py:45). 조회 = `read_meta`(vfs/base.py:36). 예외: deploy 라우터만 `*.meta.json` "이름의 일반 텍스트 노드"를 직접 쓴다(라우트 관례 — 스토어 불변식 아님, routers/deploy.py:164-179).
 
 ```
 공통(노드 필드) = source("research|user|gemini|marker", 라우터 PUT은 frontend|user)
-                · mime · hash · created_at · meta · grounds
+                · mime · hash · created_at · meta
                   # hash·created_at은 meta가 아닌 VfsNode 최상위 필드 (vfs/types.py:24-25)
+                  # grounds 필드(types.py:23)는 예약(미사용) — 실데이터는 meta["grounds"]
 리서치 asset meta = { "source_url", "title" }                          (harness_brainstorming.py:209-210)
 blob 자동 meta   = { "type": "image|video|file", "source", "mime" }    (vfs/local.py:81-83)
                   # 불변식: blob put 시 meta가 비면 자동 기록 (vfs/local.py:79-86)
 ```
 
 - `origin_url`·`license`·`id`는 미구현 — 예약(미구현).
-- **`grounds` = 이 노드(산출물)의 근거 ref** — P1 이월 명시점: 설계 당시 "이 asset이 근거가 된 산출물 ref"(asset→산출물 정방향)였으나 구현은 방향 역전(산출물→근거).
+- **`grounds` = 이 노드(산출물)의 근거 ref** — **기록 위치 = meta dict의 `grounds` 키**(`meta["grounds"]`): 모든 writer가 meta 키로 기록한다(harness_brainstorming.py:250 `meta={"grounds":[...]}`·harness_design.py:384·harness.py:101). `VfsNode.grounds` 필드(types.py:23)와 supabase grounds 컬럼은 **선언만 된 예약 상태**(채우는 코드 없음 — upsert 시 항상 None, supabase.py:99·읽기 매핑만 :45). grounds 데이터의 실제 영속은 **meta jsonb 경유**. P1 이월 명시점: 설계 당시 "이 asset이 근거가 된 산출물 ref"(asset→산출물 정방향)였으나 구현은 방향 역전(산출물→근거).
   - brainstorming `spec.md` put 시 `{grounds: [리서치 citation URL들]}`(gateway/harness_brainstorming.py:249-251).
   - design S2b `layout.spec.json` `{grounds: {corpus: "factsheet", ungrounded: [...]}}`(gateway/harness_design.py:381-385).
   - Passthrough는 `[]`(gateway/harness.py:101).
@@ -108,7 +111,7 @@ blob 자동 meta   = { "type": "image|video|file", "source", "mime" }    (vfs/lo
 - 미디어(blob) put 시 meta가 비면 `{type,source,mime}` **자동 기록** 불변식(vfs/local.py:79-86) — sidecar 파일 생성 없음. 예외: deploy 라우터만 `*.meta.json` 이름의 일반 텍스트 노드를 직접 씀(라우트 관례, routers/deploy.py:164-179).
 - 스텝 전환마다 `manifest.json` 갱신 — 불변식: `set_step_status` → `current_step` 자동 동기(vfs/local.py:49-58·supabase.py:67-76).
 
-## 내부 노드 (`_`-접두 — FileTree 숨김)
+## 내부 노드 (`_`-접두 — FileTree 숨김(+usage 스튜디오))
 
 스튜디오 네임스페이스 `/{runId}/{studio}/` 아래 `_` 접두 노드는 하네스/세션 내부 상태로, History FileTree에 노출하지 않는다.
 
@@ -116,7 +119,7 @@ blob 자동 meta   = { "type": "image|video|file", "source", "mime" }    (vfs/lo
 |---|---|
 | `_state.json` | 하네스 무상태 재개용 스냅샷 (하네스 소유). `version: 1` 규약 — gateway/state.py 공용 load_state/save_state(STATE_VERSION=1 :12, state_path=`/{run_id}/{studio}/_state.json` :15-16, save 시 version setdefault·source=marker·mime=json :27-30, 레거시 run은 다음 저장에서 백필). design은 `gate`(None\|step) 필드로 confirm 게이트 정지 지점을 보존 — gate-ON 단계는 생성 후 정지(rail confirm), bypass 단계는 한 턴 내 critic/grounding 통과 시 연쇄. spec `2026-06-01-design-confirm-gate-o2-design.md` §3.2. |
 | `_messages.json` | 턴 메시지 영속 (하네스 소유) — 현재 brainstorming 전용. |
-| `_material_matrix.json` | design S2 소재 매트릭스 (gateway/harness_design.py:517). |
+| `_material_matrix.json` | design **S0** 소재 매트릭스 — S0 setup에서 plan.md frontmatter로부터 추출해 기록(gateway/harness_design.py:492-519, put :517 — design_subharness.md:114와 정합). |
 | `_render/{lang}.png` | review — **프론트 업로드** 합성 렌더(R1 비전 입력). R0 cleanup 보존 대상 (gateway/harness_review.py:128·155). |
 | `_passthrough.md` | 공통 Passthrough 산출 — FileTree 숨김 (gateway/harness.py:107-109). |
 | `_session.json` | 세션 수명주기 봉투 — created/updated/status(active·suspended·archived)·suspended_at·last_activity_kind. lazy heartbeat 2단계(active→suspended 60m→archived +7d). spec `2026-06-01-studio-session-lifecycle-policy-design.md` §3. 대상 스튜디오 = brainstorming/design/review/deploy(usage 제외). |
