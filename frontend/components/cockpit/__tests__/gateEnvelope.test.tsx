@@ -130,7 +130,7 @@ describe("게이트 봉투 소비 (T1-P2 §4.4)", () => {
     expect(captured!.pendingGate?.kind).toBe("ask");
 
     // design 1턴(gate 봉투 없음) — 교차 오염으로 ask가 닫히면 안 됨
-    await act(async () => { await captured!.runDesign("next"); });
+    await act(async () => { await captured!.runDesign("advance"); });
     expect(captured!.designStep).toBe("S1");
     expect(captured!.pendingGate?.kind).toBe("ask");
     expect(screen.getByText("plan으로?")).toBeInTheDocument();
