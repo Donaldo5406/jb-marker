@@ -53,6 +53,10 @@
 
 턴 중간 이벤트·토큰 스트리밍은 없다.
 
+**버퍼링·재전송 없음(at-most-once)** — `_publish`는 발행 시점에 연결된 소켓에만 송신(routers/gateway.py:48), 단절 중 발행된 이벤트는 유실된다. 같은 턴의 결과는 HTTP 4키 응답에 동시 탑재되고, 단절 중에는 프론트 폴링 폴백(§6)이 보완한다.
+
+같은 run에 복수 WS 접속 허용(`connections`는 run_id→set) — 이벤트는 접속 소켓 전원에 브로드캐스트(routers/gateway.py:48).
+
 ### 완전 단방향
 
 - 서버 수신 루프는 drain 전용 — 클라이언트→서버 메시지를 전부 무시(routers/gateway.py:113-115).
@@ -122,7 +126,7 @@ backend/app에서 `_publish`·`connections` 사용처는 routers/gateway.py와 s
 | `confirm` | `step`(`"S1"`…) · `critic`(CriticVerdict.to_dict: `{passed, issues[, scores]}` — critic.py:11-15) · `auto_advanced`(None이면 생략) | `["confirm", "regenerate"]` | harness_design.py:240-242 |
 | `status` | `status`(`"PASS"`\|`"WARN"`\|`"BLOCKED"`) · `critical_count` · `warning_count` | `_actions_for(status)` | harness_review.py:594-597 |
 
-- ask 회신은 action이 아니라 **`answer` 필드**로 한다(routers/gateway.py:33 · :37 wire 관례).
+- ask 회신은 action이 아니라 **`answer` 필드**로 한다(WS가 아니라 `POST /gateway/run` body의 `answer` 필드 — routers/gateway.py:33 · :37 wire 관례).
 - design done은 `gate=null` + `meta.auto_advanced`(harness_design.py:194-203).
 - status별 actions 테이블(harness_review.py:42-48): `WARN`→`["ack","regenerate","restart"]` · `BLOCKED`→`["regenerate","restart"]` · `PASS`→`[]`.
 - 요청측 action 어휘: `GatewayRun` Literal 5종 `advance | confirm | regenerate | restart | ack`(routers/gateway.py:38).
