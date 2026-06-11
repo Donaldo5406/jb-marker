@@ -26,7 +26,7 @@ from .vfs.factory import get_vfs_store
 def create_app() -> FastAPI:
     app = FastAPI(
         title="JB Marker API",
-        version="0.4.0",
+        version="0.4.0",  # pyproject.toml version과 동기 유지
         description="JB marker 마케팅 스튜디오 백엔드 — brainstorming/design/review 하네스 게이트웨이 + VFS + deploy.",
         openapi_tags=[
             {"name": "meta", "description": "헬스체크·엔타이틀먼트"},

@@ -30,7 +30,9 @@ def test_all_eight_tags_present(spec):
                 used.update(op.get("tags", []))
     expected = {"meta", "runs", "gateway", "session", "vfs", "deploy",
                 "observability", "history"}
-    assert expected <= declared and expected <= used
+    assert expected <= declared
+    assert expected <= used
+    assert used <= declared, f"미선언 태그 사용: {used - declared}"
 
 
 def test_gateway_literals_exposed(spec):
@@ -71,7 +73,8 @@ def test_studio_literal_matches_lifecycle_studios():
 
 def test_provider_literal_matches_registry():
     """Literal 어휘 전수가 registry에서 ValueError 없이 해석돼야 — 정합 가드.
-    (live provider 생성자는 lazy import — 키 없이 인스턴스화 가능, 네트워크 비발생)"""
+    (live provider 생성자는 lazy import — 키 없이 인스턴스화 가능, 네트워크 비발생)
+    단방향 가드(Literal⊆registry) — registry가 if-체인이라 역방향은 불가(이월)."""
     from app.routers.gateway import GatewayRun
     from app.providers.registry import get_provider
     from app.config import load_settings

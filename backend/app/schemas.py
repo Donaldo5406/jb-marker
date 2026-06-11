@@ -107,7 +107,8 @@ class GalleryOut(BaseModel):
 
 # ── session ──
 # heartbeat는 단일 모델 불가 — "세션 없음"은 정확 4키(status: None 포함),
-# "있음"은 정확 8키(liveness 파생 뷰). Union[구체형 우선]로 응답.
+# "있음"은 정확 8키(liveness 파생 뷰). exists Literal(True/False)이
+# 배타 판별 — smart union, 순서 비의존 (session.py 라우터 주석 참조).
 
 class SessionMissingOut(BaseModel):
     kind: Literal["heartbeat"]
