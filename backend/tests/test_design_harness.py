@@ -192,11 +192,11 @@ def test_s2c_writes_logo_disclosure_and_ai_notice(tmp_path):
 
 
 def test_critic_returns_7_scores_and_threshold(tmp_path):
-    h = DesignHarness(image_provider=FakeProvider())
-    scores = h.critic({"hierarchy":4,"grid":4,"whitespace":4,"cta":4,
+    from app.gateway.design.scoring import score_layout   # 구 DesignHarness.critic(T1 백로그 ①)
+    scores = score_layout({"hierarchy":4,"grid":4,"whitespace":4,"cta":4,
                        "compliance":4,"copy_visual":4,"brand":4})
     assert scores["pass"] is True
-    bad = h.critic({"hierarchy":1,"grid":4,"whitespace":4,"cta":4,
+    bad = score_layout({"hierarchy":1,"grid":4,"whitespace":4,"cta":4,
                     "compliance":4,"copy_visual":4,"brand":4})
     assert bad["pass"] is False
 

@@ -57,9 +57,8 @@ def test_copy_numbers_are_grounded_in_factsheet():
 
 
 def test_critic_scores_pass():
-    from app.gateway.harness_design import DesignHarness
-    h = DesignHarness(image_provider=None)
-    assert h.critic(F.CRITIC_SCORES)["pass"] is True
+    from app.gateway.design.scoring import score_layout   # 구 DesignHarness.critic(T1 백로그 ①)
+    assert score_layout(F.CRITIC_SCORES)["pass"] is True
 
 
 def test_placeholder_png_is_valid_png():
