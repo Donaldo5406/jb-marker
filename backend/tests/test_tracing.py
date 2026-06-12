@@ -4,6 +4,8 @@ from __future__ import annotations
 from app.config import load_settings
 from app.config import Settings
 from app.observability import tracing
+from app.providers.base import Message, ProviderResponse
+from app.providers.wrappers import TrackedProvider
 
 
 def _settings(**over):
@@ -140,3 +142,75 @@ def test_settings_observability_defaults_none(monkeypatch):
     assert s.langfuse_project_id is None
     assert s.sentry_dsn is None
     assert s.sentry_issues_url is None
+
+
+class _StubStore:
+    """record_usage가 쓰는 최소 표면 — 메모리 텍스트 저장."""
+
+    def __init__(self):
+        self.texts = {}
+
+    def get_text(self, p):
+        return self.texts.get(p)
+
+    def put_text(self, p, t):
+        self.texts[p] = t
+
+
+class _InnerProvider:
+    name = "fake"
+    _model = "fake-1"
+
+    def complete(self, messages, *, model=None, system=None, **kw):
+        return ProviderResponse(text="out", model="fake-1",
+                                usage={"input_tokens": 1, "output_tokens": 2})
+
+    def generate_image(self, prompt, *, aspect="1:1"):
+        return b"\x89PNG-stub"
+
+    def review_image(self, image_bytes, prompt, *, mime="image/png"):
+        return ProviderResponse(text='{"ok":true}', model="fake-1",
+                                usage={"input_tokens": 3, "output_tokens": 4})
+
+
+def _tracked(monkeypatch, recorded: list):
+    monkeypatch.setattr(tracing, "record_generation",
+                        lambda settings, **kw: recorded.append(kw))
+    return TrackedProvider(_InnerProvider(), store=_StubStore(), run_id="r9",
+                           step="design", settings=_settings())
+
+
+def test_tracked_complete_records_generation(monkeypatch):
+    recorded: list = []
+    tp = _tracked(monkeypatch, recorded)
+    tp.complete([Message(role="user", content="hi")], system="sys")
+    assert len(recorded) == 1
+    r = recorded[0]
+    assert r["run_id"] == "r9" and r["step"] == "design" and r["kind"] == "text"
+    assert r["model"] == "fake-1"
+    assert r["output_text"] == "out"
+    assert r["usage"] == {"input_tokens": 1, "output_tokens": 2}
+    assert r["input_payload"]["system"] == "sys"
+    assert r["input_payload"]["messages"] == [{"role": "user", "content": "hi"}]
+
+
+def test_tracked_generate_image_records_generation(monkeypatch):
+    recorded: list = []
+    tp = _tracked(monkeypatch, recorded)
+    tp.generate_image("a cat", aspect="16:9")
+    r = recorded[0]
+    assert r["kind"] == "image"
+    assert r["input_payload"] == {"prompt": "a cat", "aspect": "16:9"}
+    assert "bytes" in r["output_text"]
+
+
+def test_tracked_review_image_records_generation(monkeypatch):
+    recorded: list = []
+    tp = _tracked(monkeypatch, recorded)
+    tp.review_image(b"\x00\x01", "check this", mime="image/png")
+    r = recorded[0]
+    assert r["kind"] == "vision"
+    assert r["input_payload"]["prompt"] == "check this"
+    assert r["input_payload"]["image_bytes"] == 2
+    assert r["output_text"] == '{"ok":true}'
+    assert r["usage"] == {"input_tokens": 3, "output_tokens": 4}

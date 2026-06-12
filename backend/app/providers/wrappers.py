@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+from ..observability import tracing
 from ..observability import usage as usage_log
 from .registry import get_provider
 
@@ -31,6 +32,18 @@ class ModelBoundProvider:
         return self._p.review_image(image_bytes, prompt, mime=mime)
 
 
+def _msg_dump(messages) -> list[dict]:
+    """Message dataclass/dict 혼용 입력을 Langfuse input용 dict 리스트로 정규화."""
+    out = []
+    for m in messages or []:
+        if isinstance(m, dict):
+            out.append({"role": m.get("role"), "content": m.get("content")})
+        else:
+            out.append({"role": getattr(m, "role", None),
+                        "content": getattr(m, "content", None)})
+    return out
+
+
 class TrackedProvider:
     """래핑 provider의 각 LLM/이미지 호출 직후 usage 영속."""
 
@@ -48,28 +61,50 @@ class TrackedProvider:
 
     def complete(self, messages, *, model=None, system=None, **kw):
         resp = self._inner.complete(messages, model=model, system=system, **kw)
+        used_model = getattr(resp, "model", None) or self._model_for()
         usage_log.record_usage(
             self._store, run_id=self._run_id, step=self._step,
-            model=getattr(resp, "model", None) or self._model_for(),
-            kind="text", usage=getattr(resp, "usage", None),
+            model=used_model, kind="text", usage=getattr(resp, "usage", None),
+        )
+        tracing.record_generation(
+            self._settings, run_id=self._run_id, step=self._step,
+            model=used_model, kind="text",
+            input_payload={"system": system, "messages": _msg_dump(messages)},
+            output_text=getattr(resp, "text", None),
+            usage=getattr(resp, "usage", None),
         )
         return resp
 
     def generate_image(self, prompt, *, aspect="1:1"):
         out = self._inner.generate_image(prompt, aspect=aspect)
+        used_model = (self._settings.google_image_model if self.name == "google"
+                      else self._model_for())
         usage_log.record_usage(
             self._store, run_id=self._run_id, step=self._step,
-            model=self._settings.google_image_model if self.name == "google" else self._model_for(),
-            kind="image", images=1, meta={"aspect": aspect},
+            model=used_model, kind="image", images=1, meta={"aspect": aspect},
+        )
+        tracing.record_generation(
+            self._settings, run_id=self._run_id, step=self._step,
+            model=used_model, kind="image",
+            input_payload={"prompt": prompt, "aspect": aspect},
+            output_text=f"<image {len(out)} bytes>",
         )
         return out
 
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
         resp = self._inner.review_image(image_bytes, prompt, mime=mime)
+        used_model = getattr(resp, "model", None) or self._model_for()
         usage_log.record_usage(
             self._store, run_id=self._run_id, step=self._step,
-            model=getattr(resp, "model", None) or self._model_for(),
-            kind="vision", usage=getattr(resp, "usage", None),
+            model=used_model, kind="vision", usage=getattr(resp, "usage", None),
+        )
+        tracing.record_generation(
+            self._settings, run_id=self._run_id, step=self._step,
+            model=used_model, kind="vision",
+            input_payload={"prompt": prompt, "mime": mime,
+                           "image_bytes": len(image_bytes)},
+            output_text=getattr(resp, "text", None),
+            usage=getattr(resp, "usage", None),
         )
         return resp
 
