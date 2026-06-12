@@ -83,3 +83,16 @@ def test_s1_critic_gate_scores_fresh_every_time(tmp_path):
     step.critic_gate(ctx)
     step.critic_gate(ctx)
     assert p.critic_calls == 2
+
+
+def test_harness_reexports_are_derived_and_orchestrator_synced():
+    # 체크리스트 ⑪: harness_design의 STEPS/GATED_STEPS/CRITIC_STEPS는 step 선언 유도값의
+    # re-export이고, per-인스턴스 오케스트레이터의 step_names와도 일치해야 한다.
+    import app.gateway.harness_design as hd
+    assert hd.STEPS is STEPS
+    assert hd.GATED_STEPS is GATED_STEPS
+    assert hd.CRITIC_STEPS is CRITIC_STEPS
+    from app.gateway.harness_design import DesignHarness
+    h = DesignHarness(image_provider=FakeProvider())
+    assert h._orch.step_names == STEPS          # 인스턴스 조립 누락 방지(동기 가드)
+    assert h._orch.studio == "design"
