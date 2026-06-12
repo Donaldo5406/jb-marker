@@ -71,14 +71,19 @@ def test_studio_literal_matches_lifecycle_studios():
     assert set(get_args(GatewayRun.model_fields["studio"].annotation)) == set(LIFECYCLE_STUDIOS)
 
 
-def test_provider_literal_matches_registry():
-    """Literal 어휘 전수가 registry에서 ValueError 없이 해석돼야 — 정합 가드.
-    (live provider 생성자는 lazy import — 키 없이 인스턴스화 가능, 네트워크 비발생)
-    단방향 가드(Literal⊆registry) — registry가 if-체인이라 역방향은 불가(이월)."""
+def test_provider_literal_matches_provider_names():
+    """양방향 동기: GatewayRun.provider Literal == registry.PROVIDER_NAMES (T3 §5-⑥).
+    구 단방향 가드(Literal⊆registry)의 '역방향 불가(이월)'를 SSOT 튜플 신설로 해소."""
     from app.routers.gateway import GatewayRun
-    from app.providers.registry import get_provider
+    from app.providers.registry import PROVIDER_NAMES
+    assert set(get_args(GatewayRun.model_fields["provider"].annotation)) == set(PROVIDER_NAMES)
+
+
+def test_provider_names_all_constructible():
+    """PROVIDER_NAMES 전수가 registry에서 ValueError 없이 해석돼야 — stale 항목 가드.
+    (live provider 생성자는 lazy import — 키 없이 인스턴스화 가능, 네트워크 비발생)"""
+    from app.providers.registry import PROVIDER_NAMES, get_provider
     from app.config import load_settings
-    names = set(get_args(GatewayRun.model_fields["provider"].annotation))
     s = load_settings()
-    for name in names:
+    for name in PROVIDER_NAMES:
         get_provider(name, s)

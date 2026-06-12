@@ -27,7 +27,7 @@ class GatewayRun(BaseModel):
     # studio 어휘 = 프론트 발신 3종 + deploy(세션 어휘 LIFECYCLE_STUDIOS 정합·미래 호환)
     studio: Literal["brainstorming", "design", "review", "deploy"]
     prompt: str
-    # provider 어휘 = providers/registry.py 전수 5종
+    # provider 어휘 = providers/registry.PROVIDER_NAMES와 양방향 동기(test_openapi_contract.py)
     provider: Literal["fake", "demo", "anthropic", "openai", "google"] = "fake"
     is_marker: bool = False
     answer: str | None = None
