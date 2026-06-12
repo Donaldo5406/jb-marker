@@ -384,7 +384,8 @@ def test_unknown_gate_step_on_confirm_raises_explicit_error(tmp_path):
     o = _orch([_Step("A")])
     state = _state("A")
     state["gate"] = "ZZZ"
-    with pytest.raises(ValueError, match="알 수 없는 step"):
+    # next_step 메시지는 done 포함(고정점·적법 입력)이라는 비대칭의 절반까지 핀
+    with pytest.raises(ValueError, match=r"알 수 없는 step 'ZZZ' — 등록 step: \('A', 'done'\)$"):
         o.handle_turn(_ctx(s, state, _req(action="confirm")))
 
 
