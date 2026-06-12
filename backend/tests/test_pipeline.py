@@ -115,6 +115,19 @@ def test_duplicate_step_names_rejected():
         _orch([_Step("A"), _Step("A")])
 
 
+def test_done_step_name_rejected():
+    with pytest.raises(ValueError):
+        _orch([_Step("done")])
+
+
+def test_step_names_frozen_at_init():
+    a = _Step("A")
+    o = _orch([a])
+    a.name = "Z"                                  # 생성 후 변경은 무시(스냅샷)
+    assert o.step_names == ("A", "done")
+    assert o.next_step("A") == "done"
+
+
 def test_ungated_steps_chain_to_done(tmp_path):
     s = _store(tmp_path)
     a, b = _Step("A"), _Step("B")

@@ -72,6 +72,9 @@ class PipelineOrchestrator:
         self._by_name = {s.name: s for s in self._steps}
         if len(self._by_name) != len(self._steps):
             raise ValueError("step name 중복")
+        if DONE in self._by_name:
+            raise ValueError(f"step name {DONE!r}은 예약어")
+        self._names = tuple(s.name for s in self._steps) + (DONE,)   # init 스냅샷(이후 name 변경 무시)
         self.studio = studio
         self._done_text = done_text
         self._done_output = done_output
@@ -79,7 +82,7 @@ class PipelineOrchestrator:
 
     @property
     def step_names(self) -> tuple[str, ...]:
-        return tuple(s.name for s in self._steps) + (DONE,)
+        return self._names
 
     def next_step(self, step: str) -> str:
         """시퀀스에서 다음 단계. done은 고정점(원본 next_step :36-39)."""
