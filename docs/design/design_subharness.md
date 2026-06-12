@@ -140,10 +140,13 @@ S3 Final    백엔드 S3Final은 metadata.md만 생성(scene 합성 없음, 아�
    단계만 `critic_gate` 오버라이드(기본 = 항상 통과).
 2. **같은 `PipelineOrchestrator`에 장착** — 게이트 4분기·bypass 연쇄·critic·1회 자동
    재생성·warnings·auto_advanced는 골격이 제공하므로 제어 루프 복제 불필요. 골격의
-   design 비의존성은 가짜 단계 단위 테스트(tests/test_pipeline.py)가 보증.
+   design 비의존성은 가짜 단계 단위 테스트(backend/tests/test_pipeline.py)가 보증.
 3. **done 처리·state 주입** — done_text·done_output(산출 경로)·studio(step_status 어휘)·
    save_state 규약·`_load_state` default 제공(DesignHarness 전례 — harness_design.py:53-79).
 
+- 골격 밖 배선 2곳(3요소에 비포함 — 장착 시 함께): ⑴ `gateway/registry.py` `select_harness`의
+  studio 분기·`media_provider_factory` 배선(새 하네스 노출 지점, :16-22) ⑵ `providers/base.py`
+  `Provider`에 매체 메서드 확장(현행은 `generate_image`뿐, :41 — fake/demo 구현 동반).
 - 산출물 수신 경로는 @vfs.md `review/revise/{image,text,video}` 예약과 연결 — ReviewStudio
   R3 수정 지시가 매체별로 귀속되는 자리(iteration 수신 경로 자체는 미결 — 아래 미결 항목 참조).
 
