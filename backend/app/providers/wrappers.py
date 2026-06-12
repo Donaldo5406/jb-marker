@@ -62,7 +62,7 @@ class TrackedProvider:
     def complete(self, messages, *, model=None, system=None, **kw):
         resp = self._inner.complete(messages, model=model, system=system, **kw)
         used_model = getattr(resp, "model", None) or self._model_for()
-        usage_log.record_usage(
+        entry = usage_log.record_usage(
             self._store, run_id=self._run_id, step=self._step,
             model=used_model, kind="text", usage=getattr(resp, "usage", None),
         )
@@ -72,6 +72,7 @@ class TrackedProvider:
             input_payload={"system": system, "messages": _msg_dump(messages)},
             output_text=getattr(resp, "text", None),
             usage=getattr(resp, "usage", None),
+            meta={"cost_usd": entry["cost_usd"]},
         )
         return resp
 
@@ -79,7 +80,7 @@ class TrackedProvider:
         out = self._inner.generate_image(prompt, aspect=aspect)
         used_model = (self._settings.google_image_model if self.name == "google"
                       else self._model_for())
-        usage_log.record_usage(
+        entry = usage_log.record_usage(
             self._store, run_id=self._run_id, step=self._step,
             model=used_model, kind="image", images=1, meta={"aspect": aspect},
         )
@@ -88,13 +89,14 @@ class TrackedProvider:
             model=used_model, kind="image",
             input_payload={"prompt": prompt, "aspect": aspect},
             output_text=f"<image {len(out)} bytes>",
+            meta={"cost_usd": entry["cost_usd"]},
         )
         return out
 
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
         resp = self._inner.review_image(image_bytes, prompt, mime=mime)
         used_model = getattr(resp, "model", None) or self._model_for()
-        usage_log.record_usage(
+        entry = usage_log.record_usage(
             self._store, run_id=self._run_id, step=self._step,
             model=used_model, kind="vision", usage=getattr(resp, "usage", None),
         )
@@ -105,6 +107,7 @@ class TrackedProvider:
                            "image_bytes": len(image_bytes)},
             output_text=getattr(resp, "text", None),
             usage=getattr(resp, "usage", None),
+            meta={"cost_usd": entry["cost_usd"]},
         )
         return resp
 

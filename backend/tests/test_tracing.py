@@ -192,6 +192,7 @@ def test_tracked_complete_records_generation(monkeypatch):
     assert r["usage"] == {"input_tokens": 1, "output_tokens": 2}
     assert r["input_payload"]["system"] == "sys"
     assert r["input_payload"]["messages"] == [{"role": "user", "content": "hi"}]
+    assert r["meta"] == {"cost_usd": 0.0}
 
 
 def test_tracked_generate_image_records_generation(monkeypatch):
@@ -202,6 +203,7 @@ def test_tracked_generate_image_records_generation(monkeypatch):
     assert r["kind"] == "image"
     assert r["input_payload"] == {"prompt": "a cat", "aspect": "16:9"}
     assert "bytes" in r["output_text"]
+    assert r["meta"] == {"cost_usd": 0.0}
 
 
 def test_tracked_review_image_records_generation(monkeypatch):
@@ -214,3 +216,4 @@ def test_tracked_review_image_records_generation(monkeypatch):
     assert r["input_payload"]["image_bytes"] == 2
     assert r["output_text"] == '{"ok":true}'
     assert r["usage"] == {"input_tokens": 3, "output_tokens": 4}
+    assert r["meta"] == {"cost_usd": 0.0}
