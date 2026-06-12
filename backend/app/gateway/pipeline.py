@@ -91,6 +91,8 @@ class PipelineOrchestrator:
         return names[idx + 1] if idx + 1 < len(names) else DONE
 
     def handle_turn(self, ctx: StepContext) -> HarnessResult:
+        """한 턴 처리. ctx는 턴마다 새로 생성해 전달할 것 — cache 신선도 계약
+        (재사용 시 이전 턴의 cache가 critic_gate에 새어 stale 판정 위험)."""
         req, state = ctx.req, ctx.state
         if getattr(req, "bypass_map", None):
             state.setdefault("bypass", {}).update(req.bypass_map)

@@ -249,3 +249,101 @@ def test_empty_poll_reexposes_gate_without_rerun(tmp_path):
     assert res.text == "확정 대기 중입니다."
     assert res.output_path == "/r1/design/_state.json"
     assert res.meta == {"source": "marker", "step": "G"}
+    assert res.events == []                       # 재실행 없음의 wire 증거
+    assert res.gate.critic is None
+    assert res.gate.auto_advanced is None
+
+
+def test_confirm_on_last_step_goes_done(tmp_path):
+    s = _store(tmp_path)
+    g = _Step("G", gated=True)
+    o = _orch([g])
+    state = _state("G")
+    o.handle_turn(_ctx(s, state))                 # → gate G 정지
+    res = o.handle_turn(_ctx(s, state, _req(action="confirm")))
+    assert g.runs == 1                            # 재실행 없음
+    assert res.meta == {"source": "marker", "step": "done", "auto_advanced": []}
+    assert state["gate"] is None and state["step"] == "done"
+    assert s.get_manifest("r1").step_status["design"] == "done"
+
+
+# ---- Task 4: bypass 연쇄·재생성 한도·cache 계약 (구현은 Task 2 — 이식 검증) ----
+
+def test_bypass_map_merges_into_state(tmp_path):
+    s = _store(tmp_path)
+    g = _Step("G", gated=True)
+    o = _orch([g])
+    state = _state("G")
+    res = o.handle_turn(_ctx(s, state, _req(bypass_map={"G": True})))
+    assert state["bypass"] == {"G": True}         # req.bypass_map 병합(원본 :163-164)
+    assert res.meta["step"] == "done"             # bypass+pass → 정지 없이 done
+    assert res.meta["auto_advanced"] == ["G"]
+
+
+def test_bypass_critic_fail_regenerates_once_then_warns(tmp_path):
+    s = _store(tmp_path)
+    g = _Step("G", gated=True, check=lambda ctx: GateCheck(passed=False))
+    o = _orch([g])
+    state = _state("G")
+    state["bypass"] = {"G": True}
+    res = o.handle_turn(_ctx(s, state))
+    assert g.runs == 2                            # 1회 재생성 한도(원본 :210-212)
+    assert res.meta["warnings"] == ["G"]          # 2차도 실패 → 경고 후 진행(:213-214)
+    assert res.meta["auto_advanced"] == ["G"]
+    assert res.meta["step"] == "done"
+    assert state["confirmed"]["G"] is True
+
+
+def test_bypass_critic_pass_skips_regeneration(tmp_path):
+    s = _store(tmp_path)
+    g = _Step("G", gated=True)                    # 기본 critic=pass
+    o = _orch([g])
+    state = _state("G")
+    state["bypass"] = {"G": True}
+    res = o.handle_turn(_ctx(s, state))
+    assert g.runs == 1
+    assert "warnings" not in res.meta
+
+
+def test_gate_stop_carries_auto_advanced_and_warnings(tmp_path):
+    # bypass된 G1(critic 2회 실패)을 지나 G2(bypass OFF) 정지 — 봉투에 이력 전달(원본 :223-225)
+    s = _store(tmp_path)
+    g1 = _Step("G1", gated=True, check=lambda ctx: GateCheck(passed=False))
+    g2 = _Step("G2", gated=True)
+    o = _orch([g1, g2])
+    state = _state("G1")
+    state["bypass"] = {"G1": True}
+    res = o.handle_turn(_ctx(s, state))
+    assert state["gate"] == "G2"
+    assert res.gate.auto_advanced == ["G1"]
+    assert res.meta["warnings"] == ["G1"]
+
+
+def test_cache_shared_within_turn_and_overwritten_on_rerun(tmp_path):
+    # cache 계약: run이 키를 '덮어쓰고' critic_gate가 읽는다 — 같은 턴 내
+    # 1회 재생성에서 stale 채점 방지(spec §8). P2 S3 critic 단일화의 기반.
+    class Caching(PipelineStep):
+        name = "C"
+        gated = True
+
+        def __init__(self):
+            self.runs = 0
+
+        def run(self, ctx):
+            self.runs += 1
+            ctx.cache["score"] = self.runs        # 항상 덮어쓰기
+            return HarnessResult(text="c", output_path=f"{ctx.base}/c.txt",
+                                 meta={"source": "marker", "step": "C"})
+
+        def critic_gate(self, ctx):
+            return GateCheck(passed=ctx.cache["score"] >= 2,
+                             critic={"seen": ctx.cache["score"]})
+
+    s = _store(tmp_path)
+    c = Caching()
+    o = _orch([c])
+    state = _state("C")
+    state["bypass"] = {"C": True}
+    res = o.handle_turn(_ctx(s, state))
+    assert c.runs == 2                            # 1차 fail(score=1)→재생성→2차 pass(score=2)
+    assert "warnings" not in res.meta             # 재생성 후 통과 = 신선한 값으로 판정
