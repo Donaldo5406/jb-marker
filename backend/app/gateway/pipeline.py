@@ -58,7 +58,7 @@ class PipelineOrchestrator:
 
     게이트 4분기 — (a) confirm/advance 승인 (b) regenerate/프롬프트 정제
     (b') 무내용 폴링 재노출 (c) 연쇄 루프(bypass→critic→1회 재생성→warnings→
-    auto_advanced). (a)(b)(b')는 Task 3에서 추가.
+    auto_advanced).
     """
 
     def __init__(self, steps, *, studio: str, done_text: str, done_output: str,
@@ -94,7 +94,28 @@ class PipelineOrchestrator:
         req, state = ctx.req, ctx.state
         if getattr(req, "bypass_map", None):
             state.setdefault("bypass", {}).update(req.bypass_map)
-        # 게이트 재개 분기(a)(b)(b')는 Task 3에서 이 위치에 추가된다.
+        action = getattr(req, "action", None)
+        gate = state.get("gate")
+
+        # (a) 게이트 정지 중 confirm/advance → 승인하고 다음으로 (원본 :168-172)
+        if gate and action in ("advance", "confirm"):
+            state["confirmed"][gate] = True
+            state["gate"] = None
+            state["step"] = self.next_step(gate)
+        # (b) 게이트 정지 중 regenerate / 프롬프트 정제 → 해당 step 재생성, gate 유지 (원본 :173-181)
+        elif gate and (action == "regenerate" or (req.user_prompt or "").strip()):
+            step_obj = self._by_name[gate]
+            result = step_obj.run(ctx)
+            check = step_obj.critic_gate(ctx)
+            state["gate"] = gate
+            state["step"] = gate
+            self._save_state(ctx.store, req.run_id, state)
+            return self._gate_result(ctx, gate, result.events, last=result,
+                                     critic=check.critic)
+        # (b') 무내용 폴링 → 재생성 없이 현 게이트 재노출(LLM 호출 없음) (원본 :182-185)
+        elif gate:
+            self._save_state(ctx.store, req.run_id, state)
+            return self._gate_result(ctx, gate, [])
 
         # (c) 현재 step부터 연쇄 루프 (원본 :187-228)
         step = state["step"]

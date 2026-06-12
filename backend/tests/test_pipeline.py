@@ -179,3 +179,73 @@ def test_gated_step_pass_critic_still_stops(tmp_path):
     res = o.handle_turn(_ctx(s, state))
     assert state["gate"] == "G"
     assert res.gate.kind == "confirm" and res.gate.critic is None
+
+
+# ---- Task 3: 게이트 재개 3분기 ----
+
+def _gated_pipeline(tmp_path, check=None):
+    """G(게이트)→B(비게이트) 파이프라인을 G 정지 상태로 만든다."""
+    s = _store(tmp_path)
+    g = _Step("G", gated=True, check=check)
+    b = _Step("B")
+    o = _orch([g, b])
+    state = _state("G")
+    o.handle_turn(_ctx(s, state))                 # → gate G 정지
+    assert state["gate"] == "G"
+    return s, g, b, o, state
+
+
+def test_confirm_resumes_and_chains(tmp_path):
+    s, g, b, o, state = _gated_pipeline(tmp_path)
+    res = o.handle_turn(_ctx(s, state, _req(action="confirm")))
+    assert state["confirmed"]["G"] is True
+    assert g.runs == 1                            # 승인은 재실행 없음(원본 :168-172)
+    assert b.runs == 1                            # 다음 step부터 연쇄
+    assert res.meta["step"] == "done"             # B 비게이트 → done까지
+
+
+def test_advance_behaves_like_confirm(tmp_path):
+    s, g, b, o, state = _gated_pipeline(tmp_path)
+    o.handle_turn(_ctx(s, state, _req(action="advance")))
+    assert g.runs == 1 and b.runs == 1
+
+
+def test_regenerate_reruns_and_keeps_gate(tmp_path):
+    s, g, b, o, state = _gated_pipeline(tmp_path)
+    res = o.handle_turn(_ctx(s, state, _req(action="regenerate")))
+    assert g.runs == 2 and b.runs == 0            # 해당 step만 재생성(원본 :173-181)
+    assert state["gate"] == "G" and state["step"] == "G"
+    assert res.gate.kind == "confirm" and res.gate.step == "G"
+    assert res.text == "G 완료"
+
+
+def test_prompt_refinement_reruns_like_regenerate(tmp_path):
+    s, g, b, o, state = _gated_pipeline(tmp_path)
+    res = o.handle_turn(_ctx(s, state, _req(prompt="더 강렬하게")))
+    assert g.runs == 2 and b.runs == 0            # user_prompt 정제도 재생성 경로
+    assert state["gate"] == "G"
+    assert res.gate.kind == "confirm"
+
+
+def test_regenerate_reconsults_critic(tmp_path):
+    calls = []
+
+    def check(ctx):
+        calls.append(1)
+        return GateCheck(passed=False,
+                         critic={"passed": False, "issues": [f"n{len(calls)}"]})
+
+    s, g, b, o, state = _gated_pipeline(tmp_path, check=check)
+    res = o.handle_turn(_ctx(s, state, _req(action="regenerate")))
+    assert len(calls) == 2                        # 정지 1회 + 재생성 자문 1회
+    assert res.gate.critic == {"passed": False, "issues": ["n2"]}
+
+
+def test_empty_poll_reexposes_gate_without_rerun(tmp_path):
+    s, g, b, o, state = _gated_pipeline(tmp_path)
+    res = o.handle_turn(_ctx(s, state, _req()))
+    assert g.runs == 1 and b.runs == 0            # 재실행 없음 = LLM 0회(원본 :182-185)
+    assert res.gate.kind == "confirm" and res.gate.step == "G"
+    assert res.text == "확정 대기 중입니다."
+    assert res.output_path == "/r1/design/_state.json"
+    assert res.meta == {"source": "marker", "step": "G"}
