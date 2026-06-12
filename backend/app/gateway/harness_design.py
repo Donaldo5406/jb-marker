@@ -15,7 +15,7 @@ from ..core.lang import normalize_languages
 from ..core.parsing import parse_json_block
 # 호환 re-export(D6) — 테스트가 이 모듈 경로에서 임포트하는 표면(hd.PERSONA 등).
 from .design.prompts import CRITIC_INSTR, PERSONA, S1_INSTR, S2B_INSTR  # noqa: F401
-from .design.scoring import RUBRIC as _SCORING_RUBRIC  # noqa: F401
+from .design.scoring import RUBRIC as _SCORING_RUBRIC
 from .design.scoring import run_critic, score_layout  # noqa: F401
 from .design.steps import (  # noqa: F401
     CRITIC_STEPS,

@@ -1,9 +1,10 @@
 """범용 step-pipeline 골격 — StepContext·GateCheck·PipelineStep·PipelineOrchestrator (T3, spec §4.1).
 
-DesignHarness.handle_turn(harness_design.py:161-243)의 제어 흐름을 design
-비의존으로 일반화. 오케스트레이터는 design을 모른다 — studio명·done 텍스트·
-산출 경로·저장은 주입. state 키(step·gate·confirmed·bypass)는 오케스트레이터
-소유, 도메인 키(languages 등)는 하네스/단계 소유.
+T3 P1 이식 시점의 구 DesignHarness.handle_turn(harness_design.py:161-243, 현재는
+design/steps.py + 셸로 분해됨)의 제어 흐름을 design 비의존으로 일반화. 본문 주석의
+원본 줄번호(:168-172 등)는 모두 그 이식 시점 기준이다. 오케스트레이터는 design을
+모른다 — studio명·done 텍스트·산출 경로·저장은 주입. state 키(step·gate·confirmed·
+bypass)는 오케스트레이터 소유, 도메인 키(languages 등)는 하네스/단계 소유.
 """
 from __future__ import annotations
 
@@ -55,7 +56,7 @@ CONFIRM_ACTIONS = ("advance", "confirm")   # 게이트 승인 수신 어휘(원�
 
 
 class PipelineOrchestrator:
-    """단계 시퀀스를 받아 step-pipeline 제어 흐름을 실행 (이식 원본: harness_design.py:161-243).
+    """단계 시퀀스를 받아 step-pipeline 제어 흐름을 실행 (이식 원본: T3 P1 시점 harness_design.py:161-243).
 
     게이트 4분기 — (a) confirm/advance 승인 (b) regenerate/프롬프트 정제
     (b') 무내용 폴링 재노출 (c) 연쇄 루프(bypass→critic→1회 재생성→warnings→
