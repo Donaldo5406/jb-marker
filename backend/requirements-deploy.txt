@@ -10,3 +10,5 @@ anthropic>=0.40
 openai>=1.40
 google-genai>=0.3
 Pillow>=10
+langfuse>=3,<4
+sentry-sdk[fastapi]>=2
