@@ -46,6 +46,13 @@ class Settings:
     session_stall_ms: int = 15 * 60 * 1000          # 900_000
     session_suspend_ms: int = 60 * 60 * 1000        # 3_600_000
     session_retention_ms: int = 7 * 24 * 60 * 60 * 1000  # 604_800_000
+    # 관측성 (spec 2026-06-12) — 키 부재 시 전부 no-op
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_project_id: str | None = None   # 클릭형 trace URL 생성용(선택)
+    sentry_dsn: str | None = None
+    sentry_issues_url: str | None = None     # 예: https://my-org.sentry.io/issues
 
 
 def load_settings() -> Settings:
@@ -75,4 +82,10 @@ def load_settings() -> Settings:
         session_stall_ms=int(os.getenv("SESSION_STALL_MS", str(15 * 60 * 1000))),
         session_suspend_ms=int(os.getenv("SESSION_SUSPEND_MS", str(60 * 60 * 1000))),
         session_retention_ms=int(os.getenv("SESSION_RETENTION_MS", str(7 * 24 * 60 * 60 * 1000))),
+        langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY") or None,
+        langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY") or None,
+        langfuse_host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        langfuse_project_id=os.getenv("LANGFUSE_PROJECT_ID") or None,
+        sentry_dsn=os.getenv("SENTRY_DSN") or None,
+        sentry_issues_url=os.getenv("SENTRY_ISSUES_URL") or None,
     )
