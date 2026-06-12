@@ -98,3 +98,71 @@ def test_stepcontext_cache_is_per_instance():
     b = StepContext(req=None, provider=None, store=None, state={}, base="/r1/design")
     a.cache["k"] = 1
     assert b.cache == {}                          # default_factory 독립성
+
+
+# ---- Task 2: 오케스트레이터 — 연쇄·done·게이트 정지 ----
+
+def test_step_names_derives_pipeline_and_next_step():
+    o = _orch([_Step("A"), _Step("B")])
+    assert o.step_names == ("A", "B", "done")
+    assert o.next_step("A") == "B"
+    assert o.next_step("B") == "done"
+    assert o.next_step("done") == "done"          # 종단 고정점(원본 next_step :36-39)
+
+
+def test_duplicate_step_names_rejected():
+    with pytest.raises(ValueError):
+        _orch([_Step("A"), _Step("A")])
+
+
+def test_ungated_steps_chain_to_done(tmp_path):
+    s = _store(tmp_path)
+    a, b = _Step("A"), _Step("B")
+    o = _orch([a, b])
+    state = _state("A")
+    res = o.handle_turn(_ctx(s, state))
+    assert a.runs == 1 and b.runs == 1            # 한 턴에 전 단계 연쇄
+    assert res.text == "완료했습니다."
+    assert res.output_path == "/r1/design/final.md"
+    assert res.meta == {"source": "marker", "step": "done", "auto_advanced": []}
+    assert res.gate is None
+    assert [e["path"] for e in res.events] == ["/r1/design/A.txt", "/r1/design/B.txt"]
+    assert state["step"] == "done" and state["gate"] is None
+    assert state["confirmed"] == {"A": True, "B": True}
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["step"] == "done" and st["version"] == 1        # 저장 콜백 + version 백필
+    assert s.get_manifest("r1").step_status["design"] == "done"   # set_step_status(studio 주입)
+
+
+def test_gated_step_stops_with_confirm_envelope(tmp_path):
+    s = _store(tmp_path)
+    a = _Step("A")
+    g = _Step("G", gated=True,
+              check=lambda ctx: GateCheck(passed=False,
+                                          critic={"passed": False, "issues": ["x"]}))
+    o = _orch([a, g])
+    state = _state("A")
+    res = o.handle_turn(_ctx(s, state))
+    assert a.runs == 1 and g.runs == 1
+    assert state["gate"] == "G" and state["step"] == "G"      # 정지(검증 실패여도 자문일 뿐)
+    assert state["confirmed"] == {"A": True}
+    assert res.gate is not None and res.gate.kind == "confirm"
+    assert res.gate.step == "G"
+    assert res.gate.actions == ["confirm", "regenerate"]
+    assert res.gate.critic == {"passed": False, "issues": ["x"]}
+    assert res.gate.auto_advanced is None         # [] → None(wire 생략, 원본 :241)
+    assert res.meta["step"] == "G"
+    assert res.text == "G 완료"                    # last 결과의 text 전달
+    st = json.loads(s.get("/r1/design/_state.json").content_text)
+    assert st["gate"] == "G"                      # 정지 시 저장(원본 :222)
+
+
+def test_gated_step_pass_critic_still_stops(tmp_path):
+    # 게이트 ON에서 critic은 자문 — pass여도 정지한다(원본 :219-225).
+    s = _store(tmp_path)
+    g = _Step("G", gated=True)                    # 기본 check = pass·critic None
+    o = _orch([g])
+    state = _state("G")
+    res = o.handle_turn(_ctx(s, state))
+    assert state["gate"] == "G"
+    assert res.gate.kind == "confirm" and res.gate.critic is None
