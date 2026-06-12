@@ -20,6 +20,7 @@ def test_load_settings_reads_observability_env(monkeypatch):
 
 
 def test_settings_observability_defaults_none(monkeypatch):
+    monkeypatch.setattr("app.config.load_dotenv", lambda: None)
     for k in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_PROJECT_ID",
               "SENTRY_DSN", "SENTRY_ISSUES_URL"):
         monkeypatch.delenv(k, raising=False)
