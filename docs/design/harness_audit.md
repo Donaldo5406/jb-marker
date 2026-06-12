@@ -3,7 +3,7 @@
 > 작성: 2026-06-11 (T1-P5) · 근거 spec: @../specs/2026-06-10-harness-correction-openapi-design.md (§1 발견 · §4~§8 교정 설계)
 > 관련: @ws_protocol.md (WS 단일 레퍼런스 — 같은 PR에서 생성)
 > **인용 기준**: 교정 전 인용은 baseline `bd6c5a5`(T1 착수 직전 main) 기준, 현행 인용은 `48636b0`(P4 머지) 기준 — **spec §1의 줄번호(`harness.py:44-63` 등)는 baseline 기준이므로 현행 트리에서 무효**. 현행 좌표는 본 문서 §1 표의 '교정/보존 현황' 열을 보라.
-> **T3 갱신(2026-06-12)**: T3 P2가 harness_design.py를 gateway/design/{prompts,scoring,steps}.py + gateway/pipeline.py(오케스트레이터)로 분해 — §1 표의 harness_design.py '현행' 인용은 48636b0 기준(분해 전)이므로 현행 좌표는 §3 매핑 표 하단의 T3 행으로 환산하라. T3가 해소한 항목은 §1-8(보강)·§2-1·6·7·9에 개별 표기.
+> **T3 갱신(2026-06-12)**: T3 P2가 harness_design.py를 gateway/design/{prompts,scoring,steps}.py + gateway/pipeline.py(오케스트레이터)로 분해 — §1 표의 harness_design.py '현행' 인용은 48636b0 기준(분해 전)이므로 현행 좌표는 §3 매핑 표 하단의 T3 행으로 환산하라. T3 표기: §2-7 해소(백로그 ⑤) · §1-8 보강(백로그 ③ — T3 P3) · §2-1·6·9는 보존 유지에 T3 P2 좌표 이동만 반영. T3 표기 좌표는 P3 코드 최종 커밋 `b09b063` 기준.
 
 독자: 이 레포의 과거 문서·코드(스펙·플랜·구 설계문서)를 읽는 개발자. T1 spec §1이 2026-06-10 코드 정밀 조사에서 발견한 18건에 대해 ①전수의 현황(교정 위치 grounding) ②의도적 보존 항목과 사유 ③구 용어→현행 매핑을 기록한다.
 
@@ -34,9 +34,9 @@
 | 17 | **WS 프로토콜 통합 문서 부재** — 이벤트 정의가 M3 spec·세션 spec 등에 파편화, OpenAPI로 표현 불가 | P5에서 해소 | 코드측 통일(이벤트 3종 artifact/gate/session) 완료, 본 PR의 @ws_protocol.md가 단일 레퍼런스 | §9-2 |
 | 18 | **세션 수명주기 4종(heartbeat/resume/suspend/sessions) 프론트 소비 0건** — 백엔드 정책(O1)은 동작·테스트 보유, UI(O3)만 미구현 | 의도 보존(D4) | routers/session.py:1-69(4종 전부 response_model·summary, :3 "D4: UI 미연결" 주석 + server.py:35 태그 description) · 프론트 소비 0건 grep 확인 · O3 UI는 T2 백로그(spec §3) | §2 D4 |
 
-## 2. 의도적 보존 항목과 사유 (9건)
+## 2. 의도적 보존 항목과 사유 (9건 — 7번은 T3 P2 해소, 이력 기록)
 
-T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그인가?" 하고 다시 조사하는 낭비를 막기 위해 위치와 사유를 고정한다. §1 18건 중 상태가 '의도 보존'인 것은 18번(D4) 1건이며, 본 절의 9건은 18건 목록 밖에서 추가로 결정·발견된 보존 항목이다.
+T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그인가?" 하고 다시 조사하는 낭비를 막기 위해 위치와 사유를 고정한다. §1 18건 중 상태가 '의도 보존'인 것은 18번(D4) 1건이며, 본 절의 9건은 18건 목록 밖에서 추가로 결정·발견된 보존 항목이다(7번은 이후 T3 P2가 해소 — 행 자체는 이력으로 유지).
 
 | # | 항목 | 현행 위치 | 사유 |
 | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그�
 
 과거 spec·plan·설계문서(§4 참조)에 등장하는 구 용어를 현행 코드 어휘로 환산하는 표다.
 
-| 구 (P2 이전 / 이동 전) | 현행 |
+| 구 (T1 P2 이전 / 이동 전) | 현행 |
 | --- | --- |
 | `AskPayload` | `GateEnvelope` kind="ask" |
 | `HarnessResult.ask` · HTTP 응답 `ask` 키 | `gate` 필드 (응답 4키 `{output_path, text, gate, meta}`) |
@@ -68,12 +68,14 @@ T1이 **알면서 고치지 않은** 것들이다. 후속 작업자가 "버그�
 | 6요소 ABC 메서드(constraints·references·structured_output_schema·askuser_hook) | `PromptSpec`(gateway/prompt.py:12-30) — 죽은 ABC 메서드는 제거(§1 표 1번) |
 | critic 반환 3종(str/list/dict) | `CriticVerdict`(gateway/critic.py:6-21) |
 | `pendingAsk`(프론트 구 상태) | `applyGate` 단일 적용점+kind별 상태 3분배(CockpitProvider.tsx:393-413) |
-| `DesignHarness.critic(scores)` | `design/scoring.score_layout(scores)` (T1 백로그 ① — T3 P2) |
-| `DesignHarness._run_critic` | `design/scoring.run_critic` |
+| **— 이하 T3 P2/P3(2026-06-12) 추가 —** | |
+| `DesignHarness.critic(scores)` | `gateway/design/scoring.py` `score_layout(scores)` (T1 백로그 ① — T3 P2) |
+| `DesignHarness._run_critic` | `gateway/design/scoring.py` `run_critic` |
 | `DesignHarness._s0_setup`~`_s3_final` 인라인 단계·제어 루프 | `gateway/design/steps.py` S0Setup~S3Final(PipelineStep) + `gateway/pipeline.py` PipelineOrchestrator(게이트 4분기·bypass 연쇄) |
-| `DesignHarness._critic_gate` 단계 분기표 | 각 단계 `critic_gate` 메서드 + `GateCheck`(pipeline.py) |
-| `harness_design.STEPS` 수기 튜플 | `design/steps.py` STEP_CLASSES 유도(STEPS·GATED_STEPS·CRITIC_STEPS :379-382) — harness_design은 동일 객체 re-export |
-| design S3 응답 `meta["step"]="done"` | `"S3"`(단계 name 상수화 — wire 불가시 의도 변화, P2 PR #65) |
+| `DesignHarness._critic_gate` 단계 분기표 | 각 단계 `critic_gate` 메서드 + `GateCheck`(gateway/pipeline.py) |
+| `harness_design.STEPS` 수기 튜플 | `gateway/design/steps.py` STEP_CLASSES 유도(STEPS·GATED_STEPS·CRITIC_STEPS :379-382) — harness_design은 동일 객체 re-export |
+| design S3 critic 같은 턴 2회(run+gate 각 1회 채점) | `S3Final.run` 1회 채점 → `ctx.cache` 재사용(`critic_gate`) — T1 백로그 ②, P2 PR #65 |
+| design S3 응답 `meta["step"]="done"` | `"S3"`(단계 name 상수화 — wire 불가시: 게이트 정지는 `_gate_result`가 step을 gate로 덮고 done 분기는 meta 신규 생성. P2 PR #65) |
 
 > ⚠️ **stale 경고**: spec §4.2(:95)는 action 어휘에 "chat"을 표기하나 이는 stale(현행 어휘에서 소멸 — Literal 5종에 없음). 또한 `answer`는 action이 아니라 **별도 필드**다(routers/gateway.py:33 · :37 — ask 게이트 회신은 `answer` 필드로 보내는 wire 관례).
 
