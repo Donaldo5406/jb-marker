@@ -18,6 +18,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..auth import resolve_user_id
+from ..observability import tracing
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -43,4 +44,5 @@ def require_owner_factory(store):
 
 
 def require_owner(request: Request, run_id: str, user_id: str):
+    tracing.tag_run(run_id, request.app.state.settings)
     return require_owner_factory(request.app.state.store)(run_id, user_id)
