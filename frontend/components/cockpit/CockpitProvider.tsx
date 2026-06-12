@@ -10,6 +10,7 @@ import { isImagePath } from "@/lib/fileType";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
 import { renderAndUploadAll } from "@/lib/sceneRender";
 import { EDITED_PATH, addLang, parseEdited } from "@/lib/editor/editedLangs";
+import { setRunTag } from "@/lib/sentry";
 
 const DEPLOY_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -186,6 +187,11 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
   runIdRef.current = runId;
+
+  // 관측성: 현재 run_id를 Sentry 태그로 — 이후 모든 에러에 자동 부착 (spec 2026-06-12 §5)
+  useEffect(() => {
+    if (runId) setRunTag(runId);
+  }, [runId]);
 
   /** `?run=` URL 쿼리를 현재 runId에 맞춘다(SSR 가드: effect/handler 안에서만 호출). */
   const syncRunQuery = useCallback((id: string | null) => {

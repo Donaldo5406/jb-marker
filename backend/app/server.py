@@ -1,12 +1,15 @@
 """FastAPI 앱 팩토리 — 조립 전용. 전 라우트는 routers/ (P4 §8.1 분해 완료)."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import entitlement
 from .config import load_settings
 from .gateway.gateway import MarkerGateway
+from .observability import tracing
 from .providers.wrappers import ModelBoundProvider, TrackedProvider
 from .routers import deploy as deploy_router
 from .routers import gateway as gateway_router
@@ -23,8 +26,16 @@ from .session.store import SessionStore
 from .vfs.factory import get_vfs_store
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    # HF Spaces 컨테이너 종료 시 Langfuse 배치 유실 방지
+    tracing.flush()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
+        lifespan=_lifespan,
         title="JB Marker API",
         version="0.4.0",  # pyproject.toml version과 동기 유지
         description="JB marker 마케팅 스튜디오 백엔드 — brainstorming/design/review 하네스 게이트웨이 + VFS + deploy.",
@@ -40,6 +51,15 @@ def create_app() -> FastAPI:
         ],
     )
     settings = load_settings()
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk
+            # FastAPI/Starlette 통합 자동 활성 — 미처리 예외 캡처.
+            # APM·PII는 spec Non-goal: traces 0, default PII 끔.
+            sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.0,
+                            send_default_pii=False)
+        except Exception:
+            pass  # 관측성 실패가 부팅을 막지 않는다
     # 분리형 배포: env로 명시한 origin(예: https://*.vercel.app) 화이트리스트 +
     # localhost regex 폴백. allow_credentials=True라 wildcard("*") 불가 → 명시 리스트.
     _dev_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
@@ -83,6 +103,7 @@ def create_app() -> FastAPI:
         return ModelBoundProvider(name, settings)
 
     def _wrap_for_usage(provider, req):
+        tracing.tag_run(req.run_id, settings)
         return TrackedProvider(provider, store=store, run_id=req.run_id,
                                step=req.studio or "gateway", settings=settings)
 

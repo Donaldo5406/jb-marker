@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SentryInit } from "@/components/SentryInit";
 
 export const metadata: Metadata = {
   title: "JB Marker",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        <SentryInit />
+        {children}
+      </body>
     </html>
   );
 }
