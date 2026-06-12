@@ -51,6 +51,7 @@ class PipelineStep(ABC):
 
 DONE = "done"
 GATE_ACTIONS = ("confirm", "regenerate")   # confirm 게이트 어휘(GateEnvelope.actions 서버 선언)
+CONFIRM_ACTIONS = ("advance", "confirm")   # 게이트 승인 수신 어휘(원본 :169 인라인 튜플의 상수화)
 
 
 class PipelineOrchestrator:
@@ -100,13 +101,13 @@ class PipelineOrchestrator:
         gate = state.get("gate")
 
         # (a) 게이트 정지 중 confirm/advance → 승인하고 다음으로 (원본 :168-172)
-        if gate and action in ("advance", "confirm"):
+        if gate and action in CONFIRM_ACTIONS:
             state["confirmed"][gate] = True
             state["gate"] = None
             state["step"] = self.next_step(gate)
         # (b) 게이트 정지 중 regenerate / 프롬프트 정제 → 해당 step 재생성, gate 유지 (원본 :173-181)
         elif gate and (action == "regenerate" or (req.user_prompt or "").strip()):
-            step_obj = self._by_name[gate]
+            step_obj = self._step(gate)
             result = step_obj.run(ctx)
             check = step_obj.critic_gate(ctx)
             state["gate"] = gate
@@ -137,7 +138,7 @@ class PipelineOrchestrator:
                 return HarnessResult(text=self._done_text,
                                      output_path=f"{ctx.base}/{self._done_output}",
                                      meta=meta, events=events)
-            step_obj = self._by_name[step]
+            step_obj = self._step(step)
             result = step_obj.run(ctx)
             events += result.events
             if step_obj.gated:
@@ -164,6 +165,14 @@ class PipelineOrchestrator:
             # 비게이트 → 통과 후 다음으로 체인
             state["confirmed"][step] = True
             step = state["step"] = self.next_step(step)
+
+    def _step(self, name: str) -> PipelineStep:
+        """등록 step 조회 — 미등록 이름은 원인 식별 가능한 명시 에러(KeyError 하드닝)."""
+        try:
+            return self._by_name[name]
+        except KeyError:
+            raise ValueError(
+                f"알 수 없는 step {name!r} — 등록 step: {self._names}") from None
 
     def _gate_result(self, ctx: StepContext, gate: str, events: list, *,
                      last: HarnessResult | None = None, critic: dict | None = None,
