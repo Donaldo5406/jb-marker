@@ -21,7 +21,7 @@ from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, 
 from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
 from ..providers.base import Message
 from .critic import CriticVerdict
-from .design.prompts import CRITIC_INSTR, PERSONA, S1_INSTR, S2B_INSTR
+from .design.prompts import CRITIC_INSTR, PERSONA, S1_INSTR, S2B_INSTR  # CRITIC_INSTR=D6 표면 유지(모듈 내 미사용 — 사용처는 design/scoring.run_critic)
 from .design.scoring import RUBRIC as _SCORING_RUBRIC, run_critic
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
