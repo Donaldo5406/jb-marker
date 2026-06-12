@@ -11,3 +11,4 @@ data/runs/
 .omc/
 *.log
 .superpowers/
+.worktrees/

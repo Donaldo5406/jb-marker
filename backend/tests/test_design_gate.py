@@ -230,3 +230,49 @@ def test_gate_meta_critic_shape_and_no_premature_done(tmp_path):
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     assert res.meta["step"] == "done"
     assert s.get_manifest("r1").step_status["design"] == "done"
+
+
+# ---- T3 P2 백로그 ②: S3 critic 채점은 턴당 1회 (체크리스트 ⑫⑬) ----
+
+
+class _CountingCriticProvider(FakeProvider):
+    """자기-크리틱 system 호출만 계수하고 FakeProvider에 위임."""
+
+    def __init__(self):
+        self.critic_calls = 0
+
+    def complete(self, messages, *, model=None, system=None, tools=None, **kw):
+        if "자기-크리틱" in (system or ""):
+            self.critic_calls += 1
+        return super().complete(messages, model=model, system=system,
+                                tools=tools, **kw)
+
+
+def test_s3_gate_stop_scores_critic_once(tmp_path):
+    # 구 구현은 _s3_final + _critic_gate가 각각 채점 = 2회. P2 = run 기록→critic_gate 재사용 1회.
+    s = _store(tmp_path)
+    _state(s, "S3", {})
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({"copy": {"ko": {}}}),
+          source="marker", mime="application/json")
+    p = _CountingCriticProvider()
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="advance"), provider=p, store=s)
+    assert res.gate.step == "S3"
+    assert p.critic_calls == 1
+    assert res.meta.get("critic", {}).get("passed") in (True, False)   # meta.critic 보존(⑤)
+    assert res.gate.critic is not None                                  # gate.critic도 같은 채점
+
+
+def test_s3_regenerate_scores_critic_once(tmp_path):
+    # 체크리스트 ⑬: regenerate(gate=S3) 경로도 1회 — run이 cache를 덮어쓰고 critic_gate가 재사용.
+    s = _store(tmp_path)
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S3", "gate": "S3", "confirmed": {}, "bypass": {},
+         "languages": ["ko"]}), source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json", json.dumps({"copy": {"ko": {}}}),
+          source="marker", mime="application/json")
+    p = _CountingCriticProvider()
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="regenerate"), provider=p, store=s)
+    assert res.gate.step == "S3"
+    assert p.critic_calls == 1

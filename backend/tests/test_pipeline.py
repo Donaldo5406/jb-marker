@@ -347,3 +347,31 @@ def test_cache_shared_within_turn_and_overwritten_on_rerun(tmp_path):
     res = o.handle_turn(_ctx(s, state))
     assert c.runs == 2                            # 1차 fail(score=1)→재생성→2차 pass(score=2)
     assert "warnings" not in res.meta             # 재생성 후 통과 = 신선한 값으로 판정
+
+
+# ---- P2 Task 1: 하드닝 — 승인 어휘 상수화 + 알 수 없는 step 명시 에러 ----
+
+def test_confirm_actions_single_source():
+    # 체크리스트 ②: 승인 어휘는 모듈 상수 단일 출처(분기 인라인 튜플 금지)
+    from app.gateway.pipeline import CONFIRM_ACTIONS, GATE_ACTIONS
+    assert CONFIRM_ACTIONS == ("advance", "confirm")
+    assert GATE_ACTIONS == ("confirm", "regenerate")
+
+
+def test_unknown_step_in_chain_raises_explicit_error(tmp_path):
+    # 체크리스트 ①: state["step"]가 미등록 이름이면 KeyError 대신 명시 에러
+    s = _store(tmp_path)
+    o = _orch([_Step("A")])
+    state = _state("ZZZ")
+    with pytest.raises(ValueError, match="알 수 없는 step"):
+        o.handle_turn(_ctx(s, state))
+
+
+def test_unknown_gate_step_on_regenerate_raises_explicit_error(tmp_path):
+    # (b) 재생성 분기의 _by_name[gate]도 동일 하드닝
+    s = _store(tmp_path)
+    o = _orch([_Step("A")])
+    state = _state("A")
+    state["gate"] = "ZZZ"
+    with pytest.raises(ValueError, match="알 수 없는 step"):
+        o.handle_turn(_ctx(s, state, _req(action="regenerate")))

@@ -192,11 +192,11 @@ def test_s2c_writes_logo_disclosure_and_ai_notice(tmp_path):
 
 
 def test_critic_returns_7_scores_and_threshold(tmp_path):
-    h = DesignHarness(image_provider=FakeProvider())
-    scores = h.critic({"hierarchy":4,"grid":4,"whitespace":4,"cta":4,
+    from app.gateway.design.scoring import score_layout   # 구 DesignHarness.critic(T1 백로그 ①)
+    scores = score_layout({"hierarchy":4,"grid":4,"whitespace":4,"cta":4,
                        "compliance":4,"copy_visual":4,"brand":4})
     assert scores["pass"] is True
-    bad = h.critic({"hierarchy":1,"grid":4,"whitespace":4,"cta":4,
+    bad = score_layout({"hierarchy":1,"grid":4,"whitespace":4,"cta":4,
                     "compliance":4,"copy_visual":4,"brand":4})
     assert bad["pass"] is False
 
@@ -661,3 +661,20 @@ def test_critic_system_is_preserved_and_meta_passed(tmp_path):
     assert sysp.startswith(hd.PERSONA)
     assert "[자기-크리틱]" in sysp
     assert p.calls[1]["meta"] == {"studio": "design", "step": "critic"}
+
+
+# ---- T3 P2 백로그 ⑤: pending_ask 죽은 키 제거 ----
+
+
+def test_state_default_has_no_pending_ask_and_legacy_is_popped(tmp_path):
+    # default에서 제거 + 레거시 run(라이브 Supabase 기존 state) 로드 시 pop — 가산적·무해.
+    s = _store(tmp_path)
+    h = DesignHarness(image_provider=FakeProvider())
+    st = h._load_state(s, "r1")
+    assert "pending_ask" not in st
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S1", "gate": None, "confirmed": {}, "bypass": {},
+         "languages": ["ko"], "pending_ask": {"trigger": "b"}}),
+        source="marker", mime="application/json")
+    st = h._load_state(s, "r1")
+    assert "pending_ask" not in st

@@ -1,9 +1,10 @@
 """범용 step-pipeline 골격 — StepContext·GateCheck·PipelineStep·PipelineOrchestrator (T3, spec §4.1).
 
-DesignHarness.handle_turn(harness_design.py:161-243)의 제어 흐름을 design
-비의존으로 일반화. 오케스트레이터는 design을 모른다 — studio명·done 텍스트·
-산출 경로·저장은 주입. state 키(step·gate·confirmed·bypass)는 오케스트레이터
-소유, 도메인 키(languages 등)는 하네스/단계 소유.
+T3 P1 이식 시점의 구 DesignHarness.handle_turn(harness_design.py:161-243, 현재는
+design/steps.py + 셸로 분해됨)의 제어 흐름을 design 비의존으로 일반화. 본문 주석의
+원본 줄번호(:168-172 등)는 모두 그 이식 시점 기준이다. 오케스트레이터는 design을
+모른다 — studio명·done 텍스트·산출 경로·저장은 주입. state 키(step·gate·confirmed·
+bypass)는 오케스트레이터 소유, 도메인 키(languages 등)는 하네스/단계 소유.
 """
 from __future__ import annotations
 
@@ -51,10 +52,11 @@ class PipelineStep(ABC):
 
 DONE = "done"
 GATE_ACTIONS = ("confirm", "regenerate")   # confirm 게이트 어휘(GateEnvelope.actions 서버 선언)
+CONFIRM_ACTIONS = ("advance", "confirm")   # 게이트 승인 수신 어휘(원본 :169 인라인 튜플의 상수화)
 
 
 class PipelineOrchestrator:
-    """단계 시퀀스를 받아 step-pipeline 제어 흐름을 실행 (이식 원본: harness_design.py:161-243).
+    """단계 시퀀스를 받아 step-pipeline 제어 흐름을 실행 (이식 원본: T3 P1 시점 harness_design.py:161-243).
 
     게이트 4분기 — (a) confirm/advance 승인 (b) regenerate/프롬프트 정제
     (b') 무내용 폴링 재노출 (c) 연쇄 루프(bypass→critic→1회 재생성→warnings→
@@ -100,13 +102,13 @@ class PipelineOrchestrator:
         gate = state.get("gate")
 
         # (a) 게이트 정지 중 confirm/advance → 승인하고 다음으로 (원본 :168-172)
-        if gate and action in ("advance", "confirm"):
+        if gate and action in CONFIRM_ACTIONS:
             state["confirmed"][gate] = True
             state["gate"] = None
             state["step"] = self.next_step(gate)
         # (b) 게이트 정지 중 regenerate / 프롬프트 정제 → 해당 step 재생성, gate 유지 (원본 :173-181)
         elif gate and (action == "regenerate" or (req.user_prompt or "").strip()):
-            step_obj = self._by_name[gate]
+            step_obj = self._step(gate)
             result = step_obj.run(ctx)
             check = step_obj.critic_gate(ctx)
             state["gate"] = gate
@@ -137,7 +139,7 @@ class PipelineOrchestrator:
                 return HarnessResult(text=self._done_text,
                                      output_path=f"{ctx.base}/{self._done_output}",
                                      meta=meta, events=events)
-            step_obj = self._by_name[step]
+            step_obj = self._step(step)
             result = step_obj.run(ctx)
             events += result.events
             if step_obj.gated:
@@ -164,6 +166,14 @@ class PipelineOrchestrator:
             # 비게이트 → 통과 후 다음으로 체인
             state["confirmed"][step] = True
             step = state["step"] = self.next_step(step)
+
+    def _step(self, name: str) -> PipelineStep:
+        """등록 step 조회 — 미등록 이름은 원인 식별 가능한 명시 에러(KeyError 하드닝)."""
+        try:
+            return self._by_name[name]
+        except KeyError:
+            raise ValueError(
+                f"알 수 없는 step {name!r} — 등록 step: {self._names}") from None
 
     def _gate_result(self, ctx: StepContext, gate: str, events: list, *,
                      last: HarnessResult | None = None, critic: dict | None = None,

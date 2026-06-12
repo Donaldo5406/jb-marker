@@ -1,147 +1,69 @@
-"""DesignHarness — plan.md → S0~S3 디자인 파이프라인(stateless step 핸들러).
+"""DesignHarness — plan.md → S0~S3 디자인 파이프라인 (PipelineOrchestrator 위임 셸).
+
+T3 P2: 제어 흐름=gateway/pipeline.py(P1 골격), 단계 구현=design/steps.py,
+프롬프트=design/prompts.py, 채점=design/scoring.py. 이 모듈은 D6(테스트·registry
+표면 보존)에 따라 DesignHarness와 호환 표면(STEPS·GATED_STEPS·CRITIC_STEPS·
+next_step·_aspect_from_matrix·PERSONA·RUBRIC 등)을 같은 이름으로 유지하는
+얇은 셸이다.
 
 상태 단일주인 = /{run}/design/_state.json. 텍스트 액터=handle_turn provider(선택),
-비주얼 액터=생성 시 주입된 image_provider(항상 google/Nano Banana).
-
-BrainstormingHarness의 상태 I/O 패턴을 미러:
-- _load_state/_save_state: /{run}/design/_state.json 단일 소스
-- handle_turn(self, req, *, provider, store): step 디스패치
-- HarnessResult(text=, output_path=, meta=, events=)
+비주얼 액터=생성 시 주입된 image_provider(S2aVisual 생성자 주입).
 """
 from __future__ import annotations
 
-import json
-import os
-import re
-
-from ..core.fonts import looks_like_font_name
-from ..core.grounding import build_corpus, find_ungrounded
 from ..core.lang import normalize_languages
-from ..core.parsing import parse_frontmatter as _frontmatter, parse_json_block, read_json_node
-from ..core.visual_rules import enrich_visual_metadata, visual_compliance_summary
-from ..providers.base import Message
-from .critic import CriticVerdict
-from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
-from .prompt import PromptSpec
+from ..core.parsing import parse_json_block
+# 호환 re-export(D6) — 테스트가 이 모듈 경로에서 임포트하는 표면(hd.PERSONA 등).
+from .design.prompts import CRITIC_INSTR, PERSONA, S1_INSTR, S2B_INSTR  # noqa: F401
+from .design.scoring import RUBRIC as _SCORING_RUBRIC
+from .design.scoring import run_critic, score_layout  # noqa: F401
+from .design.steps import (  # noqa: F401
+    CRITIC_STEPS,
+    DISCLOSURE_DISPLAY,
+    GATED_STEPS,
+    NOTICES,
+    STEP_CLASSES,
+    STEPS,
+    S0Setup,
+    S1Rough,
+    S2aVisual,
+    S2bCopy,
+    S2cBrand,
+    S3Final,
+    _aspect_from_matrix,
+    load_references,
+)
+from .harness import Harness, HarnessRequest, HarnessResult
+from .pipeline import DONE, PipelineOrchestrator, StepContext
 from .state import load_state, save_state
-
-STEPS = ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
-
-# 게이트 대상(사람 confirm 또는 bypass 시 critic 품질게이트). S0·done 비게이트. spec §3.3.
-GATED_STEPS = ("S1", "S2a", "S2b", "S2c", "S3")
-# bypass 시 critic 품질게이트가 동작하는 단계(나머지는 항상 pass). spec §3.3/D2.
-CRITIC_STEPS = ("S1", "S3")   # 7항목 시각 critic. S2b는 grounding(별도 처리).
 
 
 def next_step(step: str) -> str:
-    """STEPS에서 다음 단계. done은 고정점."""
+    """STEPS에서 다음 단계. done은 고정점. (STEPS는 step 선언 유도 — 백로그 ④)"""
     idx = STEPS.index(step)
-    return STEPS[idx + 1] if idx + 1 < len(STEPS) else "done"
-
-PERSONA = (
-    "당신은 금융 마케팅 시니어 아트디렉터입니다. 시각 위계·그리드·여백·CTA 배치·"
-    "브랜드 일관성·컴플라이언스 톤에 능하며, 텍스트는 절대 비주얼 픽셀에 굽지 않고 "
-    "레이어로 분리합니다. 레이아웃은 구조화 JSON으로만 출력합니다."
-)
-
-# [S1 Rough] 지시·JSON 예시 — PromptSpec.constraints 단일 원소(문자열은 인라인 시절과 동일, D6).
-S1_INSTR = (
-    "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
-    "slots에는 반드시 headline·body·cta·disclosure 4개 역할을 모두 포함하고, "
-    "각 슬롯은 role·bbox{x,y,w,h}·z·copy_key를 갖습니다. 텍스트는 copy[lang][key]에 둡니다. "
-    "시각 적법성 검토를 위해 각 텍스트 슬롯에 font_px(정수)와 color(#RRGGBB)를, "
-    "최상위에 bg_color(#RRGGBB, 배경 대표 톤)를 반드시 포함하세요. "
-    "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
-    "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
-    "tokens의 color_palette·typography·concept(있으면)를 색(color/bg_color)·폰트·톤에 "
-    "반영하고, aspect는 tokens.aspect를 따르세요. 정확한 출력 형식 예시:\n"
-    '{"reply":"...","ready":true,"layout_spec":{"aspect":"4:5","bg_color":"#F2EFE9",'
-    '"slots":['
-    '{"role":"headline","bbox":{"x":80,"y":120,"w":920,"h":180},"z":3,"copy_key":"headline","font_px":96,"color":"#0B1324"},'
-    '{"role":"body","bbox":{"x":80,"y":340,"w":900,"h":120},"z":2,"copy_key":"body","font_px":40,"color":"#1A2332"},'
-    '{"role":"cta","bbox":{"x":80,"y":980,"w":520,"h":96},"z":3,"copy_key":"cta","font_px":44,"color":"#FFFFFF"},'
-    '{"role":"disclosure","bbox":{"x":80,"y":1180,"w":920,"h":120},"z":1,"copy_key":"disclosure","font_px":30,"color":"#3A3A3A"}'
-    '],"copy":{"ko":{"headline":"...","body":"...","cta":"...","disclosure":"..."}}}}'
-    "\nJSON 한 개만 출력(코드펜스·주석 금지)."
-)
-
-# [S2b] 지시·JSON 형식 — 혼합 블록이라 constraints 1원소(문자열은 인라인 시절과 동일, D6).
-S2B_INSTR = (
-    "\n\n[S2b 카피·타이포] 헤드라인/바디/CTA를 언어별로 확정하세요. "
-    'factsheet 외 수치 금지. JSON: {"copy":{lang:{headline,body,cta}}}'
-)
-
-# [자기-크리틱] 지시 — 전체 정적이라 constraints 1원소(문자열은 인라인 시절과 동일, D6).
-CRITIC_INSTR = (
-    "\n\n[자기-크리틱] 아래 레이아웃을 hierarchy/grid/whitespace/cta/"
-    "compliance/copy_visual/brand 7항목으로 1~5 채점하세요. "
-    'JSON 한 개만: {"scores":{"hierarchy":n,...}}'
-)
-
-
-# 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
-_STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
-                (4, 3, "4:3"), (9, 16, "9:16"), (16, 9, "16:9"),
-                (2, 3, "2:3"), (3, 2, "3:2")]
-
-
-def _aspect_from_matrix(matrix) -> str | None:
-    """material_matrix 첫 항목의 size/format/aspect에서 종횡비 추론.
-
-    creative_direction에 aspect가 없을 때 폴백 — "1080×1920 (9:16)"→9:16,
-    "1080×1080"→1:1. 명시 비율(예: 9:16)이 있으면 우선, 없으면 픽셀 치수를 표준비로 근사.
-    """
-    for m in (matrix or []):
-        if not isinstance(m, dict):
-            continue
-        for field in ("aspect", "size", "format"):
-            txt = str(m.get(field, ""))
-            rm = re.search(r"\b(\d{1,2})\s*:\s*(\d{1,2})\b", txt)        # 명시 비율 우선
-            if rm:
-                return f"{int(rm.group(1))}:{int(rm.group(2))}"
-            dm = re.search(r"(\d{2,5})\s*[×xX*]\s*(\d{2,5})", txt)        # 픽셀 치수
-            if dm:
-                w, h = int(dm.group(1)), int(dm.group(2))
-                if w > 0 and h > 0:
-                    ratio = w / h
-                    return min(_STD_ASPECTS, key=lambda a: abs(a[0] / a[1] - ratio))[2]
-    return None
+    return STEPS[idx + 1] if idx + 1 < len(STEPS) else DONE
 
 
 class DesignHarness(Harness):
-    RUBRIC = ("hierarchy", "grid", "whitespace", "cta",
-              "compliance", "copy_visual", "brand")
-
-    # I5: AI 생성 고지 — 언어별 현지화(미지원 언어는 ko 폴백).
-    NOTICES = {"ko": "본 이미지는 AI로 생성되었습니다.",
-               "en": "This image was generated by AI.",
-               "vi": "Hình ảnh này được tạo bởi AI.",
-               "zh": "本图片由AI生成。"}
-
-    # 필수 법령 고지의 언어별 표시문(번역). 표시문이 있는 언어에만 부착하고,
-    # 없는 언어는 고지를 '누락'시켜(무번역 한국어 법령문이 외국어 포스터에 새지 않게)
-    # 검토(R2)가 잡아 교정을 유도한다. severity.DISCLOSURE_I18N(탐지 키워드)와 짝.
-    # demo: ko·en만 표시문 보유 → vi/zh는 예금자보호 고지 누락(spec §2 위반 #4 스테이징).
-    DISCLOSURE_DISPLAY = {
-        "예금자보호법에 따라 5천만원까지 보호": {
-            "ko": "예금자보호법에 따라 5천만원까지 보호",
-            "en": "Protected up to KRW 50M under the Depositor Protection Act.",
-        },
-    }
+    # 호환 별칭 — 단일 출처는 design/ 패키지(테스트 표면: DesignHarness.RUBRIC 등).
+    RUBRIC = _SCORING_RUBRIC
+    NOTICES = NOTICES
+    DISCLOSURE_DISPLAY = DISCLOSURE_DISPLAY
 
     def __init__(self, *, image_provider) -> None:
         self._image_provider = image_provider
+        # 오케스트레이터·step 객체는 per-인스턴스(registry 요청 스코프 패턴, 체크리스트 ⑨).
+        # step 객체는 턴-가변 상태를 갖지 않는다(전부 ctx로, 체크리스트 ⑩).
+        self._orch = PipelineOrchestrator(
+            (S0Setup(), S1Rough(), S2aVisual(image_provider),
+             S2bCopy(), S2cBrand(), S3Final()),
+            studio="design",
+            done_text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
+            done_output="metadata.md",
+            save_state=self._save_state)
 
     def system_prompt(self) -> str:
         return PERSONA
-
-    def critic(self, scores: dict) -> dict:
-        """7항목 1~5 채점 → pass 판정(평균≥3.5 그리고 단일≥2)."""
-        vals = [float(scores.get(k, 0)) for k in self.RUBRIC]
-        avg = sum(vals) / len(vals) if vals else 0.0
-        ok = avg >= 3.5 and min(vals) >= 2
-        return {"scores": {k: scores.get(k) for k in self.RUBRIC},
-                "avg": round(avg, 2), "pass": ok}
 
     def _base(self, run_id: str) -> str:
         return f"/{run_id}/design"
@@ -149,8 +71,9 @@ class DesignHarness(Harness):
     def _load_state(self, store, run_id: str) -> dict:
         st = load_state(store, run_id, "design", default_factory=lambda: {
             "step": "S0", "gate": None, "confirmed": {}, "bypass": {},
-            "languages": ["ko"], "pending_ask": None})
+            "languages": ["ko"]})
         st.setdefault("gate", None)   # 레거시 run 백필(spec §6)
+        st.pop("pending_ask", None)   # 죽은 키 — 라이브 기존 run에서 제거(T1 백로그 ⑤)
         # 진행 중 run이 dict 형태 languages를 영속했더라도 안전하게 정규화(unhashable 방지).
         st["languages"] = normalize_languages(st.get("languages"))
         return st
@@ -160,368 +83,15 @@ class DesignHarness(Harness):
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)
-        if getattr(req, "bypass_map", None):
-            state.setdefault("bypass", {}).update(req.bypass_map)
-        action = getattr(req, "action", None)
-        gate = state.get("gate")
-
-        # (a) 게이트 정지 중 confirm/advance → 승인하고 다음으로
-        if gate and action in ("advance", "confirm"):
-            state["confirmed"][gate] = True
-            state["gate"] = None
-            state["step"] = next_step(gate)
-        # (b) 게이트 정지 중 regenerate / 프롬프트 정제 → 해당 step 재생성, gate 유지
-        elif gate and (action == "regenerate" or (req.user_prompt or "").strip()):
-            result = self._run_step(gate, req, provider, store, state)
-            verdict = self._critic_gate(gate, req, provider, store)
-            state["gate"] = gate
-            state["step"] = gate
-            self._save_state(store, req.run_id, state)
-            return self._gate_result(req, store, state, gate, result.events,
-                                     last=result, critic=verdict["critic"])
-        # (b') 무내용 폴링 → 재생성 없이 현 게이트 재노출(LLM 호출 없음)
-        elif gate:
-            self._save_state(store, req.run_id, state)
-            return self._gate_result(req, store, state, gate, [])
-
-        # (c) 현재 step부터 연쇄 루프
-        step = state["step"]
-        events: list = []
-        regen: dict = {}
-        warnings: list = []
-        auto_advanced: list = []
-        while True:
-            if step == "done":
-                state["gate"] = None
-                self._save_state(store, req.run_id, state)
-                store.set_step_status(req.run_id, "design", "done")
-                meta = {"source": "marker", "step": "done",
-                        "auto_advanced": auto_advanced}
-                if warnings:
-                    meta["warnings"] = warnings
-                return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
-                    output_path=f"{self._base(req.run_id)}/metadata.md", meta=meta, events=events)
-            result = self._run_step(step, req, provider, store, state)
-            events += result.events
-            if step in GATED_STEPS:
-                bypassed = bool(state.get("bypass", {}).get(step))
-                verdict = self._critic_gate(step, req, provider, store)
-                if bypassed:
-                    if not verdict["passed"] and regen.get(step, 0) < 1:
-                        regen[step] = 1
-                        continue                  # 같은 step 1회 재생성
-                    if not verdict["passed"]:
-                        warnings.append(step)      # 2차도 실패 → 경고 후 진행
-                    state["confirmed"][step] = True
-                    auto_advanced.append(step)
-                    step = state["step"] = next_step(step)
-                    continue                       # 연쇄
-                else:                              # 게이트 ON → 정지(verdict 자문)
-                    state["gate"] = step
-                    state["step"] = step
-                    self._save_state(store, req.run_id, state)
-                    return self._gate_result(req, store, state, step, events,
-                                             last=result, critic=verdict["critic"],
-                                             auto_advanced=auto_advanced, warnings=warnings)
-            # 비게이트(S0) → 통과 후 다음으로 체인
-            state["confirmed"][step] = True
-            step = state["step"] = next_step(step)
-
-    def _gate_result(self, req, store, state, gate, events, *, last=None,
-                     critic=None, auto_advanced=None, warnings=None) -> HarnessResult:
-        base = self._base(req.run_id)
-        out = last.output_path if last is not None else f"{base}/_state.json"
-        meta = dict(last.meta) if last is not None else {"source": "marker"}
-        meta["step"] = gate
-        if warnings:
-            meta["warnings"] = warnings
-        text = last.text if last is not None else "확정 대기 중입니다."
-        return HarnessResult(text=text, output_path=out, meta=meta,
-                             gate=GateEnvelope(kind="confirm", step=gate, critic=critic,
-                                               auto_advanced=auto_advanced or None,
-                                               actions=["confirm", "regenerate"]),
-                             events=events)
-
-    def _critic_gate(self, step, req, provider, store) -> dict:
-        """단계별 품질 판정. {'passed': bool, 'critic': dict|None}. spec §3.3/§3.4.
-
-        'critic'은 CriticVerdict 표준 봉투(spec §6) — wire(GateEnvelope.critic)에
-        그대로 실린다. S1/S3는 raw 채점을 scores 페이로드로, S2b는 ungrounded
-        수치를 issues로 담는다.
-        """
-        base = self._base(req.run_id)
-        if step in CRITIC_STEPS:                 # S1/S3 — 7항목 시각 critic
-            spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-            verdict = self._run_critic(provider, spec)
-            env = CriticVerdict.from_scores(verdict)
-            return {"passed": env.passed, "critic": env.to_dict()}
-        if step == "S2b":                        # grounding — ungrounded 비어야 pass
-            plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
-            fm = _frontmatter(plan.content_text if plan else "")
-            corpus = build_corpus(fm.get("factsheet") or {})
-            spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-            bad = []
-            for fields in (spec.get("copy") or {}).values():
-                for role in ("headline", "body", "cta"):
-                    bad += find_ungrounded((fields or {}).get(role, ""), corpus)
-            return {"passed": not bad, "critic": CriticVerdict(
-                passed=not bad, issues=sorted(set(bad))).to_dict()}
-        return {"passed": True, "critic": None}  # S2a/S2c — critic 없음
-
-    def _run_step(self, step, req, provider, store, state) -> HarnessResult:
-        if step == "S0":
-            return self._s0_setup(req, store, state)
-        return self._dispatch(step, req, provider, store, state)
-
-    def _dispatch(self, step, req, provider, store, state) -> HarnessResult:
-        if step == "S1":
-            return self._s1_rough(req, provider, store, state)
-        if step == "S2a":
-            return self._s2a_visual(req, provider, store, state)
-        if step == "S2b":
-            return self._s2b_copy(req, provider, store, state)
-        if step == "S2c":
-            return self._s2c_brand(req, provider, store, state)
-        if step == "S3":
-            return self._s3_final(req, provider, store, state)
-        raise NotImplementedError(f"{step} 미구현 (알 수 없는 step)")
-
-    def _load_references(self) -> list[dict]:
-        d = os.path.join(os.path.dirname(__file__), "..", "references", "design")
-        out = []
-        for fn in sorted(os.listdir(d)):
-            if fn.endswith(".json"):
-                with open(os.path.join(d, fn), encoding="utf-8") as f:
-                    out.append(json.load(f))
-        return out
+        # StepContext는 매 턴 메서드 로컬 조립(인스턴스 보관 금지) — cache 신선도 계약(체크리스트 ③).
+        ctx = StepContext(req=req, provider=provider, store=store, state=state,
+                          base=self._base(req.run_id))
+        return self._orch.handle_turn(ctx)
 
     def _parse_json(self, text: str) -> dict:
         # 테스트 표면 유지 — 구현은 core.parsing 단일본.
         return parse_json_block(text)
 
-    def _s1_rough(self, req, provider, store, state) -> HarnessResult:
-        base = self._base(req.run_id)
-        tokens = store.get(f"{base}/design-system/tokens.json")
-        refs = self._load_references()
-        # 조립 순서(D6): persona → [S1 Rough] 지시 → [tokens] → [references] — 인라인 시절과 동일.
-        pspec = PromptSpec(
-            persona=self.system_prompt(),
-            constraints=[S1_INSTR],
-            references=[f"\n[tokens]\n{tokens.content_text if tokens else '{}'}",
-                        f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}"],
-            studio="design", step="S1")
-        resp = provider.complete([Message("user", req.user_prompt or "러프 시작")],
-                                 system=pspec.assemble(), meta=pspec.meta)
-        data = self._parse_json(resp.text)
-        spec = data.get("layout_spec") or {}
-        # 실 LLM이 font_px를 생략해도 R-VIS-1(글자크기 비율)이 동작하도록 bbox 높이로 보강(결정론).
-        enrich_visual_metadata(spec)
-        store.put(f"{base}/rough/layout.spec.json",
-                  json.dumps(spec, ensure_ascii=False), source="marker",
-                  mime="application/json")
-        return HarnessResult(text=data.get("reply", "러프 완성"),
-            output_path=f"{base}/rough/layout.spec.json",
-            meta={"source": "marker", "step": "S1"},
-            events=[{"type": "artifact", "path": f"{base}/rough/layout.spec.json"}])
-
-    def _s2a_visual(self, req, provider, store, state) -> HarnessResult:
-        base = self._base(req.run_id)
-        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-        concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
-        aspect = spec.get("aspect", "1:1")
-        # M8: Nano Banana 실패(키 없음 등) → 보이는 그라데이션 placeholder 폴백(턴 전체 500 방지, spec §9).
-        # (이전엔 1×1 투명 PNG라 캔버스가 빈 것처럼 보였다 — 실모드 GOOGLE_API_KEY 부재 시 정체.)
-        fallback = False
-        try:
-            png = self._image_provider.generate_image(concept, aspect=aspect)
-        except Exception:
-            from ..core.placeholder_image import placeholder_png
-            png = placeholder_png(aspect)
-            fallback = True
-        path = f"{base}/design-system/components/visual/v1.png"
-        store.put(path, png, source="gemini", mime="image/png",
-                  meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
-        text = ("비주얼을 생성했습니다." if not fallback else
-                "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
-                "실 이미지는 GOOGLE_API_KEY 설정이 필요합니다.")
-        return HarnessResult(text=text, output_path=path,
-            meta={"source": "gemini", "step": "S2a", "image_fallback": fallback},
-            events=[{"type": "artifact", "path": path}])
-
-    def _s2b_copy(self, req, provider, store, state) -> HarnessResult:
-        base = self._base(req.run_id)
-        plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
-        fm = _frontmatter(plan.content_text if plan else "")
-        corpus = build_corpus(fm.get("factsheet") or {})
-        # 조립 순서(D6): persona → [S2b] 지시 → [factsheet] — 인라인 시절과 동일.
-        pspec = PromptSpec(
-            persona=self.system_prompt(),
-            constraints=[S2B_INSTR],
-            references=[f"\n[factsheet]\n{json.dumps(fm.get('factsheet') or {}, ensure_ascii=False)}"],
-            studio="design", step="S2b")
-        resp = provider.complete([Message("user", req.user_prompt or "카피 확정")],
-                                 system=pspec.assemble(), meta=pspec.meta)
-        copy = (self._parse_json(resp.text).get("copy")) or {}
-        ungrounded = []
-        for lang, fields in copy.items():
-            for role in ("headline", "body", "cta"):
-                val = (fields or {}).get(role, "")
-                ungrounded += find_ungrounded(val, corpus)
-                folder = {"headline": "headline", "body": "body", "cta": "cta"}[role]
-                store.put(f"{base}/design-system/components/{folder}/{lang}.txt",
-                          val, source="marker", mime="text/plain",
-                          meta={"lang": lang, "role": role})
-        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 정제 카피를 병합
-        # (slots/visual_concept/aspect 등 나머지는 보존).
-        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-        spec.setdefault("copy", {})
-        for lang, fields in copy.items():
-            spec["copy"].setdefault(lang, {})
-            spec["copy"][lang].update(fields or {})
-        store.put(f"{base}/rough/layout.spec.json",
-                  json.dumps(spec, ensure_ascii=False), source="marker",
-                  mime="application/json",
-                  meta={"grounds": {"corpus": "factsheet",
-                                    "ungrounded": sorted(set(ungrounded))}})
-        return HarnessResult(text="카피를 확정했습니다.",
-            output_path=f"{base}/design-system/components/headline",
-            meta={"source": "marker", "step": "S2b", "ungrounded": sorted(set(ungrounded))},
-            events=[{"type": "artifact", "path": f"{base}/design-system/components/headline"}])
-
-    def _s2c_brand(self, req, provider, store, state) -> HarnessResult:
-        base = self._base(req.run_id)
-        plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
-        fm = _frontmatter(plan.content_text if plan else "")
-        disclosures = fm.get("disclosures") or []
-        langs = state.get("languages", ["ko"])
-        notices = {}
-        for lang in langs:
-            notice = self.NOTICES.get(lang, self.NOTICES["ko"])
-            # 법령 고지 부착 규칙:
-            #  - 표시문(번역) 매핑이 있으면 그 언어로 부착(ko·en 등).
-            #  - ko는 매핑이 없어도 원문 고지(한국어)가 그대로 유효 → 원문 부착.
-            #    (실 캠페인 plan.md의 임의 disclosures가 ko 포스터에서 통째 사라지는 것 방지.)
-            #  - 그 외 언어는 무번역 누락 → 외국어 포스터에 한글이 새지 않고, R2가 누락을 잡아 교정 유도.
-            parts = [notice]
-            for disc in disclosures:
-                localized = self.DISCLOSURE_DISPLAY.get(disc, {}).get(lang)
-                if localized:
-                    parts.append(localized)
-                elif lang == "ko":
-                    parts.append(disc)
-            text = " ".join(parts)
-            notices[lang] = text
-            store.put(f"{base}/design-system/components/disclosure/{lang}.txt",
-                      text, source="marker", mime="text/plain", meta={"lang": lang})
-            store.put(f"{base}/design-system/components/logo/{lang}.txt",
-                      "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
-        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합
-        # (slots/visual_concept/aspect/기존 copy 등 나머지는 보존). _s2b_copy와 동일 idiom.
-        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-        spec.setdefault("copy", {})
-        for lang, text in notices.items():
-            spec["copy"].setdefault(lang, {})
-            spec["copy"][lang]["disclosure"] = text
-        store.put(f"{base}/rough/layout.spec.json",
-                  json.dumps(spec, ensure_ascii=False), source="marker",
-                  mime="application/json")
-        return HarnessResult(text="브랜드·고지 요소를 배치했습니다.",
-            output_path=f"{base}/design-system/components/disclosure",
-            meta={"source": "marker", "step": "S2c"},
-            events=[{"type": "artifact",
-                     "path": f"{base}/design-system/components/disclosure"}])
-
-    def _s3_final(self, req, provider, store, state) -> HarnessResult:
-        base = self._base(req.run_id)
-        spec = read_json_node(store, f"{base}/rough/layout.spec.json")
-        copy = spec.get("copy", {})
-        langs = state.get("languages", ["ko"])
-        # M7: 자기-크리틱 실행(자문용·비차단). 게이트 의미론은 spec §13으로 유보.
-        critic = self._run_critic(provider, spec)
-        lines = ["---", f"languages: {langs}", "---", "# 디자인 메타데이터", ""]
-        for lang in langs:
-            c = copy.get(lang, {})
-            lines.append(f"## {lang}")
-            for k in ("headline", "body", "cta"):   # copy 키는 body (이전 'sub'는 항상 누락)
-                if c.get(k):
-                    lines.append(f"- {k}: {c[k]}")
-        lines += ["", "## 크리틱",
-                  f"- avg: {critic['avg']}", f"- pass: {critic['pass']}"]
-        for k in self.RUBRIC:
-            lines.append(f"- {k}: {critic['scores'].get(k)}")
-        # 시각 적법성 메타데이터(결정론) — 글자크기·대비·고지 시인성 측정값을 기록해
-        # Review가 비전 LLM 없이도 1차 판단(core/visual_rules와 동일 계산).
-        vc = visual_compliance_summary(spec)
-        font_note = " (bbox 높이 기반 추정 — 다행 고지는 과대추정 가능)" if vc.get("font_px_estimated") else ""
-        lines += ["", "## 시각 적법성(visual_compliance)",
-                  f"- passed: {vc['passed']}",
-                  f"- disclosure_font_px: {vc['disclosure_font_px']}{font_note}",
-                  f"- max_text_font_px: {vc['max_text_font_px']}",
-                  f"- disclosure_contrast: {vc['disclosure_contrast']}",
-                  f"- bg_color: {vc['bg_color']}",
-                  f"- font_px_estimated: {vc.get('font_px_estimated', False)}"]
-        for v in vc["violations"]:
-            lines.append(f"- 위반 {v['rule']}({v['severity']}): {v['evidence']}")
-        store.put(f"{base}/metadata.md", "\n".join(lines),
-                  source="marker", mime="text/markdown")
-        # meta.critic은 wire로 나가는 값 — CriticVerdict 봉투로 통일(spec §6).
-        # metadata.md 렌더(위)는 raw 판정(critic['avg'] 등)을 그대로 사용.
-        verdict = CriticVerdict.from_scores(critic).to_dict()
-        return HarnessResult(text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
-            output_path=f"{base}/metadata.md",
-            meta={"source": "marker", "step": "done", "critic": verdict},
-            events=[{"type": "artifact", "path": f"{base}/metadata.md"}])
-
-    def _run_critic(self, provider, spec) -> dict:
-        """텍스트 provider에 7항목 자기-크리틱 JSON을 요청 → critic() 판정(자문용)."""
-        # 조립 순서(D6): persona → [자기-크리틱] 지시 — 인라인 시절과 동일.
-        pspec = PromptSpec(persona=self.system_prompt(),
-                           constraints=[CRITIC_INSTR],
-                           studio="design", step="critic")
-        try:
-            resp = provider.complete(
-                [Message("user", json.dumps(spec, ensure_ascii=False))],
-                system=pspec.assemble(), meta=pspec.meta)
-            raw = (self._parse_json(resp.text).get("scores")) or {}
-        except Exception:
-            raw = {}
-        # fake/비-JSON 경로는 {} → 누락 항목은 3(중립)으로 디폴트(오해성 하드제로 방지).
-        scores = {k: raw.get(k, 3) for k in self.RUBRIC}
-        return self.critic(scores)
-
-    def _s0_setup(self, req: HarnessRequest, store, state: dict) -> HarnessResult:
-        base = self._base(req.run_id)
-        plan = store.get(f"/{req.run_id}/brainstorming/plan.md")
-        fm = _frontmatter(plan.content_text if plan else "")
-        cd = fm.get("creative_direction") or {}
-        matrix = fm.get("material_matrix", [])
-        # creative_direction은 구조형(palette/font/grid/aspect) 또는 실 브레인스토밍의 서술형
-        # (concept/visual_mood/color_palette/typography)로 올 수 있다 — 둘 다 수용해 빈 tokens로
-        # 디자인이 브랜드 방향을 잃지 않게 한다. aspect 미기재 시 material_matrix에서 추론.
-        # typography는 폰트명일 때만 font로 폴백한다. 실 브레인스토밍은 typography를
-        # 서술 문장으로 쓰는데, 그대로 font에 넣으면 design-system 프리뷰 CSS font-family로
-        # 새서 깨진다. 서술형 typography는 아래 루프에서 tokens["typography"]로 별도 보존됨.
-        _typo = cd.get("typography")
-        tokens = {
-            "palette": cd.get("palette") or [],
-            "font": cd.get("font") or (_typo if looks_like_font_name(_typo) else None),
-            "grid": cd.get("grid"),
-            "aspect": cd.get("aspect") or _aspect_from_matrix(matrix) or "1:1",
-        }
-        for k in ("concept", "visual_mood", "color_palette", "typography"):
-            if cd.get(k):
-                tokens[k] = cd[k]    # 서술형 브랜드 방향 → S1 styling 힌트(색·폰트·톤)
-        store.put(f"{base}/design-system/tokens.json",
-                  json.dumps(tokens, ensure_ascii=False), source="marker",
-                  mime="application/json")
-        store.put(f"{base}/_material_matrix.json",
-                  json.dumps(matrix, ensure_ascii=False),
-                  source="marker", mime="application/json")
-        # 실 LLM은 languages를 객체 리스트([{code:...}])로 쓸 수 있어 문자열 코드로 정규화.
-        # (안 하면 _s2c_brand/_s3_final의 NOTICES.get/copy.get가 dict 키 → TypeError로 크래시.)
-        state["languages"] = normalize_languages(fm.get("languages"))
-        return HarnessResult(
-            text="디자인 토큰을 확정했습니다. Rough 단계로 진행합니다.",
-            output_path=f"{base}/design-system/tokens.json",
-            meta={"source": "marker", "step": "S0"},
-            events=[{"type": "artifact", "path": f"{base}/design-system/tokens.json"}])
+    def _load_references(self) -> list[dict]:
+        # 테스트 표면 유지 — 구현은 design/steps.py 단일본.
+        return load_references()
