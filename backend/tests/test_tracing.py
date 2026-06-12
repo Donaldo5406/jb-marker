@@ -2,6 +2,116 @@
 from __future__ import annotations
 
 from app.config import load_settings
+from app.config import Settings
+from app.observability import tracing
+
+
+def _settings(**over):
+    """필수 필드만 채운 Settings — 관측성 필드는 over로 주입."""
+    base = dict(
+        anthropic_api_key=None, openai_api_key=None, google_api_key=None,
+        vfs_backend="local", entitlement_override=False, storage_dir="data/runs",
+        anthropic_model="claude-sonnet-4-6", openai_model="gpt-4o",
+        google_model="gemini-2.0-flash", advisor_mode="auto",
+        anthropic_advisor_model="claude-sonnet-4-6",
+    )
+    base.update(over)
+    return Settings(**base)
+
+
+class FakeGeneration:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def update(self, **kw):
+        self.calls.append(("update", kw))
+
+    def update_trace(self, **kw):
+        self.calls.append(("update_trace", kw))
+
+    def end(self):
+        self.calls.append(("end", {}))
+
+
+class FakeLangfuse:
+    def __init__(self):
+        self.calls = []
+
+    def start_generation(self, **kw):
+        self.calls.append(("start_generation", kw))
+        return FakeGeneration(self.calls)
+
+    def flush(self):
+        self.calls.append(("flush", {}))
+
+
+def test_trace_id_deterministic_32hex():
+    a = tracing._trace_id("run-abc")
+    b = tracing._trace_id("run-abc")
+    assert a == b
+    assert len(a) == 32
+    int(a, 16)  # hex 검증 — 비hex면 ValueError로 실패
+
+
+def test_record_generation_noop_without_keys():
+    # 키 없음 → 예외 없이 조용히 무동작이면 통과
+    tracing.record_generation(_settings(), run_id="r1", step="design",
+                              model="m", kind="text")
+
+
+def test_record_generation_payload(monkeypatch):
+    fake = FakeLangfuse()
+    monkeypatch.setattr(tracing, "_get_client", lambda settings: fake)
+    s = _settings(sentry_issues_url="https://org.sentry.io/issues")
+    tracing.record_generation(
+        s, run_id="r1", step="design", model="claude-sonnet-4-6", kind="text",
+        input_payload={"messages": [{"role": "user", "content": "hi"}]},
+        output_text="hello",
+        usage={"input_tokens": 10, "output_tokens": 5},
+    )
+    names = [c[0] for c in fake.calls]
+    assert names == ["start_generation", "update", "update_trace", "end"]
+    start_kw = fake.calls[0][1]
+    assert start_kw["name"] == "design/text"
+    assert start_kw["model"] == "claude-sonnet-4-6"
+    assert start_kw["trace_context"] == {"trace_id": tracing._trace_id("r1")}
+    assert start_kw["metadata"]["run_id"] == "r1"
+    assert start_kw["metadata"]["kind"] == "text"
+    assert (start_kw["metadata"]["sentry_search_url"]
+            == "https://org.sentry.io/issues/?query=run_id%3Ar1")
+    upd_kw = fake.calls[1][1]
+    assert upd_kw["output"] == "hello"
+    assert upd_kw["usage_details"] == {"input": 10, "output": 5}
+    trace_kw = fake.calls[2][1]
+    assert trace_kw["name"] == "run:r1"
+
+
+def test_record_generation_usage_none(monkeypatch):
+    fake = FakeLangfuse()
+    monkeypatch.setattr(tracing, "_get_client", lambda settings: fake)
+    tracing.record_generation(_settings(), run_id="r1", step="design",
+                              model="m", kind="image",
+                              input_payload={"prompt": "p"}, output_text="<image>")
+    upd_kw = fake.calls[1][1]
+    assert upd_kw["usage_details"] is None
+
+
+def test_record_generation_swallows_client_errors(monkeypatch):
+    class Exploding:
+        def start_generation(self, **kw):
+            raise RuntimeError("boom")
+    monkeypatch.setattr(tracing, "_get_client", lambda settings: Exploding())
+    # 예외 미전파면 통과
+    tracing.record_generation(_settings(), run_id="r1", step="s", model="m")
+
+
+def test_tag_run_noop_without_dsn():
+    # sentry_dsn 없음 + sentry_sdk 미설치 어느 쪽이든 예외 없으면 통과
+    tracing.tag_run("r1", _settings())
+
+
+def test_flush_noop_without_client():
+    tracing.flush()
 
 
 def test_load_settings_reads_observability_env(monkeypatch):
