@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Any
 
 _client = None          # Langfuse 클라이언트 — 프로세스당 1개
@@ -38,6 +39,8 @@ def _get_client(settings):
         )
         return _client
     except Exception:
+        # 1회성 이벤트(이후 _client_failed로 영구 차단) — "키 넣었는데 트레이스 안 보임" 디버깅용
+        logging.getLogger(__name__).debug("langfuse init failed", exc_info=True)
         _client_failed = True
         return None
 
