@@ -157,7 +157,7 @@ class BrainstormingHarness(Harness):
             content = content[:keep] + _TRUNC_MARKER
         return Message(m["role"], content)
 
-    def _summarize(self, provider, model: str, prior: str, old: list[dict]) -> str:
+    def _summarize(self, provider, prior: str, old: list[dict]) -> str:
         """오래된 턴을 현재 턴 provider로 증분 요약. 캠페인 확정 사실 보존 우선."""
         pspec = PromptSpec(persona=COMPACT_PERSONA,
                            studio="brainstorming", step="compact")
@@ -171,7 +171,7 @@ class BrainstormingHarness(Harness):
         return (resp.text or "").strip()
 
     def _window_for_provider(self, msgs: list[dict], state: dict,
-                             provider, model: str) -> list[Message]:
+                             provider) -> list[Message]:
         """provider 입력 뷰 구성. 임계 초과 시 오래된 턴을 증분 요약으로 접고
         최근 KEEP_RECENT만 원문 전달. _messages.json 원본은 건드리지 않는다(비파괴).
 
@@ -188,7 +188,7 @@ class BrainstormingHarness(Harness):
             if old:
                 prior = comp["summary"] if comp else ""
                 try:
-                    summary = self._summarize(provider, model, prior, old)
+                    summary = self._summarize(provider, prior, old)
                     state["compaction"] = {
                         "summary": summary, "covered_upto": boundary,
                         "count": (comp["count"] + 1 if comp else 1)}
@@ -232,7 +232,7 @@ class BrainstormingHarness(Harness):
                            references=[f"\n\n[현재 spec.md]\n{cur}"],
                            studio="brainstorming", step="stage_a")
         # 웹서치 ON(Stage A): 모델 자율 검색(WEB_SEARCH_TOOL). citations는 _save_research로 영속.
-        resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
+        resp = provider.complete(self._window_for_provider(msgs, state, provider),
                                  system=pspec.assemble(), tools=WEB_SEARCH_TOOL, meta=pspec.meta)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
@@ -322,7 +322,7 @@ class BrainstormingHarness(Harness):
             references=[f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}",
                         f"\n\n[현재 plan.md]\n{cur_plan}"],
             studio="brainstorming", step="stage_b")
-        resp = provider.complete(self._window_for_provider(msgs, state, provider, req.provider),
+        resp = provider.complete(self._window_for_provider(msgs, state, provider),
                                  system=pspec.assemble(), meta=pspec.meta)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)
         data = _parse_json(resp.text)
