@@ -117,6 +117,10 @@ def test_flush_noop_without_client():
 
 
 def test_load_settings_reads_observability_env(monkeypatch):
+    # 로컬 .env 격리(아래 defaults 테스트와 동일 패턴) — LANGFUSE_HOST 디폴트 단언이
+    # 로컬 .env의 호스트(예: jp.cloud)에 오염되지 않게 dotenv 재주입 차단 + 기존 env 제거.
+    monkeypatch.setattr("app.config.load_dotenv", lambda: None)
+    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setenv("LANGFUSE_PROJECT_ID", "proj1")
