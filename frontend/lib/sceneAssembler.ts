@@ -7,6 +7,8 @@ export type Slot = {
   asset_ref?: string;
   copy_key?: string;
   style_token?: string;
+  font_px?: number;   // layout.spec의 글자크기(없으면 48 폴백)
+  color?: string;     // #RRGGBB 텍스트 색(없으면 #0b1324 폴백)
 };
 export type LayoutSpec = {
   aspect?: string;
@@ -45,6 +47,26 @@ function normBBox(bbox: unknown): BBox {
   return { x: n(b.x), y: n(b.y), w: n(b.w), h: n(b.h) };
 }
 
+/** #RRGGBB → 상대 휘도(0~1). 파싱 실패는 어두움(0)으로 간주. */
+function relLuminance(hex: string): number {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex ?? "");
+  if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** 텍스트 슬롯 뒤에 깔 반투명 스크림 rect. 밝은 글자→어두운 스크림, 그 반대도. */
+function scrimFor(bb: BBox, color: string, role: string): any {
+  const fill = relLuminance(color) > 0.5 ? "rgba(0,0,0,0.38)" : "rgba(255,255,255,0.42)";
+  const pad = 12;
+  return {
+    type: "rect", left: bb.x - pad, top: bb.y - pad,
+    width: bb.w + pad * 2, height: bb.h + pad * 2,
+    fill, rx: 8, ry: 8, role: "scrim", slotId: role,
+  };
+}
+
 /** layout.spec + 언어 → Fabric JSON(toJSON 호환). assetUrl로 asset_ref 해석. */
 export function assembleScene(
   spec: LayoutSpec, lang: string, assetUrl: (ref: string) => string,
@@ -53,20 +75,23 @@ export function assembleScene(
   const objects = (spec.slots ?? [])
     .slice()
     .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-    .map((s) => {
+    .flatMap((s) => {
       const bb = normBBox(s.bbox);
       const common = {
         left: bb.x, top: bb.y, width: bb.w, height: bb.h,
         role: s.role, slotId: `${s.role}`,
       };
       if (IMAGE_ROLES.has(s.role)) {
-        return { ...common, type: "image",
-          src: s.asset_ref ? assetUrl(s.asset_ref) : "" };
+        return [{ ...common, type: "image",
+          src: s.asset_ref ? assetUrl(s.asset_ref) : "" }];
       }
       const key = s.copy_key ?? s.role;
-      return { ...common, type: "textbox", lang,
+      const color = s.color ?? "#0b1324";
+      const textbox = { ...common, type: "textbox", lang,
         text: (key && copy[key]) || "",
-        fontSize: 48, fill: "#0b1324" };
+        fontSize: s.font_px ?? 48, fill: color };
+      // 스크림을 먼저(낮은 z), 텍스트를 그 위로
+      return [scrimFor(bb, color, s.role), textbox];
     });
   const { width, height } = aspectToDims(spec.aspect);
   return { version: "6.0.0", objects, width, height };
