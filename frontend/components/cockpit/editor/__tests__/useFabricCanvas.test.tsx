@@ -62,6 +62,51 @@ describe("useFabricCanvas", () => {
     expect((rect as any).selectable).toBe(false);  // 보조 배경 — 비선택
   });
 
+  it("원-레이어 씬(배경 image + 로고 image + disclosure scrim rect + disclosure textbox)을 모두 렌더한다", async () => {
+    // 원-레이어 피벗: 헤드라인/CTA는 배경 포스터에 베이크됨. 캔버스가 받는 씬은
+    // 배경 image(풀 포스터) + 로고 image 오버레이 + disclosure scrim(rect) + disclosure textbox.
+    // 이미지 분기는 role(background/logo) 무관 공통 — 둘 다 add 돼야 한다.
+    vi.mocked(authedFetch).mockResolvedValue({ ok: true, blob: async () => new Blob() } as any);
+    const origCreate = URL.createObjectURL;
+    (URL as any).createObjectURL = vi.fn(() => "blob:x");
+    (URL as any).revokeObjectURL = vi.fn();
+    try {
+      const elRef = { current: document.createElement("canvas") } as React.RefObject<HTMLCanvasElement>;
+      const scene = { version: "6.0.0", width: 1080, height: 1080, objects: [
+        // 배경: 헤드라인·CTA가 베이크된 풀 포스터(어셈블러 씬 → scaleX 없음, scaleToWidth 경로)
+        { type: "image", assetPath: "/vfs/r/poster.png", left: 0, top: 0, width: 1080, role: "background" },
+        // 로고 오버레이
+        { type: "image", assetPath: "/vfs/r/logo.png", left: 40, top: 40, width: 200, role: "logo" },
+        // disclosure 가독성 배경(scrim) — textbox보다 먼저(낮은 z), 비선택
+        { type: "rect", left: 8, top: 980, width: 1064, height: 80, fill: "rgba(0,0,0,0.38)", rx: 8, ry: 8, role: "scrim", slotId: "disclosure" },
+        // disclosure textbox
+        { type: "textbox", text: "투자에 따른 손실 위험", left: 20, top: 990, width: 1040, role: "disclosure", slotId: "disclosure" },
+      ] };
+      renderHook(() => useFabricCanvas(elRef, scene));
+
+      // 동기 분기: scrim rect + disclosure textbox 즉시 add
+      const addedSync = add.mock.calls.map((c) => c[0]);
+      const scrim = addedSync.find((o: any) => o.kind === "rect" && o.slotId === "disclosure");
+      const disclosure = addedSync.find((o: any) => o.kind === "textbox" && o.slotId === "disclosure");
+      expect(scrim).toBeTruthy();              // disclosure scrim(rect) 추가됨
+      expect((scrim as any).selectable).toBe(false);  // 보조 배경 — 비선택
+      expect(disclosure).toBeTruthy();         // disclosure textbox 추가됨
+      expect(addedSync.indexOf(scrim)).toBeLessThan(addedSync.indexOf(disclosure)); // scrim이 아래
+
+      // 비동기 분기: 배경 + 로고 image 둘 다 add (공통 image 분기가 두 role 모두 처리)
+      await waitFor(() => {
+        const imgs = add.mock.calls.map((c) => c[0]).filter((o: any) => o.kind === "image");
+        expect(imgs.length).toBe(2);
+      });
+      const images = add.mock.calls.map((c) => c[0]).filter((o: any) => o.kind === "image");
+      expect(images.some((o: any) => o.assetPath === "/vfs/r/poster.png")).toBe(true);  // 배경
+      expect(images.some((o: any) => o.assetPath === "/vfs/r/logo.png")).toBe(true);    // 로고
+    } finally {
+      (URL as any).createObjectURL = origCreate;
+      vi.mocked(authedFetch).mockResolvedValue({ ok: false } as any);
+    }
+  });
+
   it("에디터 저장 이미지(scaleX·filters)는 fromObject로 전체 복원한다 (P3 회귀 가드)", async () => {
     vi.mocked(authedFetch).mockResolvedValue({ ok: true, blob: async () => new Blob() } as any);
     const origCreate = URL.createObjectURL;
