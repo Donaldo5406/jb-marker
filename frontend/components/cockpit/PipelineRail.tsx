@@ -5,6 +5,7 @@ import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StepProgress, type Step } from "./StepProgress";
 import type { DesignGate } from "@/lib/api";
+import { gateActionLabel } from "@/lib/gateActions";
 
 const STEPS: Step[] = [
   { id: "S0", label: "셋업" },
@@ -41,18 +42,30 @@ export function PipelineRail({ step, onAdvance, onRegenerate, gate, busy, settin
           critic {critic.scores.avg.toFixed(1)} {critic.passed ? "통과" : "주의"}
         </span>
       )}
-      {step !== "done" && (
-        <div className="flex shrink-0 items-center gap-2">
-          <button type="button" onClick={onRegenerate} disabled={busy}
-            className="rounded-full border border-outline-variant px-3 py-1.5 text-caption text-on-surface transition-colors hover:bg-surface-container-high disabled:opacity-40">
-            재생성
-          </button>
-          <button type="button" onClick={onAdvance} disabled={busy}
-            className="rounded-full bg-primary px-3 py-1.5 text-caption font-medium text-on-primary transition-colors hover:bg-primary-container disabled:opacity-40">
-            {busy ? "처리 중…" : gated ? "확정 & 다음 →" : "다음 단계 →"}
-          </button>
-        </div>
-      )}
+      {step !== "done" && (() => {
+        // gated면 서버 선언 actions, 아니면 일반 진행 베이스라인. 순서: 재생성(좌)·primary(우).
+        const acts = gated && gate?.actions?.length ? gate.actions : ["regenerate", "advance"];
+        const hasRegen = acts.includes("regenerate");
+        // primary는 confirm 게이트(["confirm",…])·비-gated 베이스라인(…,"advance") 양쪽에서 항상 보장됨
+        // — 베이스라인에서 advance를 빼면 진행 버튼이 사라지니 유지할 것.
+        const primary = acts.find((a) => a === "confirm" || a === "advance");
+        return (
+          <div className="flex shrink-0 items-center gap-2">
+            {hasRegen && (
+              <button type="button" onClick={onRegenerate} disabled={busy}
+                className="rounded-full border border-outline-variant px-3 py-1.5 text-caption text-on-surface transition-colors hover:bg-surface-container-high disabled:opacity-40">
+                {gateActionLabel("regenerate")}
+              </button>
+            )}
+            {primary && (
+              <button type="button" onClick={onAdvance} disabled={busy}
+                className="rounded-full bg-primary px-3 py-1.5 text-caption font-medium text-on-primary transition-colors hover:bg-primary-container disabled:opacity-40">
+                {busy ? "처리 중…" : gateActionLabel(primary)}
+              </button>
+            )}
+          </div>
+        );
+      })()}
       <button type="button" onClick={onToggleSettings} aria-label="스킵 스코프 설정" aria-pressed={!!settingsOpen} title="자동 진행(confirm 생략) 범위"
         className={cn("inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors", settingsOpen ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high")}>
         <Settings className="h-4 w-4" aria-hidden />
