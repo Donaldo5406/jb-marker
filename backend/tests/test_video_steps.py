@@ -155,3 +155,12 @@ def test_step_declarations_derive_constants():
     assert STEPS == ("V0", "V1", "V2a", "V2b", "V2c", "V3", "done")
     assert GATED_STEPS == ("V1", "V2a", "V2b", "V2c", "V3")
     assert CRITIC_STEPS == ("V1", "V3")
+
+
+def test_demo_provider_routes_video_v1():
+    from app.providers.demo import DemoProvider
+    from app.gateway.prompt import PromptSpec
+    p = DemoProvider()
+    pspec = PromptSpec(persona="x", studio="video", step="V1")
+    resp = p.complete([], system=pspec.assemble(), meta=pspec.meta)
+    assert "storyboard" in resp.text   # V1 fixture JSON
