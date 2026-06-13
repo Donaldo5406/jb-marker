@@ -13,6 +13,9 @@ class NoopWS {
   constructor(public url: string) {}
 }
 
+// 폴링 hook을 no-op으로 격리 — 마운트 자동 tick이 액션 단위 테스트의 mockResolvedValueOnce를 소진하지 않도록.
+vi.mock("@/lib/useSessionHeartbeat", () => ({ useSessionHeartbeat: () => {} }));
+
 // 세션 api만 결정적 mock. 나머지 실제 api 메서드(vfsGet 등)는 아래 blanket fetch가 흡수.
 vi.mock("@/lib/api", async (orig) => {
   const real = await orig<typeof import("@/lib/api")>();

@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { api, authedFetch, type DesignGate, type GateEnvelope, type Manifest, type Provider, type ReviewGate, type VfsNode } from "@/lib/api";
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
+import { useSessionHeartbeat } from "@/lib/useSessionHeartbeat";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
 import type { SessionHeartbeat, SessionListItem, SessionLivenessName, SessionResumeResult, SessionStatus } from "@/lib/api";
 import { isImagePath } from "@/lib/fileType";
@@ -869,6 +870,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       if (e.studio) { void heartbeatSession(e.studio); setSessionRestoredStudio(e.studio); }
     }
   }, { pollMs: 4000 });
+
+  // T2 P3 §4.3: 활성 스튜디오 세션을 ~60s 폴링(탭 visibility 완화). useRunSocket poll과 별개.
+  useSessionHeartbeat(runId, activeStudio, heartbeatSession, { intervalMs: 60000 });
 
   const value: CockpitContextValue = {
     runId,
