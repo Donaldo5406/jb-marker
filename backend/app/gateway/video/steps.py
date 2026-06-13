@@ -233,3 +233,59 @@ class V2cBrand(PipelineStep):
             meta={"source": "marker", "step": self.name},
             events=[{"type": "artifact",
                      "path": f"{base}/design-system/components/disclosure"}])
+
+
+class V3Final(PipelineStep):
+    """metadata.md 확정 + 자기-크리틱 + 타이밍 적법성 (S3Final 미러). 채점 턴당 1회(cache)."""
+
+    name = "V3"
+    gated = True
+
+    def run(self, ctx: StepContext) -> HarnessResult:
+        base = ctx.base
+        spec = read_json_node(ctx.store, f"{base}/storyboard/storyboard.spec.json")
+        copy = spec.get("copy", {})
+        langs = ctx.state.get("languages", ["ko"])
+        critic = run_critic(ctx.provider, spec)
+        ctx.cache[V3_CRITIC_CACHE] = critic
+        tv = timing_summary(spec)
+        lines = ["---", f"languages: {langs}", "---", "# 영상 메타데이터", ""]
+        for lang in langs:
+            c = copy.get(lang, {})
+            lines.append(f"## {lang}")
+            for k in ("headline", "body", "cta"):
+                if c.get(k):
+                    lines.append(f"- {k}: {c[k]}")
+        lines += ["", "## 크리틱", f"- avg: {critic['avg']}", f"- pass: {critic['pass']}"]
+        for k in RUBRIC:
+            lines.append(f"- {k}: {critic['scores'].get(k)}")
+        lines += ["", "## 타이밍 적법성(timing_compliance)",
+                  f"- passed: {tv['passed']}",
+                  f"- disclosure_sec: {tv['disclosure_sec']}"]
+        for v in tv["violations"]:
+            lines.append(f"- 위반 {v['rule']}({v['severity']}): {v['evidence']}")
+        ctx.store.put(f"{base}/metadata.md", "\n".join(lines),
+                      source="marker", mime="text/markdown")
+        verdict = CriticVerdict.from_scores(critic).to_dict()
+        return HarnessResult(
+            text="영상 콘티를 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
+            output_path=f"{base}/metadata.md",
+            meta={"source": "marker", "step": self.name, "critic": verdict},
+            events=[{"type": "artifact", "path": f"{base}/metadata.md"}])
+
+    def critic_gate(self, ctx: StepContext) -> GateCheck:
+        # 같은 턴에서 run이 선행·무조건부 기록 — 시각 critic + 타이밍 위반 결합.
+        visual = _visual_gate(ctx.cache[V3_CRITIC_CACHE])
+        spec = read_json_node(ctx.store, f"{ctx.base}/storyboard/storyboard.spec.json")
+        timing_ok = not evaluate_timing(spec)
+        passed = visual.passed and timing_ok
+        critic = dict(visual.critic or {})
+        critic["timing_passed"] = timing_ok
+        return GateCheck(passed=passed, critic=critic)
+
+
+# step 객체 선언이 단일 출처 — 수기 튜플 불일치 차단(design steps.py:378-382 미러).
+STEP_CLASSES = (V0Setup, V1Storyboard, V2aFootage, V2bCopy, V2cBrand, V3Final)
+STEPS = tuple(c.name for c in STEP_CLASSES) + (DONE,)
+GATED_STEPS = tuple(c.name for c in STEP_CLASSES if c.gated)
+CRITIC_STEPS = (V1Storyboard.name, V3Final.name)

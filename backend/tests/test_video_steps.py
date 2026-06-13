@@ -123,3 +123,35 @@ def test_v2c_brand_attaches_disclosure(tmp_path):
     sb = json.loads(s.get("/rv/video/storyboard/storyboard.spec.json").content_text)
     assert "disclosure" in sb["copy"]["ko"]
     assert "예금자보호" in sb["copy"]["ko"]["disclosure"]
+
+
+def _seed_full_storyboard(store, disc_out=15.0):
+    sb = {"aspect": "9:16", "duration_sec": 15, "shots": [
+        {"id": "s1", "start": 0, "end": 11, "layers": [
+            {"role": "headline", "in": 0.5, "out": 3.8}]},
+        {"id": "s2", "start": 11, "end": 15, "layers": [
+            {"role": "disclosure", "in": 11.0, "out": disc_out}]}],
+        "copy": {"ko": {"headline": "연 3.5% 정기예금", "disclosure": "예금자보호 5천만원"}}}
+    store.put("/rv/video/storyboard/storyboard.spec.json",
+              json.dumps(sb), source="marker", mime="application/json")
+
+
+def test_v3_final_writes_metadata_and_caches_critic(tmp_path):
+    from app.gateway.video.steps import V3Final, V3_CRITIC_CACHE
+    s = _store(tmp_path)
+    _seed_full_storyboard(s)
+    ctx = _ctx(s, FakeProvider(), step="V3")
+    res = V3Final().run(ctx)
+    md = s.get("/rv/video/metadata.md").content_text
+    assert "타이밍 적법성" in md and "disclosure_sec" in md
+    assert V3_CRITIC_CACHE in ctx.cache
+    assert res.meta["critic"]["passed"] in (True, False)
+
+
+def test_step_declarations_derive_constants():
+    from app.gateway.video.steps import (
+        STEP_CLASSES, STEPS, GATED_STEPS, CRITIC_STEPS)
+    assert STEPS == tuple(c.name for c in STEP_CLASSES) + ("done",)
+    assert STEPS == ("V0", "V1", "V2a", "V2b", "V2c", "V3", "done")
+    assert GATED_STEPS == ("V1", "V2a", "V2b", "V2c", "V3")
+    assert CRITIC_STEPS == ("V1", "V3")
