@@ -403,7 +403,7 @@ class S3Final(PipelineStep):
 
 
 # step 객체 선언이 단일 출처 — 수기 튜플과의 이름 불일치 원천 차단(spec §4.1, 체크리스트 ⑪).
-STEP_CLASSES = (S0Setup, S1Rough, S2aVisual, S2bCopy, S2cBrand, S3Final)
+STEP_CLASSES = (S0Setup, S1Rough, S2bCopy, S2aVisual, S2cBrand, S3Final)
 STEPS = tuple(c.name for c in STEP_CLASSES) + (DONE,)
 GATED_STEPS = tuple(c.name for c in STEP_CLASSES if c.gated)
 CRITIC_STEPS = (S1Rough.name, S3Final.name)   # 7항목 시각 critic(S2b는 grounding — critic_gate 참조)

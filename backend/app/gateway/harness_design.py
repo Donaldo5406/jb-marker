@@ -55,8 +55,8 @@ class DesignHarness(Harness):
         # 오케스트레이터·step 객체는 per-인스턴스(registry 요청 스코프 패턴, 체크리스트 ⑨).
         # step 객체는 턴-가변 상태를 갖지 않는다(전부 ctx로, 체크리스트 ⑩).
         self._orch = PipelineOrchestrator(
-            (S0Setup(), S1Rough(), S2aVisual(image_provider),
-             S2bCopy(), S2cBrand(), S3Final()),
+            (S0Setup(), S1Rough(), S2bCopy(), S2aVisual(image_provider),
+             S2cBrand(), S3Final()),
             studio="design",
             done_text="디자인을 확정했습니다. 검토(review) 단계로 진행할 수 있습니다.",
             done_output="metadata.md",

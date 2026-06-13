@@ -7,9 +7,10 @@ from app.vfs.local import LocalVfsStore
 
 def test_next_step_walks_pipeline():
     assert next_step("S0") == "S1"
-    assert next_step("S1") == "S2a"
-    assert next_step("S2a") == "S2b"
-    assert next_step("S2b") == "S2c"
+    # Task 3 재편: 카피(S2b)가 비주얼(S2a) 앞 — grounded 카피를 베이크 입력으로
+    assert next_step("S1") == "S2b"
+    assert next_step("S2b") == "S2a"
+    assert next_step("S2a") == "S2c"
     assert next_step("S2c") == "S3"
     assert next_step("S3") == "done"
     assert next_step("done") == "done"   # 종단 고정점
@@ -57,11 +58,15 @@ def test_confirm_advances_and_generates_next_gate(tmp_path):
     s = _store(tmp_path)
     h = DesignHarness(image_provider=FakeProvider())
     h.handle_turn(_req(), provider=FakeProvider(), store=s)            # → gate S1
-    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)  # confirm S1 → gate S2a
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)  # confirm S1 → gate S2b
     st = json.loads(s.get("/r1/design/_state.json").content_text)
     assert st["confirmed"]["S1"] is True
-    assert st["step"] == "S2a" and st["gate"] == "S2a"
-    assert s.list("/r1/design/design-system/components/visual")        # S2a 산출 존재
+    # Task 3 재편: S1 다음은 카피(S2b) — 비주얼(S2a)보다 먼저
+    assert st["step"] == "S2b" and st["gate"] == "S2b"
+    # S2b가 실행되어 layout.spec.json에 grounding 메타(grounds.corpus)를 기록했는지로 확인.
+    # (FakeProvider는 빈 copy를 반환해 headline 파일을 만들지 않으므로 결정론적 메타로 검증.)
+    node = s.get("/r1/design/rough/layout.spec.json")
+    assert node is not None and (node.meta or {}).get("grounds", {}).get("corpus") == "factsheet"
 
 
 def test_walk_all_gates_to_done(tmp_path):
@@ -83,18 +88,18 @@ def _state(s, step, bypass):
 
 
 def test_bypass_chains_through_to_next_gate(tmp_path):
-    # S1·S2a bypass, S2b 게이트 ON → 한 턴에 S1→S2a→S2b 정지
+    # Task 3 재편 순서(S1→S2b→S2a): S1·S2b bypass, S2a 게이트 ON → 한 턴에 S1→S2b→S2a 정지
     s = _store(tmp_path)
     s.put("/r1/design/rough/layout.spec.json",
           json.dumps({"visual_concept": "c", "aspect": "1:1", "copy": {"ko": {}}}),
           source="marker", mime="application/json")
-    _state(s, "S1", {"S1": True, "S2a": True})
+    _state(s, "S1", {"S1": True, "S2b": True})
     h = DesignHarness(image_provider=FakeProvider())
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     st = json.loads(s.get("/r1/design/_state.json").content_text)
-    assert st["step"] == "S2b" and st["gate"] == "S2b"
-    assert st["confirmed"]["S1"] and st["confirmed"]["S2a"]
-    assert res.gate.auto_advanced == ["S1", "S2a"]
+    assert st["step"] == "S2a" and st["gate"] == "S2a"
+    assert st["confirmed"]["S1"] and st["confirmed"]["S2b"]
+    assert res.gate.auto_advanced == ["S1", "S2b"]
 
 
 def test_bypass_full_chain_to_done(tmp_path):
@@ -123,7 +128,10 @@ def test_bypass_critic_fail_regenerates_once(tmp_path):
                 return ProviderResponse(text=json.dumps(
                     {"scores": {"hierarchy": 1, "grid": 1, "whitespace": 1, "cta": 1,
                                 "compliance": 1, "copy_visual": 1, "brand": 1}}), model=model)
-            calls["n"] += 1                                # S1 생성 호출
+            # Task 3 재편으로 S1 다음 단계(S2b 카피)도 complete를 호출하므로,
+            # S1 생성 호출만 계수(system에 [S1 Rough] 마커)해 본 테스트 의도(S1 1회 재생성)를 보존.
+            if "[S1 Rough]" in sysl:
+                calls["n"] += 1                            # S1 생성 호출
             return ProviderResponse(text=json.dumps(
                 {"reply": "x", "layout_spec": {"visual_concept": "c"}, "ready": True}), model=model)
 
@@ -216,11 +224,11 @@ def test_gate_meta_critic_shape_and_no_premature_done(tmp_path):
     assert res.gate.critic is not None
     assert set(res.gate.critic) == {"passed", "issues", "scores"}
     assert "avg" in res.gate.critic["scores"]
-    # confirm S1 → S2a 게이트: S2a는 비전 게이트 단계 → gate.critic에 findings 봉투(scores 없음)
+    # Task 3 재편: confirm S1 → S2b 게이트(카피·grounding) → gate.critic에 grounding 봉투(scores 없음)
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
-    assert res.gate.step == "S2a"
-    assert res.gate.critic == {"passed": True, "issues": []}   # FakeProvider review_image=빈 findings
-    # S2a→S2b→S2c→S3 게이트까지 전진
+    assert res.gate.step == "S2b"
+    assert res.gate.critic == {"passed": True, "issues": []}   # FakeProvider 카피=grounded
+    # S2b→S2a→S2c→S3 게이트까지 전진
     for _ in range(3):
         res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     assert res.gate.step == "S3"

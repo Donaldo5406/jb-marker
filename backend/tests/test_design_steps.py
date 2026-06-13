@@ -47,12 +47,25 @@ def _ctx(store, provider):
                        base="/r1/design")
 
 
+def test_pipeline_order_copy_before_visual():
+    """베이크는 grounded 카피를 입력받아야 하므로 S2b가 S2a보다 먼저."""
+    from app.gateway.design.steps import STEPS, STEP_CLASSES
+    names = [c.name for c in STEP_CLASSES]
+    assert names.index("S2b") < names.index("S2a")
+    assert STEPS.index("S2b") < STEPS.index("S2a")
+    from app.gateway.harness_design import next_step
+    assert next_step("S1") == "S2b"
+    assert next_step("S2b") == "S2a"
+    assert next_step("S2a") == "S2c"
+
+
 def test_step_declarations_derive_constants():
     # 선언↔유도 동기(spec §7-2): 수기 튜플과 step 객체의 이름 불일치 원천 차단(체크리스트 ⑪)
     assert STEPS == tuple(c.name for c in STEP_CLASSES) + ("done",)
-    assert STEPS == ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
+    # Task 3 재편: 카피(S2b)가 비주얼(S2a) 앞 — grounded 카피를 베이크 입력으로
+    assert STEPS == ("S0", "S1", "S2b", "S2a", "S2c", "S3", "done")
     assert GATED_STEPS == tuple(c.name for c in STEP_CLASSES if c.gated)
-    assert GATED_STEPS == ("S1", "S2a", "S2b", "S2c", "S3")
+    assert GATED_STEPS == ("S1", "S2b", "S2a", "S2c", "S3")
     assert CRITIC_STEPS == ("S1", "S3")
     assert set(CRITIC_STEPS) <= set(GATED_STEPS)
 
