@@ -140,3 +140,96 @@ class V2aFootage(PipelineStep):
             meta={"source": "veo", "step": self.name, "footage_fallback": any_fallback},
             events=[{"type": "artifact",
                      "path": f"{base}/design-system/components/footage"}])
+
+
+class V2bCopy(PipelineStep):
+    """카피 확정 + grounding (S2bCopy 미러·복제). 게이트 = ungrounded 비어야 pass."""
+
+    name = "V2b"
+    gated = True
+
+    def run(self, ctx: StepContext) -> HarnessResult:
+        base = ctx.base
+        plan = ctx.store.get(f"/{ctx.req.run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan.content_text if plan else "")
+        pspec = PromptSpec(
+            persona=PERSONA, constraints=[V2B_INSTR],
+            references=[f"\n[factsheet]\n{json.dumps(fm.get('factsheet') or {}, ensure_ascii=False)}"],
+            studio="video", step=self.name)
+        resp = ctx.provider.complete([Message("user", ctx.req.user_prompt or "카피 확정")],
+                                     system=pspec.assemble(), meta=pspec.meta)
+        copy = (parse_json_block(resp.text).get("copy")) or {}
+        corpus = build_corpus(fm.get("factsheet") or {})
+        ungrounded = []
+        for lang, fields in copy.items():
+            for role in ("headline", "body", "cta"):
+                ungrounded += find_ungrounded((fields or {}).get(role, ""), corpus)
+                ctx.store.put(f"{base}/design-system/components/{role}/{lang}.txt",
+                              (fields or {}).get(role, ""), source="marker",
+                              mime="text/plain", meta={"lang": lang, "role": role})
+        spec = read_json_node(ctx.store, f"{base}/storyboard/storyboard.spec.json")
+        spec.setdefault("copy", {})
+        for lang, fields in copy.items():
+            spec["copy"].setdefault(lang, {})
+            spec["copy"][lang].update(fields or {})
+        ctx.store.put(f"{base}/storyboard/storyboard.spec.json",
+                      json.dumps(spec, ensure_ascii=False), source="marker",
+                      mime="application/json",
+                      meta={"grounds": {"corpus": "factsheet",
+                                        "ungrounded": sorted(set(ungrounded))}})
+        return HarnessResult(text="카피를 확정했습니다.",
+            output_path=f"{base}/design-system/components/headline",
+            meta={"source": "marker", "step": self.name, "ungrounded": sorted(set(ungrounded))},
+            events=[{"type": "artifact", "path": f"{base}/design-system/components/headline"}])
+
+    def critic_gate(self, ctx: StepContext) -> GateCheck:
+        plan = ctx.store.get(f"/{ctx.req.run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan.content_text if plan else "")
+        corpus = build_corpus(fm.get("factsheet") or {})
+        spec = read_json_node(ctx.store, f"{ctx.base}/storyboard/storyboard.spec.json")
+        bad = []
+        for fields in (spec.get("copy") or {}).values():
+            for role in ("headline", "body", "cta"):
+                bad += find_ungrounded((fields or {}).get(role, ""), corpus)
+        return GateCheck(passed=not bad, critic=CriticVerdict(
+            passed=not bad, issues=sorted(set(bad))).to_dict())
+
+
+class V2cBrand(PipelineStep):
+    """브랜드·고지 컴포넌트 배치 (S2cBrand 미러·복제). critic 없음."""
+
+    name = "V2c"
+    gated = True
+
+    def run(self, ctx: StepContext) -> HarnessResult:
+        base = ctx.base
+        plan = ctx.store.get(f"/{ctx.req.run_id}/brainstorming/plan.md")
+        fm = _frontmatter(plan.content_text if plan else "")
+        disclosures = fm.get("disclosures") or []
+        langs = ctx.state.get("languages", ["ko"])
+        notices = {}
+        for lang in langs:
+            parts = [NOTICES.get(lang, NOTICES["ko"])]
+            for disc in disclosures:
+                localized = DISCLOSURE_DISPLAY.get(disc, {}).get(lang)
+                if localized:
+                    parts.append(localized)
+                elif lang == "ko":
+                    parts.append(disc)
+            text = " ".join(parts)
+            notices[lang] = text
+            ctx.store.put(f"{base}/design-system/components/disclosure/{lang}.txt",
+                          text, source="marker", mime="text/plain", meta={"lang": lang})
+        spec = read_json_node(ctx.store, f"{base}/storyboard/storyboard.spec.json")
+        spec.setdefault("copy", {})
+        for lang, text in notices.items():
+            spec["copy"].setdefault(lang, {})
+            spec["copy"][lang]["disclosure"] = text
+        ctx.store.put(f"{base}/storyboard/storyboard.spec.json",
+                      json.dumps(spec, ensure_ascii=False), source="marker",
+                      mime="application/json")
+        return HarnessResult(text="브랜드·고지 요소를 배치했습니다.",
+            output_path=f"{base}/design-system/components/disclosure",
+            meta={"source": "marker", "step": self.name},
+            events=[{"type": "artifact",
+                     "path": f"{base}/design-system/components/disclosure"}])

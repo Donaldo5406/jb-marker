@@ -95,3 +95,31 @@ def test_v2a_footage_fallback_on_failure(tmp_path):
     res = V2aFootage(_BoomVideo()).run(_ctx(s, FakeProvider(), step="V2a"))
     assert s.get("/rv/video/design-system/components/footage/clip_s1.mp4") is not None
     assert res.meta["footage_fallback"] is True
+
+
+class _CopyProvider(FakeProvider):
+    """V2b 카피 JSON을 반환(grounding 통과 카피)."""
+    def complete(self, messages, *, model=None, system=None, tools=None, **kw):
+        from app.providers.base import ProviderResponse
+        return ProviderResponse(text=json.dumps({"copy": {"ko": {
+            "headline": "연 3.5% 정기예금", "body": "지금 시작하세요.", "cta": "가입"}}}),
+            model="x")
+
+
+def test_v2b_copy_merges_into_storyboard(tmp_path):
+    from app.gateway.video.steps import V2bCopy
+    s = _store(tmp_path)
+    _seed_storyboard(s)
+    V2bCopy().run(_ctx(s, _CopyProvider(), step="V2b"))
+    sb = json.loads(s.get("/rv/video/storyboard/storyboard.spec.json").content_text)
+    assert sb["copy"]["ko"]["headline"] == "연 3.5% 정기예금"
+
+
+def test_v2c_brand_attaches_disclosure(tmp_path):
+    from app.gateway.video.steps import V2cBrand
+    s = _store(tmp_path)
+    _seed_storyboard(s)
+    V2cBrand().run(_ctx(s, FakeProvider(), step="V2c"))
+    sb = json.loads(s.get("/rv/video/storyboard/storyboard.spec.json").content_text)
+    assert "disclosure" in sb["copy"]["ko"]
+    assert "예금자보호" in sb["copy"]["ko"]["disclosure"]
