@@ -323,7 +323,7 @@ def test_s2a_falls_back_to_fake_png_when_image_provider_raises(tmp_path):
     s = _store(tmp_path)
 
     class BoomImageProvider(FakeProvider):
-        def generate_image(self, prompt, *, aspect="1:1"):
+        def generate_image(self, prompt, *, aspect="1:1", image=None):
             raise RuntimeError("no api key")
 
     s.put("/r1/design/_state.json", json.dumps(
@@ -582,7 +582,7 @@ def test_s2a_fallback_is_visible_placeholder_not_blank(tmp_path):
     s = _store(tmp_path)
 
     class BoomImageProvider(FakeProvider):
-        def generate_image(self, prompt, *, aspect="1:1"):
+        def generate_image(self, prompt, *, aspect="1:1", image=None):
             raise RuntimeError("no api key")
 
     s.put("/r1/design/_state.json", json.dumps(

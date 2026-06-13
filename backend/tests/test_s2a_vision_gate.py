@@ -43,9 +43,9 @@ class _DirtyVision(FakeProvider):
     """generate_image 호출수를 세고, review_image로 critical finding을 반환."""
     def __init__(self):
         self.gen_calls = 0
-    def generate_image(self, prompt, *, aspect="1:1"):
+    def generate_image(self, prompt, *, aspect="1:1", image=None):
         self.gen_calls += 1
-        return super().generate_image(prompt, aspect=aspect)
+        return super().generate_image(prompt, aspect=aspect, image=image)
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
         return ProviderResponse(
             text='{"findings":[{"severity":"critical","slot":"visual","evidence":"손가락 6개"}]}',
