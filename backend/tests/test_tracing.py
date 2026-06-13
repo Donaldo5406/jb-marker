@@ -169,7 +169,7 @@ class _InnerProvider:
         return ProviderResponse(text="out", model="fake-1",
                                 usage={"input_tokens": 1, "output_tokens": 2})
 
-    def generate_image(self, prompt, *, aspect="1:1"):
+    def generate_image(self, prompt, *, aspect="1:1", image=None):
         return b"\x89PNG-stub"
 
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
