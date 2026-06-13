@@ -116,6 +116,7 @@ export function ReviewStudio() {
           <VerdictPanel
             status={status}
             gate={c.reviewGate ? { critical: c.reviewGate.critical, warning: c.reviewGate.warning } : null}
+            actions={c.reviewGate?.actions ?? []}
             acknowledged={c.reviewAcknowledged}
             stage={stage}
             busy={busy}

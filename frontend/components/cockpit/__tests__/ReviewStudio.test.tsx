@@ -56,7 +56,7 @@ describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
     render(<ReviewStudio />);
     // R0 시작 버튼·done 재검토 버튼은 노출되지 않음
     expect(screen.queryByTestId("run-review")).toBeNull();
-    expect(screen.queryByTestId("restart-review")).toBeNull();
+    expect(screen.queryByTestId("gate-action-restart")).toBeNull();
     // 진행 세그먼트 active
     expect(screen.getByTestId("step-seg-R2").dataset.state).toBe("active");
     // 계속 버튼 → runReview(resume) 호출
@@ -74,9 +74,9 @@ describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
   it("BLOCKED 상태에서 ack 버튼이 노출되지 않고 Design 복귀 CTA가 표시된다", () => {
     mockCtx.reviewStage = "done";
     mockCtx.manifest = { ...mockCtx.manifest, step_status: { review: "BLOCKED" } };
-    mockCtx.reviewGate = { status: "BLOCKED", critical: 2, warning: 0 };
+    mockCtx.reviewGate = { status: "BLOCKED", critical: 2, warning: 0, actions: ["regenerate", "restart"] };
     render(<ReviewStudio />);
-    expect(screen.queryByTestId("ack-button")).toBeNull();
+    expect(screen.queryByTestId("gate-action-ack")).toBeNull();
     expect(screen.getByText(/critical 위반으로 배포가 차단/)).toBeInTheDocument();
     // Design 복귀 클릭 → setStudio('design')
     fireEvent.click(screen.getByText(/Design으로/));
@@ -86,23 +86,23 @@ describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
   it("done+WARN + ack 미클릭 상태에서 ack 버튼이 활성, 클릭 시 ackReview 호출", () => {
     mockCtx.reviewStage = "done";
     mockCtx.manifest = { ...mockCtx.manifest, step_status: { review: "WARN" } };
-    mockCtx.reviewGate = { status: "WARN", critical: 0, warning: 1 };
+    mockCtx.reviewGate = { status: "WARN", critical: 0, warning: 1, actions: ["ack", "regenerate", "restart"] };
     mockCtx.reviewAcknowledged = false;
     render(<ReviewStudio />);
-    const ack = screen.getByTestId("ack-button");
+    const ack = screen.getByTestId("gate-action-ack");
     expect(ack).toBeInTheDocument();
     fireEvent.click(ack);
     expect(mockCtx.ackReview).toHaveBeenCalledTimes(1);
   });
 
-  it("PASS 상태에서 위반 없음 메시지가 표시되고 ack 버튼은 없으며 재검토 버튼이 노출된다", () => {
+  it("PASS 상태에서 위반 없음 메시지가 표시되고 액션 버튼은 없다(actions=[])", () => {
     mockCtx.reviewStage = "done";
     mockCtx.manifest = { ...mockCtx.manifest, step_status: { review: "PASS" } };
-    mockCtx.reviewGate = { status: "PASS", critical: 0, warning: 0 };
+    mockCtx.reviewGate = { status: "PASS", critical: 0, warning: 0, actions: [] };
     render(<ReviewStudio />);
-    expect(screen.queryByTestId("ack-button")).toBeNull();
+    expect(screen.queryByTestId("gate-action-ack")).toBeNull();
     expect(screen.getByText(/위반 없음/)).toBeInTheDocument();
-    // done 단계 → restart 버튼 표시
-    expect(screen.getByTestId("restart-review")).toBeInTheDocument();
+    // 의도된 변화(P2 §3.1): PASS는 백엔드 _actions_for(PASS)=[]라 재검토 등 액션 버튼이 없다.
+    expect(screen.queryByTestId("gate-action-restart")).toBeNull();
   });
 });
