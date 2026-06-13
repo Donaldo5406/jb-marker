@@ -18,6 +18,8 @@ _TEXT_PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
     "gemini-2.0-flash": (0.10, 0.40),
     "gemini-2.5-flash": (0.10, 0.40),
     "gemini-2.5-flash-image": (0.10, 0.40),  # 텍스트 부분 (이미지는 아래)
+    "gemini-3-pro-image": (2.0, 12.0),       # pro 티어 텍스트 부분 — 추정, provider 콘솔로 확정
+    "gemini-3.1-flash-image": (0.10, 0.40),  # 추정
     # Fake / unknown
     "fake": (0.0, 0.0),
     "fake-1": (0.0, 0.0),
@@ -26,6 +28,8 @@ _TEXT_PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
 # 이미지 생성 USD per image.
 _IMAGE_PRICES: dict[str, float] = {
     "gemini-2.5-flash-image": 0.04,
+    "gemini-3-pro-image": 0.24,       # pro 티어 — 추정, 콘솔 확정 필요
+    "gemini-3.1-flash-image": 0.06,   # 추정
     "fake": 0.0,
 }
 

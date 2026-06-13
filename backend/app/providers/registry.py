@@ -29,6 +29,6 @@ def get_provider(name: str, settings: Settings | None = None) -> Provider:
         from .google_client import GoogleProvider
         return GoogleProvider(
             settings.google_api_key if settings else None,
-            image_model=settings.google_image_model if settings else "gemini-2.5-flash-image",
+            image_model=settings.google_image_model if settings else "gemini-3-pro-image",
         )
     raise ValueError(f"알 수 없는 provider: {name!r} — 등록 provider: {PROVIDER_NAMES}")

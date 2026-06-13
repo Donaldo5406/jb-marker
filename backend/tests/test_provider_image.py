@@ -60,7 +60,9 @@ def test_google_generate_image_passes_aspect_ratio(monkeypatch):
 
     captured: dict = {}
     monkeypatch.setattr(genai, "Client", _fake_genai_module(captured).Client)
-    out = GoogleProvider("k").generate_image("프리미엄 금융 배경", aspect="4:5")
+    # 모델명은 이 테스트 관심사 아님(aspect 전달 검증) — 기본값 변경과 분리되게 명시 주입.
+    out = GoogleProvider("k", image_model="gemini-2.5-flash-image").generate_image(
+        "프리미엄 금융 배경", aspect="4:5")
 
     assert out[:8] == b"\x89PNG\r\n\x1a\n"
     assert captured["model"] == "gemini-2.5-flash-image"
@@ -114,3 +116,12 @@ def test_google_generate_image_passes_input_image_as_part(monkeypatch):
     assert out == b"OUT"
     assert captured["contents"][0][0] == "PART"          # 첫 요소 = 입력 이미지 Part
     assert captured["contents"][0][1] == b"BASE"
+
+
+def test_default_image_model_is_gemini_3_pro():
+    """기본 이미지 모델=gemini-3-pro-image(한글 베이크 정확 — 2.5-flash 한글 깨짐 실측 회귀)."""
+    from app.providers.google_client import GoogleProvider
+    from app.observability import pricing
+    assert GoogleProvider(api_key=None)._image_model == "gemini-3-pro-image"
+    assert pricing.is_known("gemini-3-pro-image")
+    assert pricing.image_cost_usd("gemini-3-pro-image", 1) > 0

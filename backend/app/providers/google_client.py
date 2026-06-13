@@ -16,7 +16,7 @@ class GoogleProvider(Provider):
     name = "google"
 
     def __init__(self, api_key: str | None, *,
-                 image_model: str = "gemini-2.5-flash-image") -> None:
+                 image_model: str = "gemini-3-pro-image") -> None:
         self._api_key = api_key
         self._image_model = image_model
 
