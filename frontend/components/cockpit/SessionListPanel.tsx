@@ -62,7 +62,7 @@ export function SessionListPanelView({ sessions, onRefresh }: { sessions: Sessio
 
 /** context 구독 컨테이너 — 마운트 시 1회 listSessions. */
 export function SessionListPanel() {
-  const c = useCockpit();
-  React.useEffect(() => { void c.refreshSessions(); }, [c.refreshSessions]);
-  return <SessionListPanelView sessions={c.sessionList} onRefresh={() => void c.refreshSessions()} />;
+  const { sessionList, refreshSessions } = useCockpit();
+  React.useEffect(() => { void refreshSessions(); }, [refreshSessions]);
+  return <SessionListPanelView sessions={sessionList} onRefresh={() => void refreshSessions()} />;
 }

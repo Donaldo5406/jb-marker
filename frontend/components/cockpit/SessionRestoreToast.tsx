@@ -24,11 +24,11 @@ export function SessionRestoreToastView({ studio, onClose }: { studio: string | 
 
 /** context 구독 컨테이너 — sessionRestoredStudio가 set되면 토스트 표시, 5s 후 자동 소멸. */
 export function SessionRestoreToast() {
-  const c = useCockpit();
+  const { sessionRestoredStudio, dismissSessionRestored } = useCockpit();
   React.useEffect(() => {
-    if (!c.sessionRestoredStudio) return;
-    const t = setTimeout(() => c.dismissSessionRestored(), 5000);
+    if (!sessionRestoredStudio) return;
+    const t = setTimeout(() => dismissSessionRestored(), 5000);
     return () => clearTimeout(t);
-  }, [c.sessionRestoredStudio, c.dismissSessionRestored]);
-  return <SessionRestoreToastView studio={c.sessionRestoredStudio} onClose={c.dismissSessionRestored} />;
+  }, [sessionRestoredStudio, dismissSessionRestored]);
+  return <SessionRestoreToastView studio={sessionRestoredStudio} onClose={dismissSessionRestored} />;
 }
