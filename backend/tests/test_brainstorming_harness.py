@@ -537,3 +537,32 @@ def test_stage_a_system_prompt_allows_websearch():
     sysp = stub.calls[0]["system"]
     assert "웹검색" in sysp
     assert "하지 않습니다" not in sysp   # 금지 문구 제거
+
+
+def test_required_plan_fields_for_video_medium():
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    h = BrainstormingHarness()
+    fm = ("medium: video\nvideo_direction: x\nfootage_concept: x\nscene_beats: x\n"
+          "material_matrix: x\ncopy_themes: x\nmultinational: x\nlanguages: x\n"
+          "factsheet: x\ndisclosures: x")
+    v = h.critic(f"---\n{fm}\n---\nbody")
+    assert v.passed is True and v.issues == []
+
+
+def test_video_medium_missing_video_direction_flagged():
+    from app.gateway.harness_brainstorming import BrainstormingHarness
+    h = BrainstormingHarness()
+    fm = ("medium: video\nmaterial_matrix: x\ncopy_themes: x\nmultinational: x\n"
+          "languages: x\nfactsheet: x\ndisclosures: x")
+    v = h.critic(f"---\n{fm}\n---\nbody")
+    assert v.passed is False
+    assert "video_direction" in v.issues and "scene_beats" in v.issues
+    assert "creative_direction" not in v.issues
+
+
+def test_image_medium_unchanged_backcompat():
+    from app.gateway.harness_brainstorming import BrainstormingHarness, REQUIRED_PLAN_FIELDS
+    h = BrainstormingHarness()
+    fm = "\n".join(f"{k}: v" for k in REQUIRED_PLAN_FIELDS)
+    v = h.critic(f"---\n{fm}\n---\nbody")
+    assert v.passed is True and v.issues == []

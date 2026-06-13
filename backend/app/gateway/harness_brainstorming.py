@@ -21,10 +21,13 @@ KEEP_RECENT = 8                  # 요약 후 원문 보존 최근 메시지 수
 MAX_FIELD_CHARS = 16 * 1024      # 개별 메시지 content 절단 임계(claw-code 미러)
 _TRUNC_MARKER = "… [truncated]"
 
-REQUIRED_PLAN_FIELDS = {
-    "creative_direction", "material_matrix", "slots", "image_concept",
-    "copy_themes", "multinational", "languages", "factsheet", "disclosures",
-}
+# medium 분기(spec §5.2): 공유 필드 + 매체별 필드. 기본 image(하위호환).
+_PLAN_SHARED = {"material_matrix", "copy_themes", "multinational",
+                "languages", "factsheet", "disclosures"}
+_PLAN_IMAGE = {"creative_direction", "image_concept", "slots"}
+_PLAN_VIDEO = {"video_direction", "footage_concept", "scene_beats"}
+# image 기본값 유지(기존 import·테스트 표면 보존: _PLAN_SHARED|_PLAN_IMAGE == 기존 9키).
+REQUIRED_PLAN_FIELDS = _PLAN_SHARED | _PLAN_IMAGE
 
 # spec.md 충분성 게이트(Stage A) — Stage A system 프롬프트가 요구하는 9개 키와 동일.
 # ready=true여도 이 키가 빠졌으면 확정(b) 대신 보충(c)을 띄워 '충분조건 미달 spec 확정'을 차단.
@@ -32,6 +35,24 @@ REQUIRED_SPEC_FIELDS = {
     "goal", "target_segments", "key_messages", "channels",
     "languages", "multinational", "tone", "factsheet", "disclosures",
 }
+
+
+def required_plan_fields(medium: str) -> set[str]:
+    """medium별 plan.md 필수 frontmatter 키 집합."""
+    extra = _PLAN_VIDEO if medium == "video" else _PLAN_IMAGE
+    return _PLAN_SHARED | extra
+
+
+def _medium_of(md: str) -> str:
+    """frontmatter의 medium 값(없으면 image). 단순 라인 스캔(_frontmatter_keys와 동류)."""
+    md = (md or "").lstrip()
+    if md.startswith("---"):
+        end = md.find("\n---", 3)
+        block = md[3:end] if end > 0 else ""
+        for line in block.splitlines():
+            if line.strip().startswith("medium:"):
+                return line.split(":", 1)[1].strip().strip('"\'').lower() or "image"
+    return "image"
 
 # Stage A 웹검색 마커 — provider(anthropic/google/openai)가 `if tools`로 truthy만 검사하므로
 # 내용은 무시되고 각자 네이티브 검색(web_search_20250305 / google_search / web_search_options)을 켠다.
@@ -105,7 +126,8 @@ class BrainstormingHarness(Harness):
         (T6에서 베이스 Harness.critic이 제거됨 — 이 critic 패밀리의 출력 봉투는
         gateway/critic.py CriticVerdict로 표준화.)
         """
-        missing = sorted(REQUIRED_PLAN_FIELDS - _frontmatter_keys(plan_md))
+        required = required_plan_fields(_medium_of(plan_md))
+        missing = sorted(required - _frontmatter_keys(plan_md))
         return CriticVerdict(passed=not missing, issues=missing)
 
     def critic_spec(self, spec_md: str) -> CriticVerdict:
@@ -316,8 +338,12 @@ class BrainstormingHarness(Harness):
         pspec = PromptSpec(
             persona=self.system_prompt(),
             constraints=[
-                "\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. plan.md의 YAML frontmatter에 반드시 "
-                f"다음 키를 포함하세요: {sorted(REQUIRED_PLAN_FIELDS)}. "],
+                ("\n\n[Stage B] spec.md를 구현 가능한 plan.md로 변환합니다. "
+                 "plan.md의 YAML frontmatter에 반드시 다음 키를 포함하세요: "
+                 f"{sorted(required_plan_fields(_medium_of(spec.content_text if spec else '')))}. "
+                 + ("medium=video면 video_direction(duration_sec·aspect·fps·pacing·mood)·"
+                    "scene_beats(훅·혜택·신뢰·CTA)·footage_concept을 채우세요. "
+                    if _medium_of(spec.content_text if spec else "") == "video" else ""))],
             output_schema=_PROTOCOL,
             references=[f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}",
                         f"\n\n[현재 plan.md]\n{cur_plan}"],
