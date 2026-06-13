@@ -63,3 +63,35 @@ def test_v1_storyboard_writes_spec(tmp_path):
     V1Storyboard().run(ctx)
     node = s.get("/rv/video/storyboard/storyboard.spec.json")
     assert node is not None and json.loads(node.content_text) == {}
+
+
+class _BoomVideo(FakeProvider):
+    """generate_video가 항상 실패 → 폴백 경로 검증."""
+    def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+        raise RuntimeError("veo down")
+
+
+def _seed_storyboard(store):
+    sb = {"aspect": "9:16", "duration_sec": 15,
+          "shots": [{"id": "s1", "footage_prompt": "추상 배경", "start": 0, "end": 15,
+                     "layers": []}]}
+    store.put("/rv/video/storyboard/storyboard.spec.json",
+              json.dumps(sb), source="marker", mime="application/json")
+
+
+def test_v2a_footage_generates_clip(tmp_path):
+    from app.gateway.video.steps import V2aFootage
+    s = _store(tmp_path)
+    _seed_storyboard(s)
+    res = V2aFootage(FakeProvider()).run(_ctx(s, FakeProvider(), step="V2a"))
+    assert s.get("/rv/video/design-system/components/footage/clip_s1.mp4") is not None
+    assert res.meta["footage_fallback"] is False
+
+
+def test_v2a_footage_fallback_on_failure(tmp_path):
+    from app.gateway.video.steps import V2aFootage
+    s = _store(tmp_path)
+    _seed_storyboard(s)
+    res = V2aFootage(_BoomVideo()).run(_ctx(s, FakeProvider(), step="V2a"))
+    assert s.get("/rv/video/design-system/components/footage/clip_s1.mp4") is not None
+    assert res.meta["footage_fallback"] is True

@@ -99,3 +99,44 @@ class V1Storyboard(PipelineStep):
     def critic_gate(self, ctx: StepContext) -> GateCheck:
         spec = read_json_node(ctx.store, f"{ctx.base}/storyboard/storyboard.spec.json")
         return _visual_gate(run_critic(ctx.provider, spec))
+
+
+class V2aFootage(PipelineStep):
+    """샷별 배경 footage 생성 — 매체 액터 생성자 주입 (S2aVisual 미러). critic 없음."""
+
+    name = "V2a"
+    gated = True
+
+    def __init__(self, video_provider) -> None:
+        self._video_provider = video_provider   # 턴-불변 의존성
+
+    def run(self, ctx: StepContext) -> HarnessResult:
+        base = ctx.base
+        spec = read_json_node(ctx.store, f"{base}/storyboard/storyboard.spec.json")
+        aspect = spec.get("aspect", "9:16")
+        duration = int(spec.get("duration_sec", 15))
+        shots = spec.get("shots") or [{"id": "s1", "footage_prompt": "금융 브랜드 추상 배경"}]
+        any_fallback = False
+        for shot in shots:
+            sid = shot.get("id", "s1")
+            prompt = shot.get("footage_prompt", "금융 브랜드 추상 배경")
+            try:
+                clip = self._video_provider.generate_video(
+                    prompt, aspect=aspect, duration_sec=duration)
+                mime, fallback = "video/mp4", False
+            except Exception:
+                from ...providers import demo_fixtures as F
+                clip = F.load_poster_bg()   # still → 프론트가 모션 부여
+                mime, fallback = "image/png", True
+            any_fallback = any_fallback or fallback
+            ctx.store.put(f"{base}/design-system/components/footage/clip_{sid}.mp4",
+                          clip, source="veo", mime=mime,
+                          meta={"shot": sid, "footage_fallback": fallback})
+        text = ("배경 footage를 생성했습니다." if not any_fallback else
+                "실 영상 생성에 실패해 대체 배경(still)을 사용했습니다. "
+                "실 footage는 GOOGLE_API_KEY 설정이 필요합니다.")
+        return HarnessResult(text=text,
+            output_path=f"{base}/design-system/components/footage",
+            meta={"source": "veo", "step": self.name, "footage_fallback": any_fallback},
+            events=[{"type": "artifact",
+                     "path": f"{base}/design-system/components/footage"}])
