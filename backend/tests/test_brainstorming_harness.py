@@ -566,3 +566,27 @@ def test_image_medium_unchanged_backcompat():
     fm = "\n".join(f"{k}: v" for k in REQUIRED_PLAN_FIELDS)
     v = h.critic(f"---\n{fm}\n---\nbody")
     assert v.passed is True and v.issues == []
+
+
+def test_to_gate_defaults_empty_trigger_to_a():
+    from app.gateway.harness_brainstorming import _to_gate
+    g = _to_gate({"question": "주력 채널?", "options": ["카톡", "이메일"]})
+    assert g is not None and g.kind == "ask" and g.trigger == "a" and g.actions == ["answer"]
+
+
+def test_to_gate_normalizes_bad_trigger_to_a():
+    from app.gateway.harness_brainstorming import _to_gate
+    assert _to_gate({"trigger": "", "question": "q", "options": ["1"]}).trigger == "a"
+    assert _to_gate({"trigger": "Z", "question": "q", "options": ["1"]}).trigger == "a"
+    # 정상 trigger는 보존
+    assert _to_gate({"trigger": "c", "question": "q", "options": ["1"]}).trigger == "c"
+
+
+def test_to_gate_drops_empty_ask():
+    from app.gateway.harness_brainstorming import _to_gate
+    assert _to_gate(None) is None
+    assert _to_gate({}) is None
+    assert _to_gate({"trigger": "a"}) is None  # 질문·옵션 모두 부재 → 무음 토스트 방지
+    # 질문/옵션 중 하나만 있는 ask도 드롭(프론트 렌더 조건과 대칭).
+    assert _to_gate({"question": "q"}) is None  # 옵션 없는 ask → 클릭 대상 없어 무의미
+    assert _to_gate({"options": ["1"]}) is None  # 질문 없는 ask → 프롬프트 없어 무의미

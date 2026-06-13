@@ -49,4 +49,14 @@ describe("AskUserToast (컨테이너 — pendingGate 봉투 매핑, T1-P2 §4.4)
     const { container } = render(<AskUserToast />);
     expect(container.firstChild).toBeNull();
   });
+
+  it("빈 trigger여도 question·options 있으면 렌더(기본 tone)", () => {
+    ctx = {
+      pendingGate: { kind: "ask", actions: ["answer"], trigger: "", question: "주력 채널?", options: ["카톡", "이메일"] },
+      answerAsk: vi.fn(), closeAsk: vi.fn(),
+    };
+    render(<AskUserToast />);
+    expect(screen.getByText("주력 채널?")).toBeInTheDocument();
+    expect(screen.getByText("카톡")).toBeInTheDocument();
+  });
 });
