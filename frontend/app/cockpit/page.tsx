@@ -12,6 +12,7 @@ import { UpsellModal } from "@/components/cockpit/UpsellModal";
 import { FileViewerDrawer } from "@/components/cockpit/FileViewerDrawer";
 import { StudioNavToast } from "@/components/cockpit/StudioNavToast";
 import { AskUserToast } from "@/components/cockpit/AskUserToast";
+import { SessionRestoreToast } from "@/components/cockpit/SessionRestoreToast";
 
 function CockpitInner() {
   const c = useCockpit();
@@ -45,6 +46,7 @@ function CockpitInner() {
       <FileViewerDrawer />
       <StudioNavToast />
       <AskUserToast />
+      <SessionRestoreToast />
     </div>
   );
 }

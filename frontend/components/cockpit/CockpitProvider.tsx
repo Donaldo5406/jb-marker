@@ -864,6 +864,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       void refreshTree();
     } else if (e.type === "poll") {
       void refreshTree();
+    } else if (e.type === "session" && e.event === "restored") {
+      // 백엔드가 이미 touch로 active 재활성(spec §4.4) — 프론트는 상태 동기화 + 복원 토스트.
+      if (e.studio) { void heartbeatSession(e.studio); setSessionRestoredStudio(e.studio); }
     }
   }, { pollMs: 4000 });
 
