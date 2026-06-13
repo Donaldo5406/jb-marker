@@ -37,7 +37,7 @@ def test_all_eight_tags_present(spec):
 
 def test_gateway_literals_exposed(spec):
     gw = spec["components"]["schemas"]["GatewayRun"]["properties"]
-    assert set(gw["studio"]["enum"]) == {"brainstorming", "design", "review", "deploy"}
+    assert set(gw["studio"]["enum"]) == {"brainstorming", "design", "review", "video", "deploy"}
     assert set(gw["provider"]["enum"]) == {"fake", "demo", "anthropic", "openai", "google"}
 
 
