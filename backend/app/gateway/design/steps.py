@@ -24,11 +24,14 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
-from .prompts import PERSONA, S1_INSTR, S2B_INSTR
+from .prompts import PERSONA, S1_INSTR, S2A_VISION_INSTR, S2B_INSTR
 from .scoring import RUBRIC, run_critic
 
 # S3 채점 raw의 턴 캐시 키 — S3Final.run이 기록, critic_gate가 재사용(백로그 ②).
 S3_CRITIC_CACHE = "s3_critic"
+
+# S2a 비전 검증 findings의 턴 캐시 키 — S2aVisual.run이 기록, critic_gate가 재사용(S3 전례).
+S2A_VISION_CACHE = "s2a_vision"
 
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
@@ -176,13 +179,18 @@ class S1Rough(PipelineStep):
 
 
 class S2aVisual(PipelineStep):
-    """비주얼 PNG 생성 — 매체 액터 생성자 주입 (구 _s2a_visual). critic 없음(기본 pass)."""
+    """비주얼 PNG 생성 + 비전 검증 게이트 — 매체 액터 생성자 주입 (구 _s2a_visual).
+
+    run이 review_image로 텍스트누출·인물왜곡·safe zone을 점검해 findings를 cache에
+    무조건부 기록(S3_CRITIC_CACHE 전례), critic_gate가 재사용. critical만 게이트 차단
+    (warning은 자문). 비전 미지원/실패는 fail-open(빈 findings + meta.vision_failed).
+    """
 
     name = "S2a"
     gated = True
 
     def __init__(self, image_provider) -> None:
-        self._image_provider = image_provider   # 턴-불변 의존성(체크리스트 ⑩과 양립)
+        self._image_provider = image_provider   # 턴-불변 의존성(체크리스트 ⑩) — generate_image + review_image
 
     def run(self, ctx: StepContext) -> HarnessResult:
         base = ctx.base
@@ -190,7 +198,6 @@ class S2aVisual(PipelineStep):
         concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
         aspect = spec.get("aspect", "1:1")
         # M8: Nano Banana 실패(키 없음 등) → 보이는 그라데이션 placeholder 폴백(턴 전체 500 방지, spec §9).
-        # (이전엔 1×1 투명 PNG라 캔버스가 빈 것처럼 보였다 — 실모드 GOOGLE_API_KEY 부재 시 정체.)
         fallback = False
         try:
             png = self._image_provider.generate_image(concept, aspect=aspect)
@@ -201,12 +208,32 @@ class S2aVisual(PipelineStep):
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
+        # 비전 검증 — findings를 cache에 무조건부 기록(critic_gate 재사용). 실패는 fail-open.
+        findings, vision_failed = self._vision_check(png)
+        ctx.cache[S2A_VISION_CACHE] = findings
         text = ("비주얼을 생성했습니다." if not fallback else
                 "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
                 "실 이미지는 GOOGLE_API_KEY 설정이 필요합니다.")
         return HarnessResult(text=text, output_path=path,
-            meta={"source": "gemini", "step": self.name, "image_fallback": fallback},
+            meta={"source": "gemini", "step": self.name,
+                  "image_fallback": fallback, "vision_failed": vision_failed},
             events=[{"type": "artifact", "path": path}])
+
+    def _vision_check(self, png: bytes) -> tuple[list, bool]:
+        """review_image로 비전 점검 → (findings, vision_failed). 미지원/실패는 ([], True)."""
+        try:
+            resp = self._image_provider.review_image(png, S2A_VISION_INSTR, mime="image/png")
+            return ((parse_json_block(resp.text).get("findings") or []), False)
+        except Exception:
+            return ([], True)   # 비전 미지원/실패 → fail-open(빈 findings로 통과)
+
+    def critic_gate(self, ctx: StepContext) -> GateCheck:
+        # run이 항상 선행 기록하지만 비전은 fail-open이라 방어적 default.
+        findings = ctx.cache.get(S2A_VISION_CACHE, [])
+        blocking = [f for f in findings if f.get("severity") == "critical"]
+        issues = [f.get("evidence", "") for f in blocking]
+        return GateCheck(passed=not blocking,
+                         critic=CriticVerdict(passed=not blocking, issues=issues).to_dict())
 
 
 class S2bCopy(PipelineStep):
