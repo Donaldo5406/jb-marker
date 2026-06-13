@@ -158,3 +158,47 @@ def test_s2a_bake_retries_with_corrective_feedback(tmp_path):
     assert len(stub.gen_prompts) <= MAX_BAKE_ATTEMPTS
     assert "청년 적금 5.00%" in stub.gen_prompts[0]          # 기대 카피가 베이크 프롬프트에
     assert "헤드라인 깨짐" in stub.gen_prompts[1]            # 2차에 교정 피드백 주입
+
+
+def test_s2a_multilang_image_edit_variants(tmp_path):
+    """추가 언어는 주 언어 PNG를 입력으로 image-edit; visual_by_lang에 경로 기록.
+    단일 언어면 변형 0회."""
+    import json
+    from app.gateway.design.steps import S2aVisual
+    from app.gateway.pipeline import StepContext
+    from app.gateway.harness import HarnessRequest
+    from app.providers.base import ProviderResponse
+    from app.vfs.local import LocalVfsStore
+
+    class _Stub:
+        def __init__(self): self.calls = []
+        def generate_image(self, prompt, *, aspect="1:1", image=None):
+            self.calls.append({"prompt": prompt, "image": image}); return b"PNG-" + (image or b"NEW")
+        def review_image(self, png, instr, *, mime="image/png"):
+            return ProviderResponse(text='{"findings":[]}', model="m")
+
+    def _run(langs):
+        store = LocalVfsStore(storage_dir=str(tmp_path / "_".join(langs)))
+        store.create_run("r1", languages=langs)
+        store.put("/r1/design/rough/layout.spec.json", json.dumps({
+            "visual_concept": "통장 든 청년", "aspect": "1:1",
+            "copy": {l: {"headline": f"H-{l}", "cta": f"C-{l}"} for l in langs}}),
+            source="marker", mime="application/json")
+        stub = _Stub()
+        ctx = StepContext(req=HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                          provider="fake", is_marker=True), provider=None, store=store,
+                          state={"languages": langs}, base="/r1/design")
+        S2aVisual(stub).run(ctx)
+        spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+        return stub, spec
+
+    # 단일 언어: 변형 없음(생성 1회 이상이나 전부 image=None)
+    stub1, spec1 = _run(["ko"])
+    assert all(c["image"] is None for c in stub1.calls)
+    assert set(spec1["visual_by_lang"]) == {"ko"}
+
+    # 다국어: en 변형이 ko PNG를 image로 받음
+    stub2, spec2 = _run(["ko", "en"])
+    edits = [c for c in stub2.calls if c["image"] is not None]
+    assert len(edits) == 1 and edits[0]["image"] == b"PNG-NEW"   # 주 언어 베이크 결과를 입력
+    assert set(spec2["visual_by_lang"]) == {"ko", "en"}

@@ -207,6 +207,19 @@ class S2aVisual(PipelineStep):
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
         spec.setdefault("visual_by_lang", {})[lang] = "design-system/components/visual/v1.png"
+        # 추가 언어: image-edit 변형(같은 비주얼 유지, 텍스트만 교체). 비차단(경고+에디터 교정).
+        for vlang in (ctx.state.get("languages") or ["ko"])[1:]:
+            vcopy = (spec.get("copy") or {}).get(vlang, {})
+            try:
+                var_png = self._image_provider.generate_image(self._edit_prompt(vcopy),
+                                                              aspect=aspect, image=png)
+            except Exception:
+                continue   # 변형 실패는 무시(주 언어는 이미 확보) — 에디터 안전망
+            self._vision_check(var_png, vcopy)   # findings는 경고용(게이트 비차단)
+            vpath = f"{base}/design-system/components/visual/v1.{vlang}.png"
+            ctx.store.put(vpath, var_png, source="gemini", mime="image/png",
+                          meta={"lang": vlang, "edited_from": "v1.png"})
+            spec["visual_by_lang"][vlang] = f"design-system/components/visual/v1.{vlang}.png"
         ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
                       source="marker", mime="application/json")
         ctx.cache[S2A_VISION_CACHE] = findings
@@ -226,6 +239,13 @@ class S2aVisual(PipelineStep):
                 lines.append(f"- {k}: {copy[k]}")
         lines.append("좌상단 모서리와 하단 스트립은 텍스트·로고 없이 비워 두세요"
                      "(공식 로고·법령 고지 오버레이 영역).")
+        return "\n".join(lines)
+
+    def _edit_prompt(self, copy: dict) -> str:
+        lines = ["이 포스터의 텍스트만 다음으로 정확히 교체하고, 인물·배경·구도·색은 그대로 유지:"]
+        for k in ("headline", "body", "cta"):
+            if copy.get(k):
+                lines.append(f"- {k}: {copy[k]}")
         return "\n".join(lines)
 
     def _bake_with_retry(self, base_prompt, aspect, copy):
