@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, authedFetch, type GateEnvelope, type Manifest, type Provider, type VfsNode } from "@/lib/api";
+import { api, authedFetch, type DesignGate, type GateEnvelope, type Manifest, type Provider, type ReviewGate, type VfsNode } from "@/lib/api";
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
@@ -26,8 +26,6 @@ export type OpenFile = { path: string; content: string; mime: string | null; dir
 export type Entitlement = { marker: boolean; deploy: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
-export type ReviewGate = { status: string; critical: number; warning: number };
-export type DesignGate = { step: string; critic: Record<string, unknown> | null; auto_advanced: string[] };
 // M6 T19 deploy 상태 타입.
 export type DeployStateLike = {
   step_status: string;

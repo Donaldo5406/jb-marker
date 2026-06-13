@@ -1,7 +1,7 @@
 "use client";
 
 import { SeverityBadge, type SeverityLevel } from "../SeverityBadge";
-import type { ReviewGate } from "../CockpitProvider";
+import type { ReviewGate } from "@/lib/api";
 import type { ReviewVerdict } from "@/lib/reviewArtifacts";
 
 export type PreDeployReviewProps = {

@@ -8,8 +8,8 @@ import {
   buildCampaignZip,
   triggerDownload,
 } from "@/lib/deployExport";
-import type { VfsNode } from "@/lib/api";
-import type { ReviewGate, EligibilityResult } from "../CockpitProvider";
+import type { ReviewGate, VfsNode } from "@/lib/api";
+import type { EligibilityResult } from "../CockpitProvider";
 
 export type ExportPanelProps = {
   runId: string | null;

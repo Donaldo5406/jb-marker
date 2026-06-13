@@ -4,6 +4,7 @@ import * as React from "react";
 import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StepProgress, type Step } from "./StepProgress";
+import type { DesignGate } from "@/lib/api";
 
 const STEPS: Step[] = [
   { id: "S0", label: "셋업" },
@@ -15,7 +16,6 @@ const STEPS: Step[] = [
   { id: "done", label: "완료" },
 ];
 
-export type DesignGate = { step: string; critic: Record<string, unknown> | null; auto_advanced: string[] };
 export type PipelineRailProps = {
   step: string;
   onAdvance: () => void;
