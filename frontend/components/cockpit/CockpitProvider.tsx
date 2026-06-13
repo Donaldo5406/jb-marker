@@ -654,7 +654,18 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const closeAsk = useCallback(() => setPendingGate(null), []);
 
-  const setStudio = useCallback((s: Studio) => setActiveStudio(s), []);
+  // resumeSession은 아래(:707 부근)에서 선언되므로, setStudio가 최신 resumeSession을 ref로 참조(TDZ 회피).
+  const resumeSessionRef = useRef<((studio: string) => Promise<SessionResumeResult | null>) | null>(null);
+  const setStudio = useCallback((s: Studio) => {
+    setActiveStudio(s);
+    // 자동 resume(spec §4.4): suspended 세션으로 재진입하면 서버에 활성 복원 요청.
+    if (sessionsRef.current[s]?.status === "suspended") {
+      void (async () => {
+        const res = await resumeSessionRef.current?.(s);
+        if (res?.kind === "expired") setSessionExpiredNotice(res.reason);
+      })();
+    }
+  }, []);
   const setView = useCallback(
     (v: CockpitView) => {
       setViewState(v);
@@ -711,6 +722,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     if (res.kind === "restored") await heartbeatSession(studio);   // 상태 동기화(spec §4.4)
     return res;
   }, [heartbeatSession]);
+  resumeSessionRef.current = resumeSession;
 
   const suspendSession = useCallback(async (studio: string) => {
     const id = runIdRef.current;

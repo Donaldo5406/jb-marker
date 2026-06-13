@@ -1,5 +1,5 @@
 import * as React from "react";
-import { render, act } from "@testing-library/react";
+import { render, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CockpitProvider, useCockpit } from "../CockpitProvider";
 
@@ -82,5 +82,41 @@ describe("CockpitProvider 세션 상태/액션", () => {
     expect(res).toMatchObject({ kind: "restored" });
     const { api } = await import("@/lib/api");
     expect(api.sessionHeartbeat).toHaveBeenCalledWith("r1", "design");
+  });
+
+  it("setStudio로 suspended 스튜디오 재진입 시 resume 호출", async () => {
+    const { api } = await import("@/lib/api");
+    setup();
+    // design을 suspended 상태로 시드
+    await act(async () => {
+      (api.sessionHeartbeat as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        kind: "heartbeat", exists: true, liveness: "suspended", status: "suspended",
+        warn_at: 1, suspend_at: 2, expires_at: 100, resumable: true });
+      await cap.heartbeatSession("design");
+    });
+    await act(async () => { cap.setStudio("design"); });
+    await waitFor(() => expect(api.sessionResume).toHaveBeenCalledWith("r1", "design"));
+  });
+
+  it("resume가 expired면 sessionExpiredNotice를 set한다", async () => {
+    const { api } = await import("@/lib/api");
+    (api.sessionResume as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ kind: "expired", reason: "retention_elapsed" });
+    setup();
+    await act(async () => {
+      (api.sessionHeartbeat as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        kind: "heartbeat", exists: true, liveness: "suspended", status: "suspended",
+        warn_at: 1, suspend_at: 2, expires_at: 100, resumable: true });
+      await cap.heartbeatSession("review");
+    });
+    await act(async () => { cap.setStudio("review"); });
+    await waitFor(() => expect(cap.sessionExpiredNotice).toBe("retention_elapsed"));
+  });
+
+  it("active 스튜디오 진입은 resume을 호출하지 않는다", async () => {
+    const { api } = await import("@/lib/api");
+    setup();
+    await act(async () => { await cap.heartbeatSession("design"); });   // active(기본 mock)
+    await act(async () => { cap.setStudio("design"); });
+    expect(api.sessionResume).not.toHaveBeenCalled();
   });
 });
