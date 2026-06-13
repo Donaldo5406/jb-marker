@@ -8,6 +8,9 @@ from .base import Message, Provider, ProviderResponse
 # 생략해 모델 에러를 피한다(미지원 비율 전달 시 호출측 try/except가 placeholder 폴백).
 _SUPPORTED_ASPECTS = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 
+# Veo가 지원하는 종횡비(보수적). 그 외는 config 생략(generate_image 전례).
+_SUPPORTED_VIDEO_ASPECTS = {"9:16", "16:9", "1:1"}
+
 
 class GoogleProvider(Provider):
     name = "google"
@@ -59,6 +62,30 @@ class GoogleProvider(Provider):
             if inline and getattr(inline, "data", None):
                 return inline.data   # bytes (PNG)
         raise RuntimeError("Nano Banana 응답에 이미지 파트가 없습니다")
+
+    def generate_video(self, prompt: str, *, aspect: str = "9:16",
+                       duration_sec: int = 15, fps: int = 30,
+                       video_model: str = "veo-3.0-generate-001") -> bytes:
+        import time
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=self._api_key)
+        full = (f"{prompt}\n\n"
+                "CRITICAL: 영상에 어떤 글자/숫자/로고/워터마크도 렌더하지 마세요. "
+                "텍스트는 별도 레이어로 처리됩니다. 배경/키비주얼 모션만 생성.")
+        # Veo는 generate_videos(long-running operation). 미지원 aspect는 config 생략.
+        cfg = (types.GenerateVideosConfig(aspect_ratio=aspect)
+               if aspect in _SUPPORTED_VIDEO_ASPECTS else None)
+        op = client.models.generate_videos(model=video_model, prompt=full, config=cfg)
+        while not getattr(op, "done", False):
+            time.sleep(5)
+            op = client.operations.get(op)
+        videos = getattr(getattr(op, "response", None), "generated_videos", None) or []
+        for gv in videos:
+            data = getattr(getattr(gv, "video", None), "video_bytes", None)
+            if data:
+                return data
+        raise RuntimeError("Veo 응답에 영상 파트가 없습니다")
 
     def review_image(self, image_bytes: bytes, prompt: str, *,
                      mime: str = "image/png") -> ProviderResponse:
