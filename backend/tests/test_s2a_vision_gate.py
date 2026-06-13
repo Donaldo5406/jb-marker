@@ -98,11 +98,23 @@ def test_s1_instr_requires_visual_concept():
 def test_persona_has_art_direction():
     # 키비주얼 아트디렉션 역량(인물·구도·조명 등)을 인코딩
     assert "키비주얼" in PERSONA
-    # 레이어 분리 원칙은 보존
-    assert "레이어" in PERSONA
+    # 원-레이어 베이크 반전: 텍스트 레이어 분리 원칙 제거, 통합 디자인으로 전환
+    assert "레이어로 분리" not in PERSONA
+    assert "통합 디자인" in PERSONA
 
 
 def test_vision_instr_covers_three_checks():
     # 비전 게이트 프롬프트: 텍스트 누출·인물 결함·safe zone 3축 + JSON findings 계약
     for kw in ("글자", "손", "findings", "severity"):
         assert kw in S2A_VISION_INSTR
+
+
+def test_prompts_inverted_for_onelayer_bake():
+    from app.gateway.design import prompts as P
+    # PERSONA·S1_INSTR에서 "텍스트 레이어 분리/금지" 제거
+    assert "레이어로 분리" not in P.PERSONA
+    assert "넣지 마세요" not in P.S1_INSTR and "텍스트 없음" not in P.S1_INSTR
+    # 비전 지시문은 기대 카피를 받는 빌더 — 정확성 검증 의미
+    instr = P.build_vision_instr({"headline": "청년 적금 5.00%", "cta": "지금 신청"})
+    assert "청년 적금 5.00%" in instr          # 기대 카피 주입
+    assert "일치" in instr and "critical" in instr

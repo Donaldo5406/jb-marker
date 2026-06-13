@@ -3,8 +3,9 @@
 PERSONA = (
     "당신은 금융 마케팅 시니어 아트디렉터입니다. 시각 위계·그리드·여백·CTA 배치·"
     "브랜드 일관성·컴플라이언스 톤에 능하며, 인물·배경·구도·조명·색온도를 아우르는 "
-    "키비주얼 아트디렉션에도 능합니다. 단, 텍스트는 절대 비주얼 픽셀에 굽지 않고 "
-    "레이어로 분리합니다. 레이아웃은 구조화 JSON으로만 출력합니다."
+    "키비주얼과 헤드라인·CTA 타이포그래피를 한 화면에 통합 디자인합니다. "
+    "단, 공식 로고와 법령 고지가 놓일 영역(좌상단·하단)은 단순·저대비로 비워 둡니다. "
+    "레이아웃은 구조화 JSON으로만 출력합니다."
 )
 
 # [S1 Rough] 지시·JSON 예시 — PromptSpec.constraints 단일 원소(문자열은 인라인 시절과 동일, D6).
@@ -12,19 +13,19 @@ S1_INSTR = (
     "\n\n[S1 Rough] 아래 레퍼런스 레이아웃을 참고해 layout_spec(JSON)을 출력하세요. "
     "slots에는 반드시 headline·body·cta·disclosure 4개 역할을 모두 포함하고, "
     "각 슬롯은 role·bbox{x,y,w,h}·z·copy_key를 갖습니다. 텍스트는 copy[lang][key]에 둡니다. "
-    "시각 적법성 검토를 위해 각 텍스트 슬롯에 font_px(정수)와 color(#RRGGBB)를, "
-    "최상위에 bg_color(#RRGGBB, 배경 대표 톤)를 반드시 포함하세요. "
-    "필수 고지(disclosure)는 본문 대비 충분히 크고(최대 글자의 30% 이상) 배경과 대비가 "
-    "분명하도록(명도대비 4.5:1 이상) 설정하세요. "
-    "또한 최상위에 visual_concept(문자열)을 **반드시** 포함하세요 — 키비주얼을 위한 상세 "
-    "아트디렉션입니다: 피사체(인물 포함 시 포즈·표정·시선·연령대·복장)·배경·구도·조명·색감·"
-    "분위기를 구체 서술하고, 텍스트 슬롯 bbox가 놓이는 영역은 저대비·저디테일(safe zone)로 "
-    "두라고 명시하세요(텍스트 가독성 선확보). 텍스트/숫자/로고는 비주얼에 넣지 마세요(레이어 분리). "
-    "tokens의 color_palette·typography·concept(있으면)를 색(color/bg_color)·폰트·톤·"
-    "visual_concept에 반영하고, aspect는 tokens.aspect를 따르세요. 정확한 출력 형식 예시:\n"
+    "headline·cta·body의 font_px(정수)·color(#RRGGBB)는 비주얼에 구울 타이포 가이드입니다. "
+    "최상위에 bg_color(#RRGGBB)와 visual_concept(문자열)을 **반드시** 포함하세요. "
+    "visual_concept은 **헤드라인·CTA 텍스트까지 통합된 풀 포스터**의 상세 아트디렉션입니다: "
+    "피사체(인물 포함 시 포즈·표정·시선·연령대·복장)·배경·구도·조명·색감·분위기와 "
+    "헤드라인/CTA가 어떻게 디자인되는지 구체 서술하세요. "
+    "단 **좌상단 모서리(공식 로고)와 하단 스트립(법령 고지)은 텍스트·요소 없이 "
+    "단순·저대비로 비워 둘 것**(오버레이 safe zone)을 명시하세요. "
+    "tokens의 color_palette·typography·concept(있으면)를 색·폰트·톤·visual_concept에 "
+    "반영하고, aspect는 tokens.aspect를 따르세요. 정확한 출력 형식 예시:\n"
     '{"reply":"...","ready":true,"layout_spec":{"aspect":"4:5","bg_color":"#F2EFE9",'
-    '"visual_concept":"밝은 채광의 카페 창가, 20대 청년이 통장을 두 손으로 들고 정면을 보며 '
-    '환하게 미소, 상반신, 따뜻한 색감, 우상단은 단순한 벽면(텍스트 safe zone), 텍스트 없음",'
+    '"visual_concept":"밝은 채광의 카페 창가, 20대 청년이 통장을 들고 환하게 미소, 상반신. '
+    '상단에 굵은 헤드라인 \'청년 적금으로 미래를 더 크게\', 하단에 둥근 CTA 버튼 \'지금 신청\'을 '
+    '따뜻한 색감으로 통합 디자인. 좌상단 모서리와 하단 스트립은 비워 둠(로고·고지 오버레이용)",'
     '"slots":['
     '{"role":"headline","bbox":{"x":80,"y":120,"w":920,"h":180},"z":3,"copy_key":"headline","font_px":96,"color":"#0B1324"},'
     '{"role":"body","bbox":{"x":80,"y":340,"w":900,"h":120},"z":2,"copy_key":"body","font_px":40,"color":"#1A2332"},'
@@ -47,14 +48,27 @@ CRITIC_INSTR = (
     'JSON 한 개만: {"scores":{"hierarchy":n,...}}'
 )
 
-# [S2a 비전 게이트] review_image용 — 텍스트-free 계약·인물 해부학·safe zone 점검.
-# harness_review.py의 v1.png 비전 검증(:306-314)을 design 단계로 앞당긴 형태.
-S2A_VISION_INSTR = (
-    "이 이미지는 금융 마케팅 포스터의 AI 생성 키비주얼입니다. 텍스트는 별도 레이어로 "
-    "합성될 예정이라 이미지 자체는 텍스트-free 계약입니다. 다음을 점검해 결함만 보고하세요: "
-    "① 글자/숫자/로고/워터마크가 이미지에 렌더됐는지(계약 위반=critical). "
-    "② 인물이 있다면 손가락 개수·손 형태·얼굴 등 해부학적 왜곡(왜곡=critical). "
-    "③ 텍스트가 올라갈 여백(safe zone)이 과도하게 복잡해 가독성을 해치는지(경미=warning). "
+# [S2a 비전 게이트] 베이크된 풀 포스터의 텍스트·로고 정확성 검증(누출탐지 반전).
+_S2A_VISION_BASE = (
+    "이 이미지는 금융 마케팅 포스터의 AI 생성 결과입니다. 헤드라인·CTA 텍스트가 "
+    "비주얼에 통합 렌더돼 있습니다. 다음을 점검해 결함만 보고하세요: "
+    "① 렌더된 텍스트가 아래 '기대 카피'와 **정확히 일치**하는가 — 오타·누락·글자 깨짐·"
+    "환각 문구(불일치=critical). "
+    "② 인물이 있다면 손가락·손·얼굴 등 해부학적 왜곡(왜곡=critical). "
+    "③ 좌상단(로고)·하단(법령 고지) 오버레이 영역이 비어 있는가 — 거기에 텍스트/로고가 "
+    "구워졌으면 오버레이와 충돌(critical). "
+    "④ 전반 가독성·구도(경미=warning). "
     'JSON 한 개만 출력: {"findings":[{"severity":"critical|warning","slot":"visual",'
     '"evidence":"무엇이 문제인지"}, ...]}. 결함이 없으면 findings는 빈 배열 [].'
 )
+
+
+def build_vision_instr(copy: dict) -> str:
+    """기대 카피를 주입한 비전 검증 지시문. copy={headline,body,cta,...}."""
+    expect = " / ".join(f'{k}="{v}"' for k, v in (copy or {}).items()
+                        if k in ("headline", "body", "cta") and v)
+    return f"{_S2A_VISION_BASE}\n[기대 카피] {expect or '(없음)'}"
+
+
+# Task 4에서 정리 예정: steps.py·기존 테스트 import 보존을 위한 별칭.
+S2A_VISION_INSTR = _S2A_VISION_BASE
