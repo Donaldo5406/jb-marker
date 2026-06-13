@@ -216,10 +216,10 @@ def test_gate_meta_critic_shape_and_no_premature_done(tmp_path):
     assert res.gate.critic is not None
     assert set(res.gate.critic) == {"passed", "issues", "scores"}
     assert "avg" in res.gate.critic["scores"]
-    # confirm S1 → S2a 게이트: S2a는 critic 단계 아님 → gate.critic None
+    # confirm S1 → S2a 게이트: S2a는 비전 게이트 단계 → gate.critic에 findings 봉투(scores 없음)
     res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
     assert res.gate.step == "S2a"
-    assert res.gate.critic is None
+    assert res.gate.critic == {"passed": True, "issues": []}   # FakeProvider review_image=빈 findings
     # S2a→S2b→S2c→S3 게이트까지 전진
     for _ in range(3):
         res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)

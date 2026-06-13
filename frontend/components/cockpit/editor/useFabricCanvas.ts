@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Canvas, FabricImage, Textbox } from "fabric";
+import { Canvas, FabricImage, Rect, Textbox } from "fabric";
 import "@/lib/fabricDefaults"; // fabric v7 origin(center)→left/top 복원(side-effect)
 import { authedFetch } from "@/lib/api";
 import type { ParsedScene } from "@/lib/editor/sceneSerialize";
@@ -35,10 +35,19 @@ export function useFabricCanvas(
     canvas.clear();
     const objs = scene.objects ?? [];
     for (const o of objs) {
-      if (String(o.type ?? "").toLowerCase() !== "textbox") continue;
-      const tb = new Textbox(o.text ?? "", { left: o.left, top: o.top, width: o.width, fontSize: o.fontSize ?? 48, fill: o.fill ?? "#0b1324" });
-      (tb as any).role = o.role; (tb as any).lang = o.lang; (tb as any).slotId = o.slotId;
-      canvas.add(tb);
+      const t = String(o.type ?? "").toLowerCase();
+      if (t === "rect") {
+        // 스크림(텍스트 가독성 배경) — assembleScene이 텍스트보다 먼저(낮은 z) 배치.
+        // 보조 배경이라 비선택(텍스트 클릭 시 스크림이 잡히지 않게). 저장 직렬화엔 포함됨.
+        const r = new Rect({ left: o.left, top: o.top, width: o.width, height: o.height,
+          fill: o.fill, rx: o.rx, ry: o.ry, selectable: false, evented: false });
+        (r as any).role = o.role; (r as any).slotId = o.slotId;
+        canvas.add(r);
+      } else if (t === "textbox") {
+        const tb = new Textbox(o.text ?? "", { left: o.left, top: o.top, width: o.width, fontSize: o.fontSize ?? 48, fill: o.fill ?? "#0b1324" });
+        (tb as any).role = o.role; (tb as any).lang = o.lang; (tb as any).slotId = o.slotId;
+        canvas.add(tb);
+      }
     }
     canvas.renderAll();
     void (async () => {
