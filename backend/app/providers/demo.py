@@ -306,7 +306,8 @@ class DemoProvider(Provider):
                                                 ensure_ascii=False),
                                 model="demo", raw=None)
 
-    def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
+    def generate_image(self, prompt: str, *, aspect: str = "1:1",
+                       image: bytes | None = None) -> bytes:
         # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.
         return F.load_poster_bg()
 

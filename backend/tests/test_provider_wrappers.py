@@ -35,3 +35,31 @@ def test_tracked_provider_records_image_usage(monkeypatch, tmp_path):
     tp.generate_image("a poster")
     entries = usage_log.read_log(store, run_id="r1")
     assert any(e.get("kind") == "image" for e in entries)
+
+
+def test_wrappers_forward_image_kwarg_to_inner():
+    """ModelBound·Tracked 두 래퍼가 generate_image(image=)를 inner로 forward."""
+    from app.providers.wrappers import ModelBoundProvider, TrackedProvider
+
+    class _Spy:
+        name = "fake"
+        _model = "fake-1"
+        def __init__(self): self.seen = {}
+        def generate_image(self, prompt, *, aspect="1:1", image=None):
+            self.seen = {"prompt": prompt, "aspect": aspect, "image": image}
+            return b"PNG"
+
+    spy = _Spy()
+    mb = ModelBoundProvider.__new__(ModelBoundProvider)  # __init__ 우회(레지스트리 비의존)
+    mb.name = "fake"; mb._p = spy; mb._model = "fake-1"
+    mb.generate_image("p", aspect="4:5", image=b"BASE")
+    assert spy.seen["image"] == b"BASE"
+
+    class _Store:
+        def get_text(self, *a, **k): return ""   # record_usage가 append 기반: str 필요
+        def __getattr__(self, _): return lambda *a, **k: {"cost_usd": 0.0}
+    tracked = TrackedProvider(mb, store=_Store(), run_id="r1", step="design",
+                              settings=type("S", (), {"google_image_model": "m"})())
+    spy.seen = {}
+    tracked.generate_image("p", aspect="4:5", image=b"BASE2")
+    assert spy.seen["image"] == b"BASE2"

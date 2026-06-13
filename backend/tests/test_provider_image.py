@@ -77,3 +77,40 @@ def test_google_generate_image_omits_config_for_unsupported_aspect(monkeypatch):
     monkeypatch.setattr(genai, "Client", _fake_genai_module(captured).Client)
     GoogleProvider("k").generate_image("배경", aspect="7:13")
     assert captured["config"] is None
+
+
+def test_google_generate_image_passes_input_image_as_part(monkeypatch):
+    """image 주어지면 contents 앞에 Part.from_bytes(편집 모드)로 넣는다."""
+    import sys, types as _t
+    captured = {}
+    genai = _t.ModuleType("google.genai"); google = _t.ModuleType("google")
+    types_mod = _t.ModuleType("google.genai.types")
+    class _Part:
+        @staticmethod
+        def from_bytes(*, data, mime_type): return ("PART", data, mime_type)
+    class _ImageConfig:
+        def __init__(self, **k): self.k = k
+    class _Cfg:
+        def __init__(self, **k): self.k = k
+    types_mod.Part = _Part; types_mod.ImageConfig = _ImageConfig
+    types_mod.GenerateContentConfig = _Cfg
+    class _Resp:
+        class _C:
+            class _Content:
+                parts = [_t.SimpleNamespace(inline_data=_t.SimpleNamespace(data=b"OUT"))]
+            content = _Content()
+        candidates = [_C()]
+    class _Client:
+        def __init__(self, **k): self.models = self
+        def generate_content(self, *, model, contents, config=None):
+            captured["contents"] = contents; return _Resp()
+    genai.Client = _Client; google.genai = genai
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types_mod)
+
+    from app.providers.google_client import GoogleProvider
+    out = GoogleProvider(api_key="x").generate_image("프롬프트", aspect="4:5", image=b"BASE")
+    assert out == b"OUT"
+    assert captured["contents"][0][0] == "PART"          # 첫 요소 = 입력 이미지 Part
+    assert captured["contents"][0][1] == b"BASE"
