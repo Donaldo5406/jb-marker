@@ -82,6 +82,17 @@ DISCLOSURE_DISPLAY = {
 }
 
 
+def _bundled_logo() -> bytes:
+    """번들 공식 JB금융 로고(국문가로조합 시그니처) PNG 바이트를 로드.
+
+    히어로 텍스트는 AI가 베이크하지만 공식 로고는 정확성이 필수라 결정론 오버레이로 핀한다
+    (S2cBrand가 VFS에 기록 + layout_spec logo 슬롯의 asset_ref로 노출 → 프론트가 image로 렌더)."""
+    p = os.path.join(os.path.dirname(__file__), "..", "..", "references", "design",
+                     "jb-logo-signature-h.png")
+    with open(p, "rb") as f:
+        return f.read()
+
+
 def load_references() -> list[dict]:
     """번들 레퍼런스 레이아웃 로드 (구 _load_references — 경로는 app/references/design)."""
     d = os.path.join(os.path.dirname(__file__), "..", "..", "references", "design")
@@ -378,13 +389,23 @@ class S2cBrand(PipelineStep):
                           text, source="marker", mime="text/plain", meta={"lang": lang})
             ctx.store.put(f"{base}/design-system/components/logo/{lang}.txt",
                           "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
-        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합
-        # (slots/visual_concept/aspect/기존 copy 등 나머지는 보존). S2bCopy와 동일 idiom.
+        # 공식 로고 핀(결정론 오버레이): 번들 PNG 바이트를 VFS에 기록. 히어로 텍스트는 AI가
+        # 베이크하지만 공식 로고는 정확성이 필수라 placeholder가 아닌 실 바이트로 박는다.
+        logo_path = f"{base}/design-system/components/logo/v1.png"
+        ctx.store.put(logo_path, _bundled_logo(), source="marker", mime="image/png")
+        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합하고,
+        # logo 슬롯(asset_ref)을 같은 spec에 추가(slots/visual_concept/aspect/기존 copy 등 나머지는
+        # 보존). 한 번의 read/put으로 직렬화 — 별도 read/put 금지(경합·덮어쓰기 방지). S2bCopy 동일 idiom.
         spec = read_json_node(ctx.store, f"{base}/rough/layout.spec.json")
         spec.setdefault("copy", {})
         for lang, text in notices.items():
             spec["copy"].setdefault(lang, {})
             spec["copy"][lang]["disclosure"] = text
+        spec.setdefault("slots", [])
+        if not any(s.get("role") == "logo" for s in spec["slots"]):
+            spec["slots"].append({"role": "logo", "z": 9,
+                "bbox": {"x": 48, "y": 48, "w": 300, "h": 96},
+                "asset_ref": "design-system/components/logo/v1.png"})
         ctx.store.put(f"{base}/rough/layout.spec.json",
                       json.dumps(spec, ensure_ascii=False), source="marker",
                       mime="application/json")
