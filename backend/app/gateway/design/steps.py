@@ -24,7 +24,7 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
-from .prompts import PERSONA, S1_INSTR, S2A_VISION_INSTR, S2B_INSTR
+from .prompts import PERSONA, S1_INSTR, S2B_INSTR, build_vision_instr
 from .scoring import RUBRIC, run_critic
 
 # S3 채점 raw의 턴 캐시 키 — S3Final.run이 기록, critic_gate가 재사용(백로그 ②).
@@ -32,6 +32,8 @@ S3_CRITIC_CACHE = "s3_critic"
 
 # S2a 비전 검증 findings의 턴 캐시 키 — S2aVisual.run이 기록, critic_gate가 재사용(S3 전례).
 S2A_VISION_CACHE = "s2a_vision"
+
+MAX_BAKE_ATTEMPTS = 2   # 베이크 텍스트 정확성 재생성 상한(내부 루프). 외부 게이트 재생성과 합성.
 
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
@@ -197,19 +199,16 @@ class S2aVisual(PipelineStep):
         spec = read_json_node(ctx.store, f"{base}/rough/layout.spec.json")
         concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
         aspect = spec.get("aspect", "1:1")
-        # M8: Nano Banana 실패(키 없음 등) → 보이는 그라데이션 placeholder 폴백(턴 전체 500 방지, spec §9).
-        fallback = False
-        try:
-            png = self._image_provider.generate_image(concept, aspect=aspect)
-        except Exception:
-            from ...core.placeholder_image import placeholder_png
-            png = placeholder_png(aspect)
-            fallback = True
+        lang = (ctx.state.get("languages") or ["ko"])[0]
+        copy = (spec.get("copy") or {}).get(lang, {})
+        base_prompt = self._bake_prompt(concept, copy)
+        png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
-        # 비전 검증 — findings를 cache에 무조건부 기록(critic_gate 재사용). 실패는 fail-open.
-        findings, vision_failed = self._vision_check(png)
+        spec.setdefault("visual_by_lang", {})[lang] = "design-system/components/visual/v1.png"
+        ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
+                      source="marker", mime="application/json")
         ctx.cache[S2A_VISION_CACHE] = findings
         text = ("비주얼을 생성했습니다." if not fallback else
                 "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
@@ -219,10 +218,40 @@ class S2aVisual(PipelineStep):
                   "image_fallback": fallback, "vision_failed": vision_failed},
             events=[{"type": "artifact", "path": path}])
 
-    def _vision_check(self, png: bytes) -> tuple[list, bool]:
+    def _bake_prompt(self, concept: str, copy: dict) -> str:
+        lines = [concept,
+                 "다음 문구를 디자인 요소로 **정확히** 렌더하세요(오타·누락 금지):"]
+        for k in ("headline", "body", "cta"):
+            if copy.get(k):
+                lines.append(f"- {k}: {copy[k]}")
+        lines.append("좌상단 모서리와 하단 스트립은 텍스트·로고 없이 비워 두세요"
+                     "(공식 로고·법령 고지 오버레이 영역).")
+        return "\n".join(lines)
+
+    def _bake_with_retry(self, base_prompt, aspect, copy):
+        feedback = ""
+        png, findings, vision_failed, fallback = None, [], False, False
+        for attempt in range(MAX_BAKE_ATTEMPTS):
+            prompt = base_prompt if not feedback else f"{base_prompt}\n이전 시도 교정: {feedback}"
+            try:
+                png = self._image_provider.generate_image(prompt, aspect=aspect)
+                fallback = False
+            except Exception:
+                from ...core.placeholder_image import placeholder_png
+                png = placeholder_png(aspect); fallback = True
+                findings, vision_failed = [], True
+                break
+            findings, vision_failed = self._vision_check(png, copy)
+            criticals = [f for f in findings if f.get("severity") == "critical"]
+            if not criticals:
+                break
+            feedback = "; ".join(f.get("evidence", "") for f in criticals)
+        return png, findings, vision_failed, fallback
+
+    def _vision_check(self, png: bytes, copy: dict) -> tuple[list, bool]:
         """review_image로 비전 점검 → (findings, vision_failed). 미지원/실패는 ([], True)."""
         try:
-            resp = self._image_provider.review_image(png, S2A_VISION_INSTR, mime="image/png")
+            resp = self._image_provider.review_image(png, build_vision_instr(copy), mime="image/png")
             return ((parse_json_block(resp.text).get("findings") or []), False)
         except Exception:
             return ([], True)   # 비전 미지원/실패 → fail-open(빈 findings로 통과)

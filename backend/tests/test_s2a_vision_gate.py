@@ -69,13 +69,15 @@ def test_s2a_clean_vision_passes_gate_on(tmp_path):
 
 
 def test_s2a_bypass_critical_regenerates_once(tmp_path):
-    # S2a bypass + critical finding → 1회 자동 재생성(generate_image 2회)
+    # S2a bypass + 상시 critical → 내부 베이크 루프(run당 MAX_BAKE_ATTEMPTS회)와
+    # 외부 게이트 1회 재생성이 합성: run 2회 × 내부 MAX_BAKE_ATTEMPTS회 = 4회.
+    from app.gateway.design.steps import MAX_BAKE_ATTEMPTS
     s = _store(tmp_path)
     _seed_s2a(s, bypass={"S2a": True})
     img = _DirtyVision()
     h = DesignHarness(image_provider=img)
     h.handle_turn(_req(), provider=FakeProvider(), store=s)
-    assert img.gen_calls == 2
+    assert img.gen_calls == MAX_BAKE_ATTEMPTS * 2
 
 
 def test_s2a_vision_failure_is_fail_open(tmp_path):
@@ -118,3 +120,41 @@ def test_prompts_inverted_for_onelayer_bake():
     instr = P.build_vision_instr({"headline": "청년 적금 5.00%", "cta": "지금 신청"})
     assert "청년 적금 5.00%" in instr          # 기대 카피 주입
     assert "일치" in instr and "critical" in instr
+
+
+def test_s2a_bake_retries_with_corrective_feedback(tmp_path):
+    """1차 비전 실패(critical) → 2차 재생성, 2차 프롬프트에 교정 피드백 주입."""
+    import json
+    from app.gateway.design.steps import S2aVisual, MAX_BAKE_ATTEMPTS
+    from app.gateway.pipeline import StepContext
+    from app.gateway.harness import HarnessRequest
+    from app.providers.base import ProviderResponse
+    from app.vfs.local import LocalVfsStore
+
+    class _Stub:
+        def __init__(self):
+            self.gen_prompts = []
+            self._reviews = [
+                '{"findings":[{"severity":"critical","slot":"visual","evidence":"헤드라인 깨짐"}]}',
+                '{"findings":[]}',
+            ]
+        def generate_image(self, prompt, *, aspect="1:1", image=None):
+            self.gen_prompts.append(prompt); return b"PNG"
+        def review_image(self, png, instr, *, mime="image/png"):
+            return ProviderResponse(text=self._reviews[len(self.gen_prompts) - 1], model="m")
+
+    store = LocalVfsStore(storage_dir=str(tmp_path)); store.create_run("r1", languages=["ko"])
+    store.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "visual_concept": "통장 든 청년", "aspect": "1:1", "bg_color": "#EEE",
+        "copy": {"ko": {"headline": "청년 적금 5.00%", "cta": "지금 신청"}}}),
+        source="marker", mime="application/json")
+    stub = _Stub()
+    ctx = StepContext(req=HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                      provider="fake", is_marker=True),
+                      provider=None, store=store, state={"languages": ["ko"]},
+                      base="/r1/design")
+    S2aVisual(stub).run(ctx)
+    assert len(stub.gen_prompts) == 2                       # 1차 실패 → 2차 재생성
+    assert len(stub.gen_prompts) <= MAX_BAKE_ATTEMPTS
+    assert "청년 적금 5.00%" in stub.gen_prompts[0]          # 기대 카피가 베이크 프롬프트에
+    assert "헤드라인 깨짐" in stub.gen_prompts[1]            # 2차에 교정 피드백 주입
