@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, authedFetch, type GateEnvelope, type Manifest, type Provider, type VfsNode } from "@/lib/api";
+import { api, authedFetch, type DesignGate, type GateEnvelope, type Manifest, type Provider, type ReviewGate, type VfsNode } from "@/lib/api";
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
@@ -26,8 +26,6 @@ export type OpenFile = { path: string; content: string; mime: string | null; dir
 export type Entitlement = { marker: boolean; deploy: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
-export type ReviewGate = { status: string; critical: number; warning: number };
-export type DesignGate = { step: string; critic: Record<string, unknown> | null; auto_advanced: string[] };
 // M6 T19 deploy 상태 타입.
 export type DeployStateLike = {
   step_status: string;
@@ -402,15 +400,16 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         setPendingGate(gate);
         break;
       case "confirm":
-        // 기존 DesignGate 모양 유지 — 소비자(PipelineRail 등) 무변경.
-        setDesignGate({ step: gate.step ?? "", critic: gate.critic ?? null, auto_advanced: gate.auto_advanced ?? [] });
+        // confirm 봉투 → DesignGate. actions(서버 선언 어휘)도 함께 보존해 PipelineRail이 동적 렌더.
+        setDesignGate({ step: gate.step ?? "", critic: gate.critic ?? null, auto_advanced: gate.auto_advanced ?? [], actions: gate.actions ?? [] });
         break;
       case "status":
-        // 백엔드 compute_gate는 critical_count/warning_count로 내보낸다(severity.py:91).
+        // status 봉투 → ReviewGate. actions(_actions_for 결과)도 보존해 VerdictPanel이 동적 렌더.
         setReviewGate({
           status: String(gate.status ?? ""),
           critical: gate.critical_count ?? 0,
           warning: gate.warning_count ?? 0,
+          actions: gate.actions ?? [],
         });
         break;
       default:

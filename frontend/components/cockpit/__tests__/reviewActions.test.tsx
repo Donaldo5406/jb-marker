@@ -116,6 +116,9 @@ describe("CockpitProvider review actions (M5 §8.3)", () => {
     expect(captured!.reviewGate?.status).toBe("WARN");
     expect(captured!.reviewGate?.critical).toBe(1);
     expect(captured!.reviewGate?.warning).toBe(2);
+    // BE→FE actions 보존 가드: applyGate가 status 봉투의 actions를 ReviewGate로 전달하는지 검증.
+    // (actions?는 선택 필드라 누락돼도 tsc가 못 잡음 — 누락 시 VerdictPanel 동적 버튼 0개로 무음 회귀.)
+    expect(captured!.reviewGate?.actions).toEqual(["ack", "regenerate", "restart"]);
   });
 
   it("ackReview: gateway action=ack + reviewAcknowledged=true", async () => {

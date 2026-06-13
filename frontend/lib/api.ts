@@ -27,6 +27,11 @@ export type GateEnvelope = {
   step?: string; critic?: Record<string, unknown> | null; auto_advanced?: string[];
   status?: "PASS" | "WARN" | "BLOCKED"; critical_count?: number; warning_count?: number;
 };
+/** confirm 봉투(GateEnvelope)의 CockpitProvider 파생 뷰 — PipelineRail이 소비.
+ *  critic은 백엔드 CriticVerdict를 수용하는 방어적 Record(좁히지 말 것). */
+export type DesignGate = { step: string; critic: Record<string, unknown> | null; auto_advanced: string[]; actions?: string[] };
+/** status 봉투(GateEnvelope)의 CockpitProvider 파생 뷰 — VerdictPanel·Deploy 패널이 소비. */
+export type ReviewGate = { status: string; critical: number; warning: number; actions?: string[] };
 export type GatewayResult = {
   output_path: string; text: string; gate?: GateEnvelope | null;
   meta?: Record<string, unknown>;

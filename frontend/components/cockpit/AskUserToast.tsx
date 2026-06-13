@@ -41,8 +41,9 @@ export function AskUserToast() {
   // ask 봉투(kind==="ask")를 View 기대 모양으로 명시 매핑 — 필수 필드 누락 봉투는 렌더하지 않음.
   const g = c.pendingGate;
   const ask: AskView | null =
-    g?.kind === "ask" && g.trigger && g.question && g.options
-      ? { trigger: g.trigger, question: g.question, options: g.options }
+    g?.kind === "ask" && g.question && Array.isArray(g.options) && g.options.length > 0
+      // trigger는 tone(c=경고 강조)에만 쓰임 — 누락/빈값이면 "a"(기본 tone)로 폴백.
+      ? { trigger: g.trigger || "a", question: g.question, options: g.options }
       : null;
   return <AskUserToastView ask={ask} onSelect={(choice) => void c.answerAsk(choice)} onClose={c.closeAsk} />;
 }

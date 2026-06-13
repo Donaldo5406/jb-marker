@@ -95,11 +95,18 @@ COMPACT_PERSONA = (
 def _to_gate(ask: dict | None) -> "GateEnvelope | None":
     if not ask:
         return None
-    return GateEnvelope(kind="ask",
-                        trigger=str(ask.get("trigger", "")),
-                        question=str(ask.get("question", "")),
-                        options=list(ask.get("options") or []),
-                        actions=["answer"])
+    question = str(ask.get("question") or "").strip()
+    options = list(ask.get("options") or [])
+    # 질문이나 옵션 중 하나라도 비면 게이트로 만들지 않는다 — 프론트 렌더 조건
+    # (question && options.length>0)과 대칭. 무음/무의미 토스트(클릭 대상 없는 ask) 방지.
+    if not question or not options:
+        return None
+    # 빈/누락/비표준 trigger는 "a"로 폴백 — LLM이 trigger를 빠뜨려도 토스트가 뜬다.
+    trigger = str(ask.get("trigger") or "").strip().lower()
+    if trigger not in ("a", "b", "c"):
+        trigger = "a"
+    return GateEnvelope(kind="ask", trigger=trigger, question=question,
+                        options=options, actions=["answer"])
 
 
 def _frontmatter_keys(md: str) -> set[str]:
