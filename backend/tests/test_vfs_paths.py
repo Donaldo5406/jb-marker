@@ -22,3 +22,7 @@ def test_validate_rejects_unknown_studio():
 
 def test_validate_accepts_known_studio():
     validate_path("/run123/brainstorming/spec.md")  # no raise
+
+
+def test_validate_accepts_video_studio():
+    validate_path("/run123/video/storyboard/storyboard.spec.json")  # no raise

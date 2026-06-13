@@ -13,6 +13,9 @@ class _FakeMedia:
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
         return None
 
+    def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+        return b"mp4"
+
 
 def _factory():
     return _FakeMedia()
@@ -52,3 +55,9 @@ def test_factory_called_only_for_media_harnesses():
     assert len(calls) == 1
     select_harness("review", True, media_provider_factory=counting_factory)
     assert len(calls) == 2
+
+
+def test_video_marker_injects_media():
+    from app.gateway.harness_video import VideoHarness
+    h = select_harness("video", True, media_provider_factory=_factory)
+    assert isinstance(h, VideoHarness)

@@ -20,4 +20,7 @@ def select_harness(studio: str, is_marker: bool, *, media_provider_factory) -> H
     if studio == "review" and is_marker:
         from .harness_review import ReviewHarness
         return ReviewHarness(vision_provider=media_provider_factory())
+    if studio == "video" and is_marker:
+        from .harness_video import VideoHarness
+        return VideoHarness(video_provider=media_provider_factory())
     return PassthroughHarness()

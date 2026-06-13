@@ -26,6 +26,11 @@ class FakeProvider(Provider):
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
         )
 
+    def generate_video(self, prompt: str, *, aspect: str = "9:16",
+                       duration_sec: int = 15, fps: int = 30) -> bytes:
+        # 의존 없는 최소 mp4 시그니처 더미(결정론적 — 오프라인/테스트)
+        return b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
         """결정론 스텁 — 거짓 finding 만들지 않음(spec §7.3 거짓 BLOCK/PASS 방지)."""
         return ProviderResponse(text='{"findings":[]}', model="fake")

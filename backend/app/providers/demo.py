@@ -224,6 +224,11 @@ def _critic_json() -> str:
     return json.dumps({"scores": F.CRITIC_SCORES}, ensure_ascii=False)
 
 
+def _storyboard_json() -> str:
+    return json.dumps({"reply": "콘티 완성", "storyboard": F.STORYBOARD_SPEC, "ready": True},
+                      ensure_ascii=False)
+
+
 def _empty_findings() -> str:
     return json.dumps({"findings": []}, ensure_ascii=False)
 
@@ -282,6 +287,12 @@ class DemoProvider(Provider):
             return ProviderResponse(text=_copy_json(messages), model="demo", raw=None)
         if key == ("design", "critic"):           # 자기 평가 scores
             return ProviderResponse(text=_critic_json(), model="demo", raw=None)
+        if key == ("video", "V1"):                # 콘티
+            return ProviderResponse(text=_storyboard_json(), model="demo", raw=None)
+        if key == ("video", "V2b"):               # 카피(design과 동일 콘텐츠 분기 재사용)
+            return ProviderResponse(text=_copy_json(messages), model="demo", raw=None)
+        if key == ("video", "critic"):            # 자기 평가 scores
+            return ProviderResponse(text=_critic_json(), model="demo", raw=None)
         if key == ("review", "R1"):               # 법률 — 콘텐츠 기반 적발
             return ProviderResponse(text=_legal_findings_json(messages),
                                     model="demo", raw=None)
@@ -297,6 +308,11 @@ class DemoProvider(Provider):
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
         # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.
+        return F.load_poster_bg()
+
+    def generate_video(self, prompt: str, *, aspect: str = "9:16",
+                       duration_sec: int = 15, fps: int = 30) -> bytes:
+        # 시연용 결정론 footage — 배경 still 바이트(프론트 VideoEditor가 모션 부여).
         return F.load_poster_bg()
 
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:

@@ -159,6 +159,63 @@ factsheet:
 레이아웃·카피·비주얼 방향을 잡았습니다. 컴플라이언스 고지와 슬롯 정의를 보강해야 합니다.
 """
 
+VIDEO_PLAN_MD = """---
+medium: video
+video_direction:
+  duration_sec: 15
+  aspect: "9:16"
+  fps: 30
+  pacing: medium
+  palette: ["#0B2B5B", "#00857C", "#FFFFFF"]
+  font: Pretendard
+  music: uplifting
+  voiceover: false
+footage_concept: 밝은 톤의 추상적 금융 성장 모션 배경
+scene_beats: [훅, 혜택, 신뢰, CTA]
+copy_themes: [높은 금리, 간편 가입, 신뢰]
+multinational: true
+languages: [ko, en, vi, zh]
+material_matrix: [{channel: instagram, format: reels, aspect: "9:16", duration: 15}]
+factsheet:
+  product: JB 정기예금
+  interest_rate: 3.5%
+  term: 12개월
+  min_amount: 100만원
+disclosures: [예금자보호법에 따라 5천만원까지 보호]
+---
+# 영상 구현 계획
+
+훅→혜택(3.5%)→신뢰(예금자보호)→CTA 4비트, 9:16 15초 릴스.
+"""
+
+STORYBOARD_SPEC = {
+    "aspect": "9:16", "duration_sec": 15, "fps": 30, "bg_color": "#0B2B5B",
+    "shots": [
+        {"id": "s1", "start": 0.0, "end": 4.0,
+         "footage_prompt": "추상적 금융 성장, 밝은 톤, 텍스트 없음",
+         "camera": "slow zoom-in", "transition_in": "fade", "transition_out": "cut",
+         "layers": [{"role": "headline", "copy_key": "headline", "in": 0.5, "out": 3.8,
+                     "anim": "rise-fade", "font_px": 96, "color": "#FFFFFF",
+                     "bbox": {"x": 80, "y": 300, "w": 900, "h": 220}}]},
+        {"id": "s2", "start": 4.0, "end": 8.0, "footage_prompt": "동전·그래프 상승 모션, 텍스트 없음",
+         "camera": "pan-right", "transition_in": "cut", "transition_out": "cut",
+         "layers": [{"role": "body", "copy_key": "body", "in": 4.3, "out": 7.8,
+                     "anim": "fade", "font_px": 48, "color": "#FFFFFF",
+                     "bbox": {"x": 80, "y": 400, "w": 900, "h": 180}}]},
+        {"id": "s3", "start": 8.0, "end": 11.0, "footage_prompt": "안정감 있는 금고 모션, 텍스트 없음",
+         "camera": "static", "transition_in": "cut", "transition_out": "cut", "layers": []},
+        {"id": "s4", "start": 11.0, "end": 15.0, "footage_prompt": "브랜드 컬러 배경, 텍스트 없음",
+         "camera": "static", "transition_in": "fade", "transition_out": "fade",
+         "layers": [
+             {"role": "cta", "copy_key": "cta", "in": 11.2, "out": 15.0, "anim": "pop",
+              "font_px": 56, "color": "#FFFFFF", "bbox": {"x": 80, "y": 700, "w": 900, "h": 160}},
+             {"role": "disclosure", "copy_key": "disclosure", "in": 11.0, "out": 15.0,
+              "font_px": 30, "color": "#E8E8E8", "bbox": {"x": 80, "y": 1700, "w": 900, "h": 120}}]},
+    ],
+    "copy": {},
+    "audio": {"music": "uplifting", "voiceover": False},
+}
+
 
 def _png_chunk(typ: bytes, data: bytes) -> bytes:
     body = typ + data
