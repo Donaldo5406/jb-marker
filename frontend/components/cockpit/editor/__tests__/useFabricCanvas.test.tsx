@@ -14,6 +14,7 @@ vi.mock("fabric", () => ({
     on: vi.fn(), off: vi.fn(),
   })),
   Textbox: vi.fn().mockImplementation((t: string) => ({ kind: "textbox", text: t })),
+  Rect: vi.fn().mockImplementation((o: any) => ({ kind: "rect", ...o })),
   FabricImage: {
     fromURL: vi.fn(async () => ({ kind: "image", set: vi.fn(), scaleToWidth: vi.fn() })),
     fromObject: vi.fn(async (o: any) => ({ kind: "image", ...o, set: vi.fn(), scaleToWidth: vi.fn() })),
@@ -39,6 +40,26 @@ describe("useFabricCanvas", () => {
     renderHook(() => useFabricCanvas(elRef, scene));
     expect(clear).toHaveBeenCalled();
     expect(add).toHaveBeenCalledTimes(1);  // textbox 1개
+  });
+
+  it("scene의 스크림 rect를 add 하고, 같은 slotId textbox보다 아래(낮은 인덱스)에 둔다", () => {
+    const elRef = { current: document.createElement("canvas") } as React.RefObject<HTMLCanvasElement>;
+    // assembleScene이 내보내는 순서: [scrim rect(낮은 z), textbox]. slotId로 짝을 식별.
+    const scene = { version: "6.0.0", width: 1080, height: 1080, objects: [
+      { type: "rect", left: 8, top: 8, width: 120, height: 60, fill: "rgba(0,0,0,0.38)", rx: 8, ry: 8, role: "scrim", slotId: "headline" },
+      { type: "textbox", text: "헤드라인", left: 20, top: 20, width: 100, role: "headline", slotId: "headline" },
+    ] };
+    renderHook(() => useFabricCanvas(elRef, scene));
+    // add된 객체들(공유 mock) — 동기 루프에서 배열 순서대로 들어간다.
+    const added = add.mock.calls.map((c) => c[0]);
+    const rect = added.find((o: any) => o.kind === "rect" && o.slotId === "headline");
+    const textbox = added.find((o: any) => o.kind === "textbox" && o.slotId === "headline");
+    expect(rect).toBeTruthy();              // 스크림이 캔버스에 추가됐다(현재 코드에선 스킵→실패)
+    expect(textbox).toBeTruthy();
+    const rectIdx = added.indexOf(rect);
+    const tbIdx = added.indexOf(textbox);
+    expect(rectIdx).toBeLessThan(tbIdx);    // 스크림이 자기 textbox보다 아래(먼저 add)
+    expect((rect as any).selectable).toBe(false);  // 보조 배경 — 비선택
   });
 
   it("에디터 저장 이미지(scaleX·filters)는 fromObject로 전체 복원한다 (P3 회귀 가드)", async () => {
