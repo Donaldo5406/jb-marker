@@ -1,5 +1,10 @@
 export const STUDIOS = ["brainstorming", "design", "review", "deploy"] as const;
 export type Studio = (typeof STUDIOS)[number];
+
+/** 세션 수명주기 대상 스튜디오 — 백엔드 LIFECYCLE_STUDIOS(vfs/types.py:9)와 정합.
+ *  nav STUDIOS(4종)와 별개: 영상 모듈 머지로 video가 추가된 5종. 세션 목록/heartbeat가 다룸. */
+export const LIFECYCLE_STUDIOS = ["brainstorming", "design", "review", "video", "deploy"] as const;
+export type LifecycleStudio = (typeof LIFECYCLE_STUDIOS)[number];
 export type NavStatus = "done" | "active" | "pending" | "blocked";
 
 /** manifest.step_status → 4단계 시각 상태. 미정 단계는 pending.

@@ -38,6 +38,24 @@ export type GatewayResult = {
 };
 export type Provider = "anthropic" | "openai" | "google" | "fake";
 
+// ── session lifecycle (T1 백엔드 계약 미러 — schemas.py:113-158, snake_case 보존) ──
+export type SessionLivenessName = "healthy" | "stalled" | "suspended" | "archived" | "transport_dead";
+export type SessionStatus = "active" | "suspended" | "archived";
+/** heartbeat exists:false — 정확 4키(나머지 키 부재). */
+export type SessionMissing = { kind: "heartbeat"; exists: false; status: null; resumable: boolean };
+/** heartbeat exists:true — 정확 8키. warn_at/suspend_at/expires_at는 절대 ms epoch. */
+export type SessionLiveness = {
+  kind: "heartbeat"; exists: true; liveness: SessionLivenessName; status: SessionStatus;
+  warn_at: number; suspend_at: number; expires_at: number | null; resumable: boolean;
+};
+export type SessionHeartbeat = SessionLiveness | SessionMissing;   // exists로 판별
+export type SessionRestored = { kind: "restored"; run_id: string; studio: string; status: string };
+export type SessionExpired = { kind: "expired"; reason: "no_session" | "retention_elapsed" };
+export type SessionResumeResult = SessionRestored | SessionExpired;   // kind로 판별
+export type SessionSuspend = { kind: "suspended"; status: string };
+export type SessionListItem = { studio: string; status: SessionStatus; updated_at_ms: number; expires_at: number | null };
+export type SessionList = { kind: "session_list"; sessions: SessionListItem[] };
+
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const err = new Error(`HTTP ${res.status}`) as Error & { status: number };
@@ -105,6 +123,18 @@ export const api = {
     const r = await authedFetch(`${BASE}/runs/${runId}/preview`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.text();
+  },
+  async sessionHeartbeat(runId: string, studio: string): Promise<SessionHeartbeat> {
+    return j(await authedFetch(`${BASE}/runs/${runId}/session/${studio}`));
+  },
+  async sessionResume(runId: string, studio: string): Promise<SessionResumeResult> {
+    return j(await authedFetch(`${BASE}/runs/${runId}/session/${studio}/resume`, { method: "POST" }));
+  },
+  async sessionSuspend(runId: string, studio: string): Promise<SessionSuspend> {
+    return j(await authedFetch(`${BASE}/runs/${runId}/session/${studio}/suspend`, { method: "POST" }));
+  },
+  async listSessions(runId: string): Promise<SessionList> {
+    return j(await authedFetch(`${BASE}/runs/${runId}/sessions`));
   },
 };
 
