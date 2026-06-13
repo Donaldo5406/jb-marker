@@ -6,9 +6,10 @@ from __future__ import annotations
 
 from ..vfs.types import Manifest, VfsNode
 
-STUDIO_ORDER = ["brainstorming", "design", "review", "deploy"]
+STUDIO_ORDER = ["brainstorming", "design", "review", "video", "deploy"]
 STUDIO_LABELS = {
-    "brainstorming": "기획", "design": "디자인", "review": "검토", "deploy": "배포",
+    "brainstorming": "기획", "design": "디자인", "review": "검토",
+    "video": "영상", "deploy": "배포",
 }
 # 섹션 내 그룹 노출 순서 — 시각 산출물 먼저.
 KIND_ORDER = ["image", "scene", "video", "document", "data"]

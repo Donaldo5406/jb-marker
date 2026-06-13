@@ -15,11 +15,11 @@ def _node(path, mime=None) -> VfsNode:
     return VfsNode(run_id="r1", path=path, mime=mime)
 
 
-def test_sections_are_four_studios_in_fixed_order():
+def test_sections_are_studios_in_fixed_order():
     out = build_gallery(_man(), [])
     assert [s["studio"] for s in out["sections"]] == \
-        ["brainstorming", "design", "review", "deploy"]
-    assert [s["label"] for s in out["sections"]] == ["기획", "디자인", "검토", "배포"]
+        ["brainstorming", "design", "review", "video", "deploy"]
+    assert [s["label"] for s in out["sections"]] == ["기획", "디자인", "검토", "영상", "배포"]
 
 
 def test_run_meta_exposed():
@@ -42,6 +42,23 @@ def test_node_grouped_into_its_studio_section():
     by = {s["studio"]: s for s in out["sections"]}
     items = [i for g in by["brainstorming"]["groups"] for i in g["items"]]
     assert any(i["name"] == "spec.md" for i in items)
+
+
+def test_video_nodes_grouped_into_video_section():
+    nodes = [
+        _node("/r1/video/storyboard/storyboard.spec.json", "application/json"),
+        _node("/r1/video/design-system/components/footage/clip_s1.mp4", "video/mp4"),
+        _node("/r1/video/metadata.md", "text/markdown"),
+    ]
+    out = build_gallery(_man(), nodes)
+    by = {s["studio"]: s for s in out["sections"]}
+    assert "video" in by
+    names = [i["name"] for g in by["video"]["groups"] for i in g["items"]]
+    assert "storyboard.spec.json" in names
+    assert "clip_s1.mp4" in names and "metadata.md" in names
+    # mp4 → kind "video", is_media True
+    kinds = {i["name"]: g["kind"] for g in by["video"]["groups"] for i in g["items"]}
+    assert kinds["clip_s1.mp4"] == "video"
 
 
 def test_kind_classification():
@@ -113,14 +130,14 @@ def _client():
     return TestClient(create_app())
 
 
-def test_gallery_route_empty_run_returns_four_sections():
+def test_gallery_route_empty_run_returns_sections():
     c = _client()
     run_id = c.post("/runs", json={"title": "n"}).json()["run_id"]
     r = c.get(f"/runs/{run_id}/gallery")
     assert r.status_code == 200
     body = r.json()
     assert [s["studio"] for s in body["sections"]] == \
-        ["brainstorming", "design", "review", "deploy"]
+        ["brainstorming", "design", "review", "video", "deploy"]
     assert body["run"]["run_id"] == run_id
 
 
