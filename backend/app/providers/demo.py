@@ -299,5 +299,10 @@ class DemoProvider(Provider):
         # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.
         return F.load_poster_bg()
 
+    def generate_video(self, prompt: str, *, aspect: str = "9:16",
+                       duration_sec: int = 15, fps: int = 30) -> bytes:
+        # 시연용 결정론 footage — 배경 still 바이트(프론트 VideoEditor가 모션 부여).
+        return F.load_poster_bg()
+
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
         return ProviderResponse(text=_empty_findings(), model="demo")

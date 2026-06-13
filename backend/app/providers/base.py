@@ -42,6 +42,11 @@ class Provider(ABC):
         """텍스트-free 비주얼 PNG 생성(이미지 액터). 미지원 provider는 NotImplementedError."""
         raise NotImplementedError(f"{self.name} provider는 이미지 생성을 지원하지 않습니다")
 
+    def generate_video(self, prompt: str, *, aspect: str = "9:16",
+                       duration_sec: int = 15, fps: int = 30) -> bytes:
+        """텍스트-free 배경 footage(mp4 bytes) 생성(영상 액터). 미지원 provider는 NotImplementedError."""
+        raise NotImplementedError(f"{self.name} provider는 영상 생성을 지원하지 않습니다")
+
     def review_image(self, image_bytes: bytes, prompt: str, *,
                      mime: str = "image/png") -> "ProviderResponse":
         """이미지를 vision으로 분석해 JSON 결과 텍스트 반환(R1 비전 호출).
