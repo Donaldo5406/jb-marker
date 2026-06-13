@@ -82,6 +82,39 @@ describe("assembleScene", () => {
     expect(scene.width).toBe(1080);
     expect(scene.height).toBe(1350);
   });
+
+  // 하이브리드 렌더: font_px 위계 회복 + 텍스트 슬롯 스크림(복잡한 비주얼 위 가독성)
+  const SCRIM_SPEC = {
+    aspect: "1:1",
+    slots: [
+      { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1080 }, z: 0, asset_ref: "v1.png" },
+      { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 180 }, z: 3, copy_key: "headline",
+        font_px: 96, color: "#0B1324" },
+      { role: "disclosure", bbox: { x: 80, y: 980, w: 920, h: 120 }, z: 1, copy_key: "disclosure",
+        font_px: 30, color: "#FFFFFF" },
+    ],
+    copy: { ko: { headline: "미래를 더 크게", disclosure: "예금자보호법에 따라 보호" } },
+  };
+
+  it("textbox가 layout.spec의 font_px를 반영(48 하드코딩 제거)", () => {
+    const scene = assembleScene(SCRIM_SPEC as any, "ko", (r) => `/vfs/${r}`);
+    expect(scene.objects.find((o: any) => o.role === "headline" && o.type === "textbox").fontSize).toBe(96);
+    expect(scene.objects.find((o: any) => o.role === "disclosure" && o.type === "textbox").fontSize).toBe(30);
+  });
+
+  it("각 textbox 슬롯마다 그보다 낮은 z의 스크림 rect가 삽입된다", () => {
+    const scene = assembleScene(SCRIM_SPEC as any, "ko", (r) => `/vfs/${r}`);
+    expect(scene.objects.filter((o: any) => o.role === "scrim").length).toBe(2); // headline·disclosure(background 제외)
+    const idxScrim = scene.objects.findIndex((o: any) => o.role === "scrim" && o.slotId === "headline");
+    const idxText = scene.objects.findIndex((o: any) => o.type === "textbox" && o.role === "headline");
+    expect(idxScrim).toBeLessThan(idxText);   // 스크림이 textbox보다 먼저(아래) 그려짐
+  });
+
+  it("밝은 글자(#FFFFFF)는 어두운 스크림, 어두운 글자(#0B1324)는 밝은 스크림", () => {
+    const scene = assembleScene(SCRIM_SPEC as any, "ko", (r) => `/vfs/${r}`);
+    expect(scene.objects.find((o: any) => o.role === "scrim" && o.slotId === "disclosure").fill).toBe("rgba(0,0,0,0.38)");
+    expect(scene.objects.find((o: any) => o.role === "scrim" && o.slotId === "headline").fill).toBe("rgba(255,255,255,0.42)");
+  });
 });
 
 describe("aspectToDims", () => {
