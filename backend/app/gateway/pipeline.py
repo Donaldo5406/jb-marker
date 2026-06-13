@@ -89,7 +89,11 @@ class PipelineOrchestrator:
     def next_step(self, step: str) -> str:
         """시퀀스에서 다음 단계. done은 고정점(원본 next_step :36-39)."""
         names = self.step_names
-        idx = names.index(step)
+        try:
+            idx = names.index(step)
+        except ValueError:
+            raise ValueError(
+                f"알 수 없는 step {step!r} — 등록 step: {names}") from None
         return names[idx + 1] if idx + 1 < len(names) else DONE
 
     def handle_turn(self, ctx: StepContext) -> HarnessResult:
@@ -173,7 +177,7 @@ class PipelineOrchestrator:
             return self._by_name[name]
         except KeyError:
             raise ValueError(
-                f"알 수 없는 step {name!r} — 등록 step: {self._names}") from None
+                f"알 수 없는 step {name!r} — 등록 step: {tuple(self._by_name)}") from None
 
     def _gate_result(self, ctx: StepContext, gate: str, events: list, *,
                      last: HarnessResult | None = None, critic: dict | None = None,

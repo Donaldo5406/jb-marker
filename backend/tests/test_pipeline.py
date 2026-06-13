@@ -375,3 +375,23 @@ def test_unknown_gate_step_on_regenerate_raises_explicit_error(tmp_path):
     state["gate"] = "ZZZ"
     with pytest.raises(ValueError, match="알 수 없는 step"):
         o.handle_turn(_ctx(s, state, _req(action="regenerate")))
+
+
+def test_unknown_gate_step_on_confirm_raises_explicit_error(tmp_path):
+    # (a) 승인 분기 대칭화(P2 통합리뷰 이월): next_step의 미등록 gate도
+    # tuple.index의 bare ValueError가 아닌 (b)·(c)와 동일 양식의 명시 에러
+    s = _store(tmp_path)
+    o = _orch([_Step("A")])
+    state = _state("A")
+    state["gate"] = "ZZZ"
+    # next_step 메시지는 done 포함(고정점·적법 입력)이라는 비대칭의 절반까지 핀
+    with pytest.raises(ValueError, match=r"알 수 없는 step 'ZZZ' — 등록 step: \('A', 'done'\)$"):
+        o.handle_turn(_ctx(s, state, _req(action="confirm")))
+
+
+def test_unknown_step_error_lists_registered_without_done(tmp_path):
+    # _step 메시지의 '등록 step' 목록은 실제 등록 step만 — 예약어 done 비포함(P2 통합리뷰 이월)
+    s = _store(tmp_path)
+    o = _orch([_Step("A"), _Step("B")])
+    with pytest.raises(ValueError, match=r"등록 step: \('A', 'B'\)$"):
+        o.handle_turn(_ctx(s, _state("ZZZ")))

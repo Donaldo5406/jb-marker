@@ -272,7 +272,7 @@ def test_summarize_calls_provider_with_prior_and_old():
     sp = StubProvider([{"text": "요약 결과"}])
     old = [{"role": "user", "content": "30대 적금"},
            {"role": "assistant", "content": "채널은?"}]
-    out = h._summarize(sp, "fake", "이전요약X", old)
+    out = h._summarize(sp, "이전요약X", old)
     assert out == "요약 결과"
     sent = sp.calls[0]["messages"][0].content
     assert "이전요약X" in sent       # prior 포함
@@ -292,7 +292,7 @@ def test_window_no_compaction_under_threshold():
     h = BrainstormingHarness()
     msgs = [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
     state = {"compaction": None, "last_input_tokens": 0}
-    out = h._window_for_provider(msgs, state, FakeProvider(), "fake")
+    out = h._window_for_provider(msgs, state, FakeProvider())
     assert len(out) == 2
     assert state["compaction"] is None
 
@@ -303,7 +303,7 @@ def test_window_token_trigger_summarizes_and_windows():
     msgs = _long_msgs(20)
     state = {"compaction": None, "last_input_tokens": 200_000}  # 임계 초과
     sp = StubProvider([{"text": "요약본"}])
-    out = h._window_for_provider(msgs, state, sp, "fake")
+    out = h._window_for_provider(msgs, state, sp)
     assert out[0].role == "user" and out[0].content.startswith("[이전 대화 요약]")
     assert len(out) == 1 + KEEP_RECENT
     assert state["compaction"]["count"] == 1
@@ -317,7 +317,7 @@ def test_window_turn_cap_fallback_when_usage_none():
     msgs = _long_msgs(COMPACT_TURN_CAP + 5)
     state = {"compaction": None, "last_input_tokens": 0}  # usage None 폴백
     sp = StubProvider([{"text": "요약"}])
-    h._window_for_provider(msgs, state, sp, "fake")
+    h._window_for_provider(msgs, state, sp)
     assert state["compaction"] is not None
 
 
@@ -326,7 +326,7 @@ def test_window_summary_failure_keeps_full_thread():
     h = BrainstormingHarness()
     msgs = _long_msgs(21)
     state = {"compaction": None, "last_input_tokens": 200_000}
-    out = h._window_for_provider(msgs, state, _RaisingProvider(), "fake")
+    out = h._window_for_provider(msgs, state, _RaisingProvider())
     assert state["compaction"] is None      # 미갱신
     assert len(out) == 21                    # 전체 보존, 턴 실패 아님
 
@@ -338,7 +338,7 @@ def test_window_incremental_second_compaction_includes_prior():
     state = {"compaction": {"summary": "S1", "covered_upto": 12, "count": 1},
              "last_input_tokens": 200_000}
     sp = StubProvider([{"text": "S2"}])
-    out = h._window_for_provider(msgs, state, sp, "fake")
+    out = h._window_for_provider(msgs, state, sp)
     assert state["compaction"]["count"] == 2
     assert state["compaction"]["covered_upto"] == 30 - KEEP_RECENT
     assert "S1" in sp.calls[0]["messages"][0].content   # prior 요약 입력 포함
@@ -350,7 +350,7 @@ def test_window_legacy_state_without_keys():
     from app.providers.fake import FakeProvider
     h = BrainstormingHarness()
     state = {"stage": "A"}  # compaction/last_input_tokens 키 없음(레거시)
-    out = h._window_for_provider([{"role": "user", "content": "a"}], state, FakeProvider(), "fake")
+    out = h._window_for_provider([{"role": "user", "content": "a"}], state, FakeProvider())
     assert len(out) == 1
 
 
@@ -401,7 +401,7 @@ def test_window_truncates_tail_field_in_provider_view_only():
                              {"role": "assistant", "content": "ok"}]
     state = {"compaction": None, "last_input_tokens": 200_000}  # 토큰 트리거
     sp = StubProvider([{"text": "요약본"}])
-    out = h._window_for_provider(msgs, state, sp, "fake")
+    out = h._window_for_provider(msgs, state, sp)
     # 거대 메시지(index 18)는 tail(covered_upto=12 이후)에 포함 → 뷰에서 절단
     assert any(m.content.endswith(_TRUNC_MARKER) for m in out)
     assert all(len(m.content) <= MAX_FIELD_CHARS for m in out)
@@ -416,7 +416,7 @@ def test_window_at_threshold_exact_no_trigger():
     h = BrainstormingHarness()
     msgs = _long_msgs(5)  # turn_cap(20) 미만 → 폴백도 안 걸림
     state = {"compaction": None, "last_input_tokens": COMPACT_INPUT_TOKENS}
-    out = h._window_for_provider(msgs, state, FakeProvider(), "fake")
+    out = h._window_for_provider(msgs, state, FakeProvider())
     assert state["compaction"] is None
     assert len(out) == 5
 
@@ -428,7 +428,7 @@ def test_window_token_trigger_but_thread_not_longer_than_keep_recent():
     h = BrainstormingHarness()
     msgs = _long_msgs(KEEP_RECENT)  # boundary = max(0, K-K) = 0 → old 빔
     state = {"compaction": None, "last_input_tokens": 200_000}
-    out = h._window_for_provider(msgs, state, FakeProvider(), "fake")
+    out = h._window_for_provider(msgs, state, FakeProvider())
     assert state["compaction"] is None
     assert len(out) == KEEP_RECENT
 
@@ -441,7 +441,7 @@ def test_window_compacted_no_retrigger_reuses_cached_summary():
     state = {"compaction": {"summary": "기존요약", "covered_upto": 2, "count": 1},
              "last_input_tokens": 50}  # < 임계, != 0 → 미트리거
     sp = StubProvider([])  # 호출되면 IndexError로 드러남
-    out = h._window_for_provider(msgs, state, sp, "fake")
+    out = h._window_for_provider(msgs, state, sp)
     assert state["compaction"]["count"] == 1            # 재요약 없음
     assert state["compaction"]["summary"] == "기존요약"   # 캐시 그대로
     assert len(sp.calls) == 0                            # provider 미호출
