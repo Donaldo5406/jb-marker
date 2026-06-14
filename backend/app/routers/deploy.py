@@ -12,7 +12,7 @@ from ..deploy.adapters.registry import get_adapter
 from ..deploy.advisor.chat import DeployAdvisor
 from ..deploy.advisor.scripted import ScriptedAdvisorProvider
 from ..deploy.eligibility import build_eligibility
-from ..deploy.ledger import load_ledger
+from ..deploy.ledger import load_ledger, normalize_recipients
 from ..deploy.packager import package_channel
 from ..deploy.providers import get_provider as get_deploy_provider
 from ..deploy.rules_engine import load_policies
@@ -53,8 +53,14 @@ class AdvisorChatBody(BaseModel):
     mock: bool = False   # 시연용 — true면 advisor를 scripted(LLM 없음)로 강제
 
 
+class DeployEligibilityBody(BaseModel):
+    # 업로드 발송 명단(없으면 내장 consent_ledger fixture 사용). CSV→JSON 행 배열.
+    recipients: list[dict] | None = None
+
+
 class DispatchBody(BaseModel):
     confirmed: bool = False
+    mock: bool = False   # 시연용 — true면 Pro+ 결제(entitlement) 게이트를 우회해 리포트까지 산출
 
 
 def _make_advisor_provider(ctx: dict, channel: str, settings, mock: bool = False):
@@ -104,9 +110,19 @@ def deploy_setup(run_id: str, body: DeploySetupBody, request: Request,
              summary="수신자 적격성(D1) 산출 — 정책 룰 엔진",
              responses=OWNER_RESPONSES)
 def deploy_eligibility(run_id: str, request: Request,
+                       body: DeployEligibilityBody | None = None,
                        user_id: str = Depends(get_user_id)) -> dict:
     require_owner(request, run_id, user_id)
-    ledger = load_ledger()
+    # 업로드 명단이 있으면 그것을, 없으면 내장 fixture(consent_ledger)를 ledger로 사용.
+    uploaded = normalize_recipients(body.recipients) if (body and body.recipients) else []
+    if uploaded:
+        ledger = uploaded
+        request.app.state.store.put_text(
+            f"/{run_id}/deploy/inputs/recipients_uploaded.json",
+            json.dumps(uploaded, ensure_ascii=False),
+        )
+    else:
+        ledger = load_ledger()
     policies = load_policies()
     result = build_eligibility(ledger, policies, send_hour=10)
     # rules_engine.evaluate_recipient: primary["all_blocks"] = blocks
@@ -216,10 +232,12 @@ def deploy_advisor_chat(run_id: str, body: AdvisorChatBody, request: Request,
                         402: {"model": ErrorOut}})
 def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
                     user_id: str = Depends(get_user_id)) -> dict:
-    require_owner(request, run_id, user_id)
+    m = require_owner(request, run_id, user_id)
     if not body.confirmed:
         raise HTTPException(400, "user confirm required")
-    if not entitlement.is_entitled(user_id):
+    # mock(시연)은 Pro+ 결제 게이트를 우회 — 데모에서 결제 단계 없이도 리포트까지 산출.
+    # 실사용(mock=false)은 기존대로 entitlement 필수(402).
+    if not body.mock and not entitlement.is_entitled(user_id):
         raise HTTPException(402, "Payment required (entitlement)")
 
     selected = json.loads(
@@ -275,10 +293,59 @@ def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
         json.dumps(simulation, ensure_ascii=False),
     )
 
-    report = (
-        f"# Deploy Report\n\n## Eligibility\n- Eligible: {len(recipients)}\n\n"
-        f"## Channels\n{json.dumps(simulation, ensure_ascii=False, indent=2)}\n"
+    # 리치 리포트 — 적법성 요약(정책별 제외)·채널별 결과·컴플라이언스 근거.
+    excluded = json.loads(
+        request.app.state.store.get_text(f"/{run_id}/deploy/eligibility/excluded.json") or "[]"
     )
+    total = len(recipients) + len(excluded)
+    _policy_label = {
+        "infomatics": "정보통신망법 §50 (미동의·야간·수신거부)",
+        "pipa": "개인정보보호법 §15·§16 (수집목적·보유기간)",
+    }
+    by_policy: dict[str, int] = {}
+    for ex in excluded:
+        pol = _policy_label.get(ex.get("policy"), ex.get("policy") or "기타")
+        by_policy[pol] = by_policy.get(pol, 0) + 1
+    sent_cells = [s for s in simulation if s.get("status") != "skipped"]
+    skipped_cells = [s for s in simulation if s.get("status") == "skipped"]
+    sent_recipients = sum(s.get("recipients_count", 0) for s in sent_cells)
+    title = getattr(m, "title", None) or run_id
+
+    rows = "\n".join(
+        f"| {s['channel']} | {s['lang']} | "
+        f"{'건너뜀' if s.get('status') == 'skipped' else '발송(시뮬)'} | "
+        f"{s.get('recipients_count', 0)} | {s.get('reason') or s.get('message') or '-'} |"
+        for s in simulation
+    ) or "| - | - | - | 0 | 발송 대상 없음 |"
+    pol_lines = "\n".join(f"- {pol}: {n}건" for pol, n in by_policy.items()) or "- 제외 없음"
+
+    report = f"""# 발송 리포트 (Deploy Report)
+
+- **캠페인**: {title}
+- **발송 채널**: {", ".join(selected) or "-"}
+- **발송 방식**: 시뮬레이션(STUB) — 실 연동 시 실제 발송
+
+## 1. 발송 적법성 요약
+- 전체 수신자: **{total}명**
+- 발송 대상(적격): **{len(recipients)}명**
+- 제외: **{len(excluded)}명**
+
+### 제외 사유 (정책별)
+{pol_lines}
+
+## 2. 채널별 발송 결과
+| 채널 | 언어 | 상태 | 발송 수 | 비고 |
+|------|------|------|--------:|------|
+{rows}
+
+- 발송(시뮬) 채널 {len(sent_cells)}개 · 건너뜀 {len(skipped_cells)}개
+- 누적 발송 수(시뮬): **{sent_recipients}명**
+
+## 3. 컴플라이언스 근거
+- **정보통신망법 §50**: 야간(21~08시) 발송 차단, 수신거부(opt-out)·미동의 수신자 제외.
+- **개인정보보호법 §15·§16**: 수집목적 합치·보유기간 이내 수신자만 발송.
+- 본 발송은 사용자 확정 게이트를 통과한 **시뮬레이션**입니다 — 규칙엔진은 자동 발송하지 않습니다.
+"""
     request.app.state.store.put_text(f"/{run_id}/deploy/report.md", report)
     request.app.state.store.set_step_status(run_id, "deploy", "PASS")
     return {"step_status": "PASS", "simulation": simulation}

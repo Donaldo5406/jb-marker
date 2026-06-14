@@ -1,14 +1,18 @@
 "use client";
 
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
+
 /** DemoPaymentModal (M6 T21) — Pro 구독 안내 + 데모 결제(즉시 dev_pass 통과) 버튼.
- *  open=false면 null 반환. demo-pay 클릭 시 onPayDemo 후 onClose. */
+ *  open=false면 null 반환. demo-pay 클릭 시 onPayDemo(완료 대기) 후 onClose. */
 type Props = {
   open: boolean;
   onClose: () => void;
-  onPayDemo: () => void;
+  onPayDemo: () => void | Promise<unknown>;
 };
 
 export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
+  const [paying, setPaying] = useState(false);
   if (!open) return null;
   return (
     <div
@@ -32,19 +36,27 @@ export function DemoPaymentModal({ open, onClose, onPayDemo }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => {
-            onPayDemo();
-            onClose();
+          disabled={paying}
+          onClick={async () => {
+            setPaying(true);
+            try {
+              await onPayDemo();
+              onClose();
+            } finally {
+              setPaying(false);
+            }
           }}
-          className="w-full py-2 bg-primary text-on-primary rounded text-sm"
+          className="inline-flex w-full items-center justify-center gap-2 py-2 bg-primary text-on-primary rounded text-sm disabled:bg-surface-container disabled:text-on-surface-variant"
           data-testid="demo-pay-btn"
         >
-          데모 결제 (즉시 통과)
+          {paying && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+          {paying ? "결제 처리 중…" : "데모 결제 (즉시 통과)"}
         </button>
         <button
           type="button"
+          disabled={paying}
           onClick={onClose}
-          className="w-full py-1 text-xs text-on-surface-variant"
+          className="w-full py-1 text-xs text-on-surface-variant disabled:opacity-50"
         >
           취소
         </button>
