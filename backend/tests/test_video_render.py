@@ -104,7 +104,8 @@ def test_build_filter_complex_concat_and_drawtext_chain():
     fc = build_filter_complex(_segs(), ["drawtext=text='a'[x]REPLACED"], w=1080, h=1920, fps=30)
     # 세그먼트별 라벨 + concat + vout 산출
     assert "[0:v]scale=1080:1920" in fc and "crop=1080:1920" in fc
-    assert "trim=duration=6.0" in fc               # video 세그먼트만 trim
+    assert "trim=duration=6.0" in fc               # 모든 세그먼트 trim+fps 정규화
+    assert "fps=30" in fc                          # concat 전 fps 통일(image2 25fps 혼입 방지)
     assert "concat=n=2:v=1:a=0[base]" in fc
     assert fc.strip().endswith("[vout]")
 
@@ -215,3 +216,37 @@ def test_render_route_returns_200_and_render_path(local_client, monkeypatch):
         "is_marker": True, "mock": True, "action": "render"})
     assert r.status_code == 200
     assert r.json()["output_path"] == f"/{run_id}/review/_render/final.mp4"
+
+
+def test_build_segments_sniffs_image_bytes_despite_video_mime(tmp_path):
+    from app.gateway.video.render import _build_segments
+    import tempfile
+    s = LocalVfsStore(storage_dir=str(tmp_path))
+    s.create_run("rv", languages=["ko"])
+    # demo/폴백 시나리오: PNG 바이트가 video/mp4로 오표기되어 저장됨(steps.V2aFootage)
+    s.put("/rv/video/design-system/components/footage/clip_s1.mp4",
+          b"\x89PNG\r\n\x1a\nxxxx", source="veo", mime="video/mp4")
+    story = {"bg_color": "#000", "shots": [{"id": "s1", "start": 0, "end": 4, "layers": []}]}
+    with tempfile.TemporaryDirectory() as td:
+        segs = _build_segments(s, "rv", story, td, w=1080, h=1920)
+    assert len(segs) == 1 and segs[0].kind == "image"   # mime이 video여도 PNG 매직 → image
+
+
+def test_build_drawtext_filters_disables_expansion(tmp_path):
+    from app.gateway.video.render import build_drawtext_filters
+    story = {"shots": [{"layers": [{"role": "headline", "copy_key": "headline",
+                                    "in": 0, "out": 3, "font_px": 80, "color": "#FFF",
+                                    "bbox": {"x": 10, "y": 20}}]}],
+             "copy": {"ko": {"headline": "연 3.5% 금리, 지금"}}}
+    fs = build_drawtext_filters(story, "ko", font_path=None)
+    assert "expansion=none" in fs[0]                 # '%' 리터럴화(치환·주입 방지)
+    assert "3.5%" in fs[0]
+
+
+def test_compliance_gate_raises_on_empty_disclosure_copy(tmp_path):
+    from app.gateway.video.render import assert_render_compliance, ComplianceError
+    story = json.loads(json.dumps(STORY_OK))
+    story["copy"]["ko"]["disclosure"] = ""          # 타이밍은 OK(8~12=4s)지만 문구 빈칸
+    with pytest.raises(ComplianceError) as ei:
+        assert_render_compliance(story, "ko")
+    assert "고지 문구" in str(ei.value)
