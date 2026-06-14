@@ -10,6 +10,7 @@ import { DesignSettings } from "./DesignSettings";
 import { ConfirmToastView } from "./ConfirmToast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { AlertTriangle, X } from "lucide-react";
 
 const LANGS = ["ko", "en", "vi", "zh"];
 
@@ -41,22 +42,35 @@ function ReviewGuideCard() {
     return () => { cancelled = true; };
   }, [blocked, c.runId, gate?.critical, gate?.warning]);
 
-  if (!blocked || !gate) return null;
+  // 닫기(툴팁 dismiss) — 새 리뷰 결과(critical/warning 변화) 시 다시 노출.
+  const [dismissed, setDismissed] = React.useState(false);
+  React.useEffect(() => { setDismissed(false); }, [gate?.critical, gate?.warning]);
+
+  if (!blocked || !gate || dismissed) return null;
   return (
-    <div className="border-b border-outline-variant border-l-4 border-l-severity-warning bg-surface-container-low px-4 py-2.5">
-      <p className="text-body-sm font-medium text-on-surface">
-        리뷰에서 critical {gate.critical}건{gate.warning ? ` · warning ${gate.warning}건` : ""}이 발견됐습니다. 카피를 교정해야 검토를 통과합니다.
-      </p>
-      {findings.length > 0 && (
-        <ul className="mt-1.5 space-y-0.5">
-          {findings.slice(0, 5).map((f, i) => (
-            <li key={i} className="text-caption text-on-surface-variant">· {f}</li>
-          ))}
-        </ul>
-      )}
-      <p className="mt-1.5 text-caption text-on-surface-variant">
-        우측 챗에 <span className="font-medium text-on-surface">“리뷰 결과대로 카피 수정해줘”</span>라고 입력하면 카피가 자동 교정되고 캔버스가 갱신됩니다.
-      </p>
+    <div className="border-b border-severity-warning bg-severity-warning-bg px-4 py-2.5">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-severity-warning-fg" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-body-sm font-medium text-severity-warning-fg">
+            리뷰에서 critical {gate.critical}건{gate.warning ? ` · warning ${gate.warning}건` : ""} — 카피를 교정해야 검토를 통과합니다.
+          </p>
+          {findings.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {findings.slice(0, 5).map((f, i) => (
+                <li key={i} className="text-caption text-severity-warning-fg">· {f}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-1.5 text-caption text-severity-warning-fg">
+            우측 챗에 <span className="font-semibold">“리뷰 결과대로 카피 수정해줘”</span>라고 입력하면 카피가 자동 교정되고 캔버스가 갱신됩니다.
+          </p>
+        </div>
+        <button type="button" onClick={() => setDismissed(true)} aria-label="가이드 닫기"
+          className="shrink-0 rounded-full p-0.5 text-severity-warning-fg transition-opacity hover:opacity-70">
+          <X className="h-4 w-4" aria-hidden />
+        </button>
+      </div>
     </div>
   );
 }
@@ -69,6 +83,11 @@ export function DesignStudio() {
   const [showSettings, setShowSettings] = React.useState(false);
   const act = async (action: string) => { setBusy(true); try { await c.runDesign(action); } finally { setBusy(false); } };
   const sceneOpen = !!c.openFile && c.openFile.path.endsWith(".scene");
+  // brainstorming 확정 후 design 첫 진입(아직 S0=미시작)이면 중앙 모달로 셋업 시작을 권유 —
+  // plan.md를 읽어 파이프라인(S0~Final)을 시작한다(첫 advance). '나중에'면 그 세션 동안 숨김.
+  const [setupDismissed, setSetupDismissed] = React.useState(false);
+  const setupOpen = c.manifest?.step_status?.brainstorming === "done"
+    && c.designStep === "S0" && !busy && !setupDismissed;
   const layoutStorage = React.useMemo(
     () => (typeof window !== "undefined" ? window.localStorage : { getItem: () => null, setItem: () => {} }), []);
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "cockpit-cols-design", storage: layoutStorage });
@@ -124,6 +143,28 @@ export function DesignStudio() {
         message="수동 편집한 씬이 있습니다. 재생성하면 편집 내용이 새 씬으로 대체됩니다. 계속할까요?"
         confirmLabel="재생성" cancelLabel="취소"
         onConfirm={c.regenConfirm.onConfirm} onCancel={c.regenConfirm.onCancel} />
+      {setupOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="alertdialog" aria-labelledby="design-setup-title" data-testid="design-setup-modal">
+          <div className="w-full max-w-md rounded-2xl border border-outline-variant bg-surface p-6 shadow-ambient animate-fade-in-up">
+            <h3 id="design-setup-title" className="text-h3 text-on-surface">디자인 셋업을 시작할까요?</h3>
+            <p className="mt-2 text-body-sm text-on-surface-variant">
+              확정된 <span className="font-medium text-on-surface">plan.md</span>를 읽어 레이아웃·카피·비주얼(S0~Final)을 생성합니다. 각 단계에서 확인을 거칩니다.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setSetupDismissed(true)}
+                className="rounded-full border border-outline-variant px-4 py-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high">
+                나중에
+              </button>
+              <button type="button" data-testid="design-setup-start"
+                onClick={() => { setSetupDismissed(true); void act("advance"); }}
+                className="rounded-full bg-primary px-4 py-2 text-body-sm font-medium text-on-primary transition-colors hover:bg-primary-container">
+                plan 읽기 시작
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

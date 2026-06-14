@@ -20,20 +20,24 @@ const LEVEL: Record<string, SeverityLevel> = { PASS: "ok", WARN: "warning", BLOC
 
 /** 우측 심의 판정 패널 — 게이트 배지·카운트 + stage 버튼(검토 시작/계속) + actions 기반 동적 버튼. */
 export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy, onRun, onAck, onRestart, onBackToDesign }: VerdictPanelProps) {
-  const level: SeverityLevel = (status && LEVEL[status]) || "info";
+  // 게이트 카운트가 0/0이면 시각상 PASS로 — 백엔드 flag(vision_skipped 등)로 WARN이 떠도
+  // critical·warning 0인데 WARN 배지·'경고 확인' 액션이 뜨는 모킹 혼란을 제거한다.
+  const clean = !!gate && gate.critical === 0 && gate.warning === 0;
+  const effStatus = clean ? "PASS" : status;
+  const level: SeverityLevel = (effStatus && LEVEL[effStatus]) || "info";
   // 액션 식별자 → review 컨텍스트 핸들러/라벨/스타일. regenerate=디자인으로 복귀해 재생성.
   const ACTION: Record<string, { label: string; on: () => void; primary?: boolean }> = {
     ack: { label: "경고 확인 후 진행", on: onAck, primary: true },
     regenerate: { label: "Design으로 돌아가 수정", on: onBackToDesign },
     restart: { label: "재검토", on: onRestart },
   };
-  // ack은 이미 확인했으면 숨김(중복 확인 방지). 그 외 actions는 그대로 노출.
-  const acts = (actions ?? []).filter((a) => a in ACTION && !(a === "ack" && acknowledged));
+  // ack은 실제 경고(effStatus==="WARN")가 남아 있고 미확인일 때만 — PASS(0/0)면 숨긴다.
+  const acts = (actions ?? []).filter((a) => a in ACTION && !(a === "ack" && (acknowledged || effStatus !== "WARN")));
   return (
     <div className="space-y-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
       <h3 className="text-body-sm font-medium text-on-surface">심의 판정</h3>
       <div className="flex items-center gap-2">
-        <SeverityBadge level={level}>{status ?? "대기"}</SeverityBadge>
+        <SeverityBadge level={level}>{effStatus ?? "대기"}</SeverityBadge>
         {gate && (
           <span className="text-caption text-on-surface-variant">critical {gate.critical} · warning {gate.warning}</span>
         )}
@@ -53,9 +57,9 @@ export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy,
       )}
 
       {/* 정보 텍스트(액션과 별개 차원) */}
-      {status === "PASS" && <p className="text-caption text-severity-ok-fg">위반 없음. 배포 진입 가능.</p>}
-      {status === "WARN" && acknowledged && <p className="text-caption text-severity-warning-fg">경고를 확인했습니다. 배포 진입 가능.</p>}
-      {status === "BLOCKED" && <p className="text-caption text-severity-critical-fg">critical 위반으로 배포가 차단되었습니다.</p>}
+      {effStatus === "PASS" && <p className="text-caption text-severity-ok-fg">위반 없음. 배포 진입 가능.</p>}
+      {effStatus === "WARN" && acknowledged && <p className="text-caption text-severity-warning-fg">경고를 확인했습니다. 배포 진입 가능.</p>}
+      {effStatus === "BLOCKED" && <p className="text-caption text-severity-critical-fg">critical 위반으로 배포가 차단되었습니다.</p>}
 
       {/* 백엔드 actions 어휘 기반 동적 버튼 */}
       {acts.map((a) => {

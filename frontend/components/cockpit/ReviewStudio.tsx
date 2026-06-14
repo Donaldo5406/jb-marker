@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import { useCockpit } from "./CockpitProvider";
 import { StepProgress, type Step } from "./StepProgress";
 import { ViolationCard } from "./review/ViolationCard";
@@ -59,9 +59,22 @@ export function ReviewStudio() {
       setBusy(false);
     }
   };
+  // 재검토: signal 초기화(R0) 후 곧바로 전체 재검토를 구동 — 한 클릭에 완주 + 로딩 표시
+  // (이전: restart만 호출해 R0로만 되돌아가 '반응 없음'처럼 보임).
+  const restart = async () => {
+    setBusy(true);
+    try { await c.restartReview(); await c.runReview(); } finally { setBusy(false); }
+  };
+  // 경고 확인 후 Deploy 진입 — ack 처리 동안 로딩, 완료 시 deploy로 전환.
+  const ack = async () => {
+    setBusy(true);
+    try { await c.ackReview(); c.setStudio("deploy"); } finally { setBusy(false); }
+  };
   const legal = verdicts.filter((v) => v.node === "legal");
   const i18n = verdicts.filter((v) => v.node === "i18n");
   const empty = verdicts.length === 0 && !report;
+  // 위반·경고 0으로 종료 = 깔끔한 통과. 보고서 빈 섹션 대신 '없음' 카드를 보여준다.
+  const clean = stage === "done" && !!c.reviewGate && c.reviewGate.critical === 0 && c.reviewGate.warning === 0;
 
   return (
     <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
@@ -92,7 +105,13 @@ export function ReviewStudio() {
               <p className="text-body-sm font-medium text-on-surface">아직 검토 결과가 없습니다</p>
               <p className="max-w-xs text-caption text-on-surface-variant">우측 패널에서 검토를 시작하면 법률·동등성 근거가 여기에 표시됩니다.</p>
             </div>
-          ) : empty && busy ? null : (
+          ) : empty && busy ? null : clean && !busy ? (
+            <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-severity-ok bg-severity-ok-bg py-16 text-center" data-testid="review-clean">
+              <CheckCircle2 className="h-6 w-6 text-severity-ok-fg" aria-hidden />
+              <p className="text-body-sm font-medium text-severity-ok-fg">검토 완료 — 위반·권장 사항이 없습니다</p>
+              <p className="max-w-xs text-caption text-severity-ok-fg">모든 법률·동등성 항목을 통과했습니다. Deploy로 진행할 수 있습니다.</p>
+            </div>
+          ) : (
             <>
               {legal.length > 0 && (
                 <section className="space-y-2" aria-label="법률 검토">
@@ -121,8 +140,8 @@ export function ReviewStudio() {
             stage={stage}
             busy={busy}
             onRun={run}
-            onAck={() => void c.ackReview()}
-            onRestart={() => void c.restartReview()}
+            onAck={ack}
+            onRestart={restart}
             onBackToDesign={() => c.setStudio("design")}
           />
         </div>
