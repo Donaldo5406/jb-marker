@@ -56,3 +56,38 @@ def test_load_storyboard_reads_vfs(tmp_path):
     _seed(s, "rv", STORY_OK)
     sb = load_storyboard(s, "rv")
     assert sb["shots"][0]["id"] == "s1" and sb["copy"]["ko"]["headline"] == "높은 금리 적금"
+
+
+def test_escape_drawtext_escapes_special_chars():
+    from app.gateway.video.render import escape_drawtext
+    out = escape_drawtext("a:b'c\\d")
+    assert out == "a\\:b\\'c\\\\d"
+
+
+def test_ff_color_hex_to_0x():
+    from app.gateway.video.render import _ff_color
+    assert _ff_color("#FFFFFF") == "0xFFFFFF"
+    assert _ff_color("white") == "white"
+
+
+def test_build_drawtext_filters_one_per_nonempty_layer():
+    from app.gateway.video.render import build_drawtext_filters
+    fs = build_drawtext_filters(STORY_OK, "ko", font_path="/f/Noto.ttc")
+    assert len(fs) == 2                         # headline + disclosure
+    head = fs[0]
+    assert "drawtext=" in head and "fontfile='/f/Noto.ttc'" in head
+    assert "text='높은 금리 적금'" in head
+    assert ":fontsize=96" in head and ":fontcolor=0xFFFFFF" in head
+    assert ":x=80:y=300" in head
+    assert "enable='between(t,0.5,5.0)'" in head
+    # disclosure 타이밍 8~12
+    assert "enable='between(t,8.0,12.0)'" in fs[1]
+
+
+def test_build_drawtext_filters_skips_missing_copy_and_omits_fontfile_when_none():
+    from app.gateway.video.render import build_drawtext_filters
+    story = json.loads(json.dumps(STORY_OK))
+    story["copy"]["ko"].pop("disclosure")       # 문구 없음 → 스킵
+    fs = build_drawtext_filters(story, "ko", font_path=None)
+    assert len(fs) == 1
+    assert "fontfile=" not in fs[0]             # 폰트 없으면 fontfile 생략(기본 폰트)
