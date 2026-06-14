@@ -22,13 +22,13 @@ describe("EquivalenceCard", () => {
 describe("VerdictPanel", () => {
   it("WARN+미ack면 경고확인 버튼, 클릭 시 onAck", () => {
     const onAck = vi.fn();
-    render(<VerdictPanel status="WARN" gate={{ critical: 0, warning: 2 }} actions={["ack", "regenerate", "restart"]} acknowledged={false} stage="done" onRun={() => {}} onAck={onAck} onRestart={() => {}} onBackToDesign={() => {}} />);
+    render(<VerdictPanel status="WARN" gate={{ critical: 0, warning: 2 }} actions={["ack", "regenerate", "restart"]} acknowledged={false} stage="done" onRun={() => {}} onAck={onAck} onRestart={() => {}} onBackToDesign={() => {}} onProceedDeploy={() => {}} />);
     fireEvent.click(screen.getByText(/경고 확인/));
     expect(onAck).toHaveBeenCalled();
   });
   it("BLOCKED면 Design 복귀 CTA, 클릭 시 onBackToDesign", () => {
     const back = vi.fn();
-    render(<VerdictPanel status="BLOCKED" gate={{ critical: 1, warning: 0 }} actions={["regenerate", "restart"]} acknowledged={false} stage="done" onRun={() => {}} onAck={() => {}} onRestart={() => {}} onBackToDesign={back} />);
+    render(<VerdictPanel status="BLOCKED" gate={{ critical: 1, warning: 0 }} actions={["regenerate", "restart"]} acknowledged={false} stage="done" onRun={() => {}} onAck={() => {}} onRestart={() => {}} onBackToDesign={back} onProceedDeploy={() => {}} />);
     fireEvent.click(screen.getByText(/Design으로/));
     expect(back).toHaveBeenCalled();
   });

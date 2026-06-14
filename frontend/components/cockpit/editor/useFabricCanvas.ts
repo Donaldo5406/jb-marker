@@ -75,7 +75,11 @@ export function useFabricCanvas(
           if (cancelled) return;
           (img as any).role = o.role; (img as any).slotId = o.slotId; (img as any).assetPath = srcPath;
           canvas.add(img);
-          canvas.sendObjectToBack?.(img);
+          // background(풀 포스터)만 맨 뒤로. 로고 등 다른 이미지는 맨 앞으로 올려 배경에 가리지
+          // 않게 한다(이미지를 일괄 sendToBack 하면 나중에 추가된 로고가 배경보다 더 뒤로 가
+          // 완전히 가려졌다 — '로고 z 최하라 안 보임' 회귀).
+          if (String((o as any).role) === "background") canvas.sendObjectToBack?.(img);
+          else canvas.bringObjectToFront?.(img);
           canvas.renderAll();
         } catch { /* 누락/오류 스킵 — 텍스트는 이미 렌더됨 */ }
       }
