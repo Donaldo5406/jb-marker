@@ -15,14 +15,23 @@ export function ChatPane() {
   const [model, setModel] = React.useState<ModelChoice>(MODELS[1]); // 기본 Claude(무료)
   const [loading, setLoading] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  // 로컬 전송(loading) + AskUserToast 선택 등 Provider 경로(c.chatPending)를 합친 응답 대기 상태.
+  // '생성 중…' 인디케이터·입력 잠금·스크롤 트리거가 두 경로 모두에서 동일하게 동작.
+  const busy = loading || c.chatPending;
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [c.messages, loading]);
+  }, [c.messages, busy]);
+
+  // AskUserToast '채팅으로 답하기' 등 외부 포커스 요청 — nonce 증가 시 입력에 포커스(초기 0은 무시).
+  React.useEffect(() => {
+    if (c.chatFocusNonce > 0) inputRef.current?.focus();
+  }, [c.chatFocusNonce]);
 
   const send = async () => {
     const prompt = input.trim();
-    if (!prompt || loading) return;
+    if (!prompt || busy) return;
     setInput("");
     setLoading(true);
     try {
@@ -71,7 +80,7 @@ export function ChatPane() {
 
       {/* 메시지 목록 */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {c.messages.length === 0 && !loading ? (
+        {c.messages.length === 0 && !busy ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-container-high">
               <Sparkles className="h-5 w-5 text-primary" aria-hidden />
@@ -100,7 +109,7 @@ export function ChatPane() {
             </div>
           ))
         )}
-        {loading && (
+        {busy && (
           <div className="flex justify-start animate-fade-in-up">
             <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm border border-outline-variant bg-surface-container-lowest px-3.5 py-2 text-body-sm text-on-surface-variant">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -114,6 +123,7 @@ export function ChatPane() {
       <div className="border-t border-outline-variant bg-surface-container-low p-3">
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest focus-within:ring-1 focus-within:ring-primary">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
@@ -136,7 +146,7 @@ export function ChatPane() {
               <button
                 type="button"
                 onClick={() => void send()}
-                disabled={!input.trim() || loading}
+                disabled={!input.trim() || busy}
                 aria-label="전송"
                 className={cn(
                   "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
@@ -144,7 +154,7 @@ export function ChatPane() {
                   "disabled:opacity-40 disabled:pointer-events-none",
                 )}
               >
-                {loading ? (
+                {busy ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 ) : (
                   <SendHorizontal className="h-4 w-4" aria-hidden />

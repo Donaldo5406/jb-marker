@@ -22,6 +22,20 @@ describe("AskUserToastView", () => {
     const { container } = render(<AskUserToastView ask={null} onSelect={() => {}} onClose={() => {}} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it("onFreeInput을 주면 '채팅으로 답하기' 탈출구 칩을 렌더하고 클릭 시 호출", () => {
+    const onFreeInput = vi.fn();
+    render(<AskUserToastView ask={{ trigger: "a", question: "핵심 타겟?", options: ["2030", "3040"] }}
+            onSelect={() => {}} onClose={() => {}} onFreeInput={onFreeInput} />);
+    fireEvent.click(screen.getByText("채팅으로 답하기"));
+    expect(onFreeInput).toHaveBeenCalledTimes(1);
+  });
+
+  it("onFreeInput이 없으면 탈출구 칩을 렌더하지 않음(기존 동작 보존)", () => {
+    render(<AskUserToastView ask={{ trigger: "a", question: "핵심 타겟?", options: ["2030", "3040"] }}
+            onSelect={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText("채팅으로 답하기")).toBeNull();
+  });
 });
 
 describe("AskUserToast (컨테이너 — pendingGate 봉투 매핑, T1-P2 §4.4)", () => {
@@ -58,5 +72,18 @@ describe("AskUserToast (컨테이너 — pendingGate 봉투 매핑, T1-P2 §4.4)
     render(<AskUserToast />);
     expect(screen.getByText("주력 채널?")).toBeInTheDocument();
     expect(screen.getByText("카톡")).toBeInTheDocument();
+  });
+
+  it("'채팅으로 답하기' 칩 클릭 시 토스트를 닫고 채팅 입력 포커스를 요청", () => {
+    const closeAsk = vi.fn();
+    const requestChatFocus = vi.fn();
+    ctx = {
+      pendingGate: { kind: "ask", actions: ["answer"], trigger: "a", question: "핵심 타겟?", options: ["2030", "3040"] },
+      answerAsk: vi.fn(), closeAsk, requestChatFocus,
+    };
+    render(<AskUserToast />);
+    fireEvent.click(screen.getByText("채팅으로 답하기"));
+    expect(closeAsk).toHaveBeenCalledTimes(1);
+    expect(requestChatFocus).toHaveBeenCalledTimes(1);
   });
 });
