@@ -74,9 +74,14 @@ class GoogleProvider(Provider):
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=self._api_key)
-        full = (f"{prompt}\n\n"
-                "CRITICAL: 영상에 어떤 글자/숫자/로고/워터마크도 렌더하지 마세요. "
-                "텍스트는 별도 레이어로 처리됩니다. 배경/키비주얼 모션만 생성.")
+        full = (
+            "프리미엄 금융 브랜드 광고용 시네마틱 영상입니다. 추상 배경이 아니라 "
+            "실제 광고 같은 장면(인물·표정·제품 사용·공간·자연스러운 동작)을 "
+            "영화적 조명·카메라 무빙·얕은 심도·고급 무드로 연출하세요.\n\n"
+            f"{prompt}\n\n"
+            "CRITICAL: 영상에 어떤 글자/숫자/로고/워터마크도 렌더하지 마세요. "
+            "텍스트·로고는 후속 레이어로 합성됩니다. 장면 자체를 광고 품질로 생성하세요."
+        )
         # Veo는 generate_videos(long-running operation). 미지원 aspect는 config 생략.
         cfg = (types.GenerateVideosConfig(aspect_ratio=aspect)
                if aspect in _SUPPORTED_VIDEO_ASPECTS else None)

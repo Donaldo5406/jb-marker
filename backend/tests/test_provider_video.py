@@ -78,3 +78,19 @@ def test_google_generate_video_omits_config_for_unsupported_aspect(monkeypatch):
     monkeypatch.setattr(genai, "Client", _fake_genai_video(captured).Client)
     GoogleProvider("k").generate_video("배경", aspect="7:13")
     assert captured["config"] is None
+
+
+def test_google_generate_video_prompt_has_cinematic_ad_direction(monkeypatch):
+    """Veo 래퍼가 시네마틱 광고 지시를 포함하되 no-text 가드를 유지한다."""
+    genai = pytest.importorskip("google.genai")
+    from google.genai import types
+    from app.providers.google_client import GoogleProvider
+    captured: dict = {}
+    monkeypatch.setattr(genai, "Client", _fake_genai_video(captured).Client)
+    monkeypatch.setattr(types, "GenerateVideosConfig",
+                        lambda **kw: {"video_cfg": kw}, raising=False)
+    GoogleProvider("k").generate_video("적금 캠페인 키비주얼", aspect="9:16")
+    p = captured["prompt"]
+    assert "시네마틱" in p and "광고" in p   # 실광고 연출 지시
+    assert "글자" in p                       # no-text 가드 유지(컴플라이언스)
+    assert "적금 캠페인 키비주얼" in p        # 호출측 프롬프트 보존
