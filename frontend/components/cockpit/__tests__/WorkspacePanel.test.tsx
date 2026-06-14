@@ -9,6 +9,7 @@ vi.mock("@/components/cockpit/ChatPane", () => ({ ChatPane: () => <div>chat</div
 vi.mock("@/components/cockpit/DesignStudio", () => ({ DesignStudio: () => <div>design</div> }));
 vi.mock("@/components/cockpit/ReviewStudio", () => ({ ReviewStudio: () => <div>review</div> }));
 vi.mock("@/components/cockpit/DeployStudio", () => ({ DeployStudio: () => <div>deploy</div> }));
+vi.mock("@/components/cockpit/VideoStudio", () => ({ VideoStudio: () => <div>video-studio</div> }));
 vi.mock("@/components/cockpit/StudioPlaceholder", () => ({ StudioPlaceholder: () => <div>placeholder</div> }));
 
 function mockCockpit(over: Partial<ctx.CockpitContextValue> = {}) {
@@ -34,5 +35,10 @@ describe("WorkspacePanel 리사이즈", () => {
     render(<WorkspacePanel />);
     expect(screen.queryAllByRole("separator")).toHaveLength(0);
     expect(screen.getByText("design")).toBeTruthy();
+  });
+  it("video 스튜디오 → VideoStudio 렌더(그리드 미사용)", () => {
+    mockCockpit({ activeStudio: "video" });
+    render(<WorkspacePanel />);
+    expect(screen.getByText("video-studio")).toBeTruthy();
   });
 });

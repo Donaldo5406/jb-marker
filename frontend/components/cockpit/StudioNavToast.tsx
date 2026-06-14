@@ -12,6 +12,8 @@ export function StudioNavToast() {
   const signals: NavSignals = {
     brainDone: c.manifest?.step_status?.brainstorming === "done",
     designDone: c.designStep === "done",
+    videoDone: c.videoStep === "done",
+    medium: c.videoMedium,
     reviewStatus: c.manifest?.step_status?.review,
     reviewAcknowledged: c.reviewAcknowledged,
   };

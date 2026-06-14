@@ -29,6 +29,7 @@ function CockpitInner() {
               stepStatus={c.manifest?.step_status ?? {}}
               active={c.activeStudio}
               onSelect={c.setStudio}
+              medium={c.videoMedium}
             />
             <WorkspacePanel />
           </>
