@@ -8,10 +8,13 @@ import { RunList } from "@/components/cockpit/RunList";
 import { EntitlementPanel } from "@/components/cockpit/EntitlementPanel";
 import { AccountPanel } from "@/components/cockpit/AccountPanel";
 import { MockModePanel } from "@/components/cockpit/MockModePanel";
+import { SessionListPanel } from "@/components/cockpit/SessionListPanel";
 import { UpsellModal } from "@/components/cockpit/UpsellModal";
 import { FileViewerDrawer } from "@/components/cockpit/FileViewerDrawer";
 import { StudioNavToast } from "@/components/cockpit/StudioNavToast";
 import { AskUserToast } from "@/components/cockpit/AskUserToast";
+import { SessionRestoreToast } from "@/components/cockpit/SessionRestoreToast";
+import { SessionExpiryBanner } from "@/components/cockpit/SessionExpiryBanner";
 
 function CockpitInner() {
   const c = useCockpit();
@@ -37,6 +40,7 @@ function CockpitInner() {
               <AccountPanel />
               <MockModePanel />
               <EntitlementPanel />
+              <SessionListPanel />
             </div>
           </div>
         )}
@@ -45,6 +49,8 @@ function CockpitInner() {
       <FileViewerDrawer />
       <StudioNavToast />
       <AskUserToast />
+      <SessionRestoreToast />
+      <SessionExpiryBanner />
     </div>
   );
 }

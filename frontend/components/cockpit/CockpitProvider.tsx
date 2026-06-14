@@ -5,7 +5,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { api, authedFetch, type DesignGate, type GateEnvelope, type Manifest, type Provider, type ReviewGate, type VfsNode } from "@/lib/api";
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
+import { useSessionHeartbeat } from "@/lib/useSessionHeartbeat";
 import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
+import type { SessionHeartbeat, SessionListItem, SessionLivenessName, SessionResumeResult, SessionStatus } from "@/lib/api";
 import { isImagePath } from "@/lib/fileType";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
 import { renderAndUploadAll } from "@/lib/sceneRender";
@@ -49,6 +51,9 @@ export type PackageInfo = { status: string; reason?: string };
 export type AdvisorResult = { text?: string; tool_results?: unknown[]; needsPayment?: boolean };
 export type DispatchResult = { needsPayment?: boolean; report_path?: string } & Record<string, unknown>;
 
+/** sessions[studio] UI 상태(camelCase) — wire(snake)에서 액션이 매핑. */
+export type SessionUiState = { status: SessionStatus; liveness: SessionLivenessName; warnAt: number; suspendAt: number; expiresAt: number | null };
+
 export type CockpitContextValue = {
   // ---- state (spec §2.2) ----
   runId: string | null;
@@ -82,6 +87,11 @@ export type CockpitContextValue = {
   devPass: boolean;
   selectedProviders: string[];
   setSelectedProviders: (next: string[]) => void;
+  // ---- session lifecycle (T2 P3 / O3) ----
+  sessions: Record<string, SessionUiState>;   // studio → 세션 상태(없으면 키 부재). 게이트 비경유.
+  sessionList: SessionListItem[];              // GET /sessions 결과(레코드 있는 studio만)
+  sessionRestoredStudio: string | null;        // WS restored 복원 토스트 트리거
+  sessionExpiredNotice: string | null;         // 자동 resume expired 안내(reason)
   // ---- actions ----
   startRun: (title?: string) => Promise<void>;
   openRun: (runId: string) => Promise<void>;
@@ -114,6 +124,13 @@ export type CockpitContextValue = {
   askAdvisor: (packageId: string, message: string) => Promise<AdvisorResult>;
   dispatchConfirm: () => Promise<DispatchResult>;
   payDemo: () => Promise<{ dev_pass: boolean }>;
+  // ---- session actions (T2 P3) ----
+  heartbeatSession: (studio: string) => Promise<void>;
+  resumeSession: (studio: string) => Promise<SessionResumeResult | null>;
+  suspendSession: (studio: string) => Promise<void>;
+  refreshSessions: () => Promise<void>;
+  dismissSessionRestored: () => void;
+  dismissSessionExpired: () => void;
   // ---- mock(시연) 모드 ----
   mockMode: boolean;
   setMockMode: (on: boolean) => void;
@@ -171,6 +188,11 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [devPass, setDevPass] = useState(false);
   // 발송 채널 선택 — DeployStudio 로컬 대신 provider 소유(리마운트 생존). run 전환 시에만 리셋.
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
+  // T2 P3: 세션 수명주기 상태 — run 전환 시 리셋(openRun/startRun). 게이트 봉투와 별개 경로.
+  const [sessions, setSessions] = useState<Record<string, SessionUiState>>({});
+  const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
+  const [sessionRestoredStudio, setSessionRestoredStudio] = useState<string | null>(null);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
   // M7-B: history 목록 ↔ 상세 뷰 전환 — 선택된 run id(null=목록 표시).
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<string | null>(null);
   // 시연용 Mock 모드 — 모든 백엔드 호출에 mock 플래그 동봉. ref로 콜백 재생성 없이 최신값 참조.
@@ -185,6 +207,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   // runId가 비동기 콜백(WS/poll) 안에서도 최신값을 가리키도록 ref 동기화.
   const runIdRef = useRef<string | null>(null);
   runIdRef.current = runId;
+  // 비동기 콜백(setStudio 자동 resume)에서 최신 sessions를 참조하기 위한 ref.
+  const sessionsRef = useRef<Record<string, SessionUiState>>({});
+  sessionsRef.current = sessions;
 
   // 관측성: 현재 run_id를 Sentry 태그로 — 이후 모든 에러에 자동 부착 (spec 2026-06-12 §5)
   useEffect(() => {
@@ -283,6 +308,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setDesignGate(null);   // 새로 연 run은 stale design 게이트 없이 시작.
       // M6 T19: deploy state 리셋(이전 run 잔여 차단).
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
+      setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(id);
       await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id),
         api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
@@ -303,6 +329,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
+      setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(run_id);
     },
     [syncRunQuery],
@@ -627,7 +654,18 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const closeAsk = useCallback(() => setPendingGate(null), []);
 
-  const setStudio = useCallback((s: Studio) => setActiveStudio(s), []);
+  // resumeSession은 아래(:707 부근)에서 선언되므로, setStudio가 최신 resumeSession을 ref로 참조(TDZ 회피).
+  const resumeSessionRef = useRef<((studio: string) => Promise<SessionResumeResult | null>) | null>(null);
+  const setStudio = useCallback((s: Studio) => {
+    setActiveStudio(s);
+    // 자동 resume(spec §4.4): suspended 세션으로 재진입하면 서버에 활성 복원 요청.
+    if (sessionsRef.current[s]?.status === "suspended") {
+      void (async () => {
+        const res = await resumeSessionRef.current?.(s);
+        if (res?.kind === "expired") setSessionExpiredNotice(res.reason);
+      })();
+    }
+  }, []);
   const setView = useCallback(
     (v: CockpitView) => {
       setViewState(v);
@@ -654,6 +692,54 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   }, []);
 
   const closeUpsell = useCallback(() => setUpsellOpen(false), []);
+
+  // ---- T2 P3: 세션 수명주기 액션 (게이트 비경유 — applyGate 미사용) ----
+  /** heartbeat 응답을 sessions[studio]에 매핑(snake→camel). exists:false면 키 제거. */
+  const applyHeartbeat = useCallback((studio: string, hb: SessionHeartbeat) => {
+    setSessions((prev) => {
+      if (!hb.exists) {
+        if (!(studio in prev)) return prev;
+        const next = { ...prev }; delete next[studio]; return next;
+      }
+      return { ...prev, [studio]: {
+        status: hb.status, liveness: hb.liveness,
+        warnAt: hb.warn_at, suspendAt: hb.suspend_at, expiresAt: hb.expires_at,
+      } };
+    });
+  }, []);
+
+  const heartbeatSession = useCallback(async (studio: string) => {
+    const id = runIdRef.current;
+    if (!id) return;
+    try { applyHeartbeat(studio, await api.sessionHeartbeat(id, studio)); }
+    catch { /* 폴링 실패 무음 — 다음 틱 재시도 */ }
+  }, [applyHeartbeat]);
+
+  const resumeSession = useCallback(async (studio: string) => {
+    const id = runIdRef.current;
+    if (!id) return null;
+    const res = await api.sessionResume(id, studio);
+    if (res.kind === "restored") await heartbeatSession(studio);   // 상태 동기화(spec §4.4)
+    return res;
+  }, [heartbeatSession]);
+  resumeSessionRef.current = resumeSession;
+
+  const suspendSession = useCallback(async (studio: string) => {
+    const id = runIdRef.current;
+    if (!id) return;
+    await api.sessionSuspend(id, studio);
+    await heartbeatSession(studio);
+  }, [heartbeatSession]);
+
+  const refreshSessions = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return;
+    try { setSessionList((await api.listSessions(id)).sessions); }
+    catch { /* 무음 */ }
+  }, []);
+
+  const dismissSessionRestored = useCallback(() => setSessionRestoredStudio(null), []);
+  const dismissSessionExpired = useCallback(() => setSessionExpiredNotice(null), []);
 
   // ---- M6 T19: deploy 액션 6개 ----
   // 모든 액션은 runIdRef.current를 통해 최신 runId를 사용한다(WS/poll 콜백과 동일 패턴).
@@ -791,8 +877,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       void refreshTree();
     } else if (e.type === "poll") {
       void refreshTree();
+    } else if (e.type === "session" && e.event === "restored") {
+      // 백엔드가 이미 touch로 active 재활성(spec §4.4) — 프론트는 상태 동기화 + 복원 토스트.
+      if (e.studio) { void heartbeatSession(e.studio); setSessionRestoredStudio(e.studio); }
     }
   }, { pollMs: 4000 });
+
+  // T2 P3 §4.3: 활성 스튜디오 세션을 ~60s 폴링(탭 visibility 완화). useRunSocket poll과 별개.
+  useSessionHeartbeat(runId, activeStudio, heartbeatSession, { intervalMs: 60000 });
 
   const value: CockpitContextValue = {
     runId,
@@ -824,6 +916,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     devPass,
     selectedProviders,
     setSelectedProviders,
+    sessions,
+    sessionList,
+    sessionRestoredStudio,
+    sessionExpiredNotice,
     startRun,
     openRun,
     refreshTree,
@@ -853,6 +949,12 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     askAdvisor,
     dispatchConfirm,
     payDemo,
+    heartbeatSession,
+    resumeSession,
+    suspendSession,
+    refreshSessions,
+    dismissSessionRestored,
+    dismissSessionExpired,
     mockMode,
     setMockMode,
   };

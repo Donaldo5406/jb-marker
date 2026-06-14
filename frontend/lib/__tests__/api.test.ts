@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { api } from "../api";
 
 describe("api client", () => {
@@ -119,5 +119,43 @@ describe("api client", () => {
     await api.vfsPut("r1", "design/final/ko/main.scene", "{}", "application/json");
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.content_encoding ?? null).toBeNull();
+  });
+});
+
+describe("session lifecycle 메서드", () => {
+  function mockFetch(body: unknown) {
+    const fn = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sessionHeartbeat → GET /runs/{id}/session/{studio}", async () => {
+    const f = mockFetch({ kind: "heartbeat", exists: false, status: null, resumable: false });
+    const r = await api.sessionHeartbeat("r1", "design");
+    expect(f.mock.calls[0][0]).toMatch(/\/runs\/r1\/session\/design$/);
+    expect(r).toMatchObject({ kind: "heartbeat", exists: false });
+  });
+
+  it("sessionResume → POST /runs/{id}/session/{studio}/resume (body 없음)", async () => {
+    const f = mockFetch({ kind: "restored", run_id: "r1", studio: "design", status: "active" });
+    await api.sessionResume("r1", "design");
+    expect(f.mock.calls[0][0]).toMatch(/\/session\/design\/resume$/);
+    expect(f.mock.calls[0][1]).toMatchObject({ method: "POST" });
+    expect(f.mock.calls[0][1]).not.toHaveProperty("body");
+  });
+
+  it("sessionSuspend → POST /runs/{id}/session/{studio}/suspend", async () => {
+    const f = mockFetch({ kind: "suspended", status: "suspended" });
+    await api.sessionSuspend("r1", "review");
+    expect(f.mock.calls[0][0]).toMatch(/\/session\/review\/suspend$/);
+    expect(f.mock.calls[0][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("listSessions → GET /runs/{id}/sessions", async () => {
+    const f = mockFetch({ kind: "session_list", sessions: [] });
+    const r = await api.listSessions("r1");
+    expect(f.mock.calls[0][0]).toMatch(/\/runs\/r1\/sessions$/);
+    expect(r.kind).toBe("session_list");
   });
 });
