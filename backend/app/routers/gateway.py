@@ -38,6 +38,7 @@ class GatewayRun(BaseModel):
     # ask 게이트의 actions=["answer"]는 action이 아니라 answer 필드로 응답(wire 관례).
     action: Literal["advance", "confirm", "regenerate", "restart", "ack", "render"] | None = None
     bypass_map: dict | None = None
+    medium: Literal["image", "video"] = "image"  # 브레인스토밍 매체 — demo 라우팅용
     mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
 
 
@@ -70,7 +71,8 @@ async def gateway_run(body: GatewayRun, request: Request,
                          user_prompt=body.prompt, provider=provider_name,
                          is_marker=marker, answer=body.answer,
                          action=body.action, user_id=user_id,
-                         bypass_map=body.bypass_map, mock=body.mock)
+                         bypass_map=body.bypass_map, medium=body.medium,
+                         mock=body.mock)
     media_name = "demo" if body.mock else "google"
 
     def _media_provider():

@@ -278,7 +278,7 @@ def test_summarize_calls_provider_with_prior_and_old():
     assert "이전요약X" in sent       # prior 포함
     assert "30대 적금" in sent       # old 본문 포함
     assert sp.calls[0]["system"] is not None
-    assert sp.calls[0]["meta"] == {"studio": "brainstorming", "step": "compact"}  # T7 명시 신호
+    assert sp.calls[0]["meta"] == {"studio": "brainstorming", "step": "compact", "medium": "image"}  # T7 명시 신호
 
 
 def _long_msgs(n):
@@ -501,7 +501,7 @@ def test_stage_a_system_is_preserved_and_meta_passed():
     i_proto = sysp.index(hb._PROTOCOL)
     i_ref = sysp.index("[현재 spec.md]")
     assert i_instr < i_proto < i_ref
-    assert stub.calls[0].get("meta") == {"studio": "brainstorming", "step": "stage_a"}  # ③
+    assert stub.calls[0].get("meta") == {"studio": "brainstorming", "step": "stage_a", "medium": "image"}  # ③
 
 
 def test_stage_b_system_is_preserved_and_meta_passed():
@@ -521,7 +521,7 @@ def test_stage_b_system_is_preserved_and_meta_passed():
     i_spec = sysp.index("[확정 spec.md]")
     i_plan = sysp.index("[현재 plan.md]")
     assert i_instr < i_proto < i_spec < i_plan
-    assert stub.calls[0].get("meta") == {"studio": "brainstorming", "step": "stage_b"}
+    assert stub.calls[0].get("meta") == {"studio": "brainstorming", "step": "stage_b", "medium": "image"}
 
 
 def test_stage_a_system_prompt_allows_websearch():
