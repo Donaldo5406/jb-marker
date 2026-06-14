@@ -326,8 +326,10 @@ class DemoProvider(Provider):
 
     def generate_video(self, prompt: str, *, aspect: str = "9:16",
                        duration_sec: int = 15, fps: int = 30) -> bytes:
-        # 시연용 결정론 footage — 배경 still 바이트(프론트 VideoEditor가 모션 부여).
-        return F.load_poster_bg()
+        # 시연용 결정론 footage — 실 Veo 생성 광고영상(텍스트-free 시네마틱) mp4 바이트.
+        # Veo 크레딧 없이도 V2aFootage가 진짜 광고영상 클립을 써 렌더가 실광고물을 만든다.
+        # (파일 부재 시 load_demo_video가 still로 graceful 폴백.)
+        return F.load_demo_video()
 
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
         return ProviderResponse(text=_empty_findings(), model="demo")
