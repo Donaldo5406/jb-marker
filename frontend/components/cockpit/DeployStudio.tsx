@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Lock, X, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
+import { Lock, X, CheckCircle2, AlertTriangle, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useCockpit } from "@/components/cockpit/CockpitProvider";
@@ -15,6 +15,7 @@ import { PackageMatrix } from "@/components/cockpit/deploy/PackageMatrix";
 import { AdvisorChat } from "@/components/cockpit/deploy/AdvisorChat";
 import { DispatchConfirm } from "@/components/cockpit/deploy/DispatchConfirm";
 import { DemoPaymentModal } from "@/components/cockpit/deploy/DemoPaymentModal";
+import { RecipientImport, type Recipient } from "@/components/cockpit/deploy/RecipientImport";
 import { loadReviewVerdicts, type ReviewVerdict } from "@/lib/reviewArtifacts";
 
 const SEED_PROVIDERS: ProviderEntry[] = [
@@ -46,6 +47,10 @@ export function DeployStudio() {
   const [verdicts, setVerdicts] = React.useState<ReviewVerdict[]>([]);
   const [dispatch, setDispatch] = React.useState<DispatchSim | null>(null);
   const [dispatching, setDispatching] = React.useState(false);
+  // 업로드 발송 명단(없으면 백엔드 내장 동의대장 사용) + 버튼 로딩 상태.
+  const [importedRecipients, setImportedRecipients] = React.useState<Recipient[] | null>(null);
+  const [eligLoading, setEligLoading] = React.useState(false);
+  const [pkgProgress, setPkgProgress] = React.useState<{ done: number; total: number } | null>(null);
   // T9: Design 산출(layout.spec.json)의 실제 4언어 카피를 패키징 입력으로 사용(더미 제거).
   const [languages, setLanguages] = React.useState<string[]>(["ko"]);
   const [designCopy, setDesignCopy] = React.useState<Record<string, Record<string, string>>>({});
@@ -135,19 +140,34 @@ export function DeployStudio() {
         </DeployCard>
 
         <DeployCard step="D0" title="발송 채널 선택" desc="발송할 채널을 고르세요. 각 어댑터 상태(stub/live)를 함께 표시합니다.">
-          <div className="space-y-3">
+          <div className="space-y-4">
             <ProviderGrid providers={SEED_PROVIDERS} selected={selected} onChange={setSelected} />
+            <div className="space-y-2">
+              <p className="text-caption font-medium text-on-surface-variant">
+                발송 명단 (선택) — 미업로드 시 내장 동의대장 샘플로 검사합니다.
+              </p>
+              <RecipientImport
+                onApply={(r) => setImportedRecipients(r)}
+                appliedCount={importedRecipients?.length ?? null}
+              />
+            </div>
             <button
               type="button"
               onClick={async () => {
-                await c.setupDeploy(selected, languages);
-                await c.runEligibility();
-                setCalendar(Array.from({ length: 24 }, (_, h) => ({ hour: h, blocked: h >= 21 || h < 8 })));
+                setEligLoading(true);
+                try {
+                  await c.setupDeploy(selected, languages);
+                  await c.runEligibility(importedRecipients ?? undefined);
+                  setCalendar(Array.from({ length: 24 }, (_, h) => ({ hour: h, blocked: h >= 21 || h < 8 })));
+                } finally {
+                  setEligLoading(false);
+                }
               }}
-              disabled={selected.length === 0}
-              className="rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container disabled:bg-surface-container disabled:text-on-surface-variant"
+              disabled={selected.length === 0 || eligLoading}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container disabled:bg-surface-container disabled:text-on-surface-variant"
             >
-              적법성 검사 실행
+              {eligLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+              {eligLoading ? "적법성 검사 중…" : "적법성 검사 실행"}
             </button>
           </div>
         </DeployCard>
@@ -164,15 +184,25 @@ export function DeployStudio() {
               <button
                 type="button"
                 onClick={async () => {
-                  for (const cell of matrix) {
-                    const cp = designCopy[cell.lang] ?? {};
-                    const copyText = [cp.headline, cp.body, cp.cta].filter(Boolean).join(" ").trim() || `demo copy ${cell.channel}`;
-                    await c.runPackagingCell(cell.channel, cell.lang, copyText, `/runs/${c.runId}/deploy/packages/${cell.channel}_${cell.lang}/visual.png`);
+                  setPkgProgress({ done: 0, total: matrix.length });
+                  try {
+                    let done = 0;
+                    for (const cell of matrix) {
+                      const cp = designCopy[cell.lang] ?? {};
+                      const copyText = [cp.headline, cp.body, cp.cta].filter(Boolean).join(" ").trim() || `demo copy ${cell.channel}`;
+                      await c.runPackagingCell(cell.channel, cell.lang, copyText, `/runs/${c.runId}/deploy/packages/${cell.channel}_${cell.lang}/visual.png`);
+                      done += 1;
+                      setPkgProgress({ done, total: matrix.length });
+                    }
+                  } finally {
+                    setPkgProgress(null);
                   }
                 }}
-                className="rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container"
+                disabled={pkgProgress !== null}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container disabled:bg-surface-container disabled:text-on-surface-variant"
               >
-                전체 패키징 실행
+                {pkgProgress !== null && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                {pkgProgress !== null ? `패키징 중… (${pkgProgress.done}/${pkgProgress.total})` : "전체 패키징 실행"}
               </button>
               <PackageMatrix
                 cells={matrix.map((m) => ({ ...m, ...(c.packages[`${m.channel}_${m.lang}`] ?? {}) }))}
@@ -199,6 +229,7 @@ export function DeployStudio() {
               eligibleCount={c.eligibility.eligible_count}
               selectedCount={selected.length}
               devPass={c.devPass}
+              busy={dispatching}
               onConfirm={async () => {
                 setDispatching(true);
                 try {
@@ -286,7 +317,7 @@ export function DeployStudio() {
         </div>
       )}
 
-      <DemoPaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} onPayDemo={() => void c.payDemo()} />
+      <DemoPaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} onPayDemo={() => c.payDemo()} />
     </div>
   );
 }

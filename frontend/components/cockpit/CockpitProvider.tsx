@@ -136,7 +136,7 @@ export type CockpitContextValue = {
   closeUpsell: () => void;
   // ---- deploy actions (M6 T19) ----
   setupDeploy: (selected: string[], languages: string[]) => Promise<{ matrix?: { channel: string; lang: string }[]; step_status?: string } & Record<string, unknown>>;
-  runEligibility: () => Promise<EligibilityResult>;
+  runEligibility: (recipients?: Record<string, unknown>[]) => Promise<EligibilityResult>;
   runPackagingCell: (channel: string, lang: string, originalCopy: string, visualPath: string) => Promise<{ package_id: string; status: string; reason?: string } & Record<string, unknown>>;
   askAdvisor: (packageId: string, message: string) => Promise<AdvisorResult>;
   dispatchConfirm: () => Promise<DispatchResult>;
@@ -911,10 +911,17 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     return data;
   }, []);
 
-  const runEligibility = useCallback(async () => {
+  const runEligibility = useCallback(async (recipients?: Record<string, unknown>[]) => {
     const id = runIdRef.current;
     if (!id) return { total: 0, eligible_count: 0, excluded_count: 0, breakdown: [] };
-    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, { method: "POST" });
+    // 업로드 명단이 있으면 body로 전달(없으면 백엔드 내장 fixture 사용 — 무바디 POST 유지).
+    const hasList = Array.isArray(recipients) && recipients.length > 0;
+    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/eligibility`, {
+      method: "POST",
+      ...(hasList
+        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipients }) }
+        : {}),
+    });
     const data = await res.json();
     setEligibility(data);
     return data;
@@ -955,7 +962,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/dispatch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirmed: true }),
+      // mock(시연)이면 결제 게이트 우회 — 데모에서 결제 없이 리포트까지 산출.
+      body: JSON.stringify({ confirmed: true, mock: mockModeRef.current }),
     });
     if (res.status === 402) {
       return { needsPayment: true };

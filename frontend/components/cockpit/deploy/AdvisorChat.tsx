@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 /** AdvisorChat (M6 T21) — 패키지 단위 advisor 챗. needsPayment 응답 시 onPayDemo로 모달 트리거. */
 type Message = { role: "user" | "assistant"; content: string };
@@ -12,18 +13,24 @@ type Props = {
 export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
 
   async function send() {
-    if (!input.trim()) return;
+    if (!input.trim() || sending) return;
     const userMsg = input;
     setMessages((m) => [...m, { role: "user", content: userMsg }]);
     setInput("");
-    const res = await onSubmit(userMsg);
-    if (res.needsPayment) {
-      onPayDemo();
-      return;
+    setSending(true);
+    try {
+      const res = await onSubmit(userMsg);
+      if (res.needsPayment) {
+        onPayDemo();
+        return;
+      }
+      setMessages((m) => [...m, { role: "assistant", content: res.text ?? "(도구 실행 완료)" }]);
+    } finally {
+      setSending(false);
     }
-    setMessages((m) => [...m, { role: "assistant", content: res.text ?? "(도구 실행 완료)" }]);
   }
 
   return (
@@ -40,15 +47,19 @@ export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="flex-1 border border-outline-variant rounded px-2 text-sm"
+          onKeyDown={(e) => { if (e.key === "Enter") void send(); }}
+          disabled={sending}
+          className="flex-1 border border-outline-variant rounded px-2 text-sm disabled:opacity-60"
           data-testid="advisor-input"
         />
         <button
           type="button"
           onClick={send}
-          className="px-3 py-1 bg-primary text-on-primary rounded text-sm"
+          disabled={sending}
+          className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary text-on-primary rounded text-sm disabled:bg-surface-container disabled:text-on-surface-variant"
         >
-          전송
+          {sending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
+          {sending ? "처리 중" : "전송"}
         </button>
       </div>
     </div>
