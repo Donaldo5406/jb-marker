@@ -8,6 +8,7 @@ import { ChatPane } from "./ChatPane";
 import { PipelineRail } from "./PipelineRail";
 import { DesignSettings } from "./DesignSettings";
 import { ConfirmToastView } from "./ConfirmToast";
+import { AskUserToastView } from "./AskUserToast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, X } from "lucide-react";
@@ -143,28 +144,17 @@ export function DesignStudio() {
         message="수동 편집한 씬이 있습니다. 재생성하면 편집 내용이 새 씬으로 대체됩니다. 계속할까요?"
         confirmLabel="재생성" cancelLabel="취소"
         onConfirm={c.regenConfirm.onConfirm} onCancel={c.regenConfirm.onCancel} />
-      {setupOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          role="alertdialog" aria-labelledby="design-setup-title" data-testid="design-setup-modal">
-          <div className="w-full max-w-md rounded-2xl border border-outline-variant bg-surface p-6 shadow-ambient animate-fade-in-up">
-            <h3 id="design-setup-title" className="text-h3 text-on-surface">디자인 셋업을 시작할까요?</h3>
-            <p className="mt-2 text-body-sm text-on-surface-variant">
-              확정된 <span className="font-medium text-on-surface">plan.md</span>를 읽어 레이아웃·카피·비주얼(S0~Final)을 생성합니다. 각 단계에서 확인을 거칩니다.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setSetupDismissed(true)}
-                className="rounded-full border border-outline-variant px-4 py-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high">
-                나중에
-              </button>
-              <button type="button" data-testid="design-setup-start"
-                onClick={() => { setSetupDismissed(true); void act("advance"); }}
-                className="rounded-full bg-primary px-4 py-2 text-body-sm font-medium text-on-primary transition-colors hover:bg-primary-container">
-                plan 읽기 시작
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 디자인 스튜디오 랜드 시(미시작) AskUser 훅과 동일한 하단 토스트로 셋업 시작을 권유.
+          옵션 칩=시작, X(닫기)=나중에. 중앙 모달 대신 비차단 토스트(브레인스토밍 직후 막아서지 않음). */}
+      <AskUserToastView
+        ask={setupOpen ? {
+          trigger: "a",
+          question: "디자인 셋업을 시작할까요? 확정된 plan.md를 읽어 레이아웃·카피·비주얼을 생성합니다.",
+          options: ["plan 읽기 시작"],
+        } : null}
+        onSelect={() => { setSetupDismissed(true); void act("advance"); }}
+        onClose={() => setSetupDismissed(true)}
+      />
     </div>
   );
 }
