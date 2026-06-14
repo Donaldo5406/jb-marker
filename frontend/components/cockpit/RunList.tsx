@@ -25,6 +25,17 @@ const STEP_LABEL: Record<string, string> = {
 };
 const stepLabel = (key: string) => STEP_LABEL[key] ?? key;
 
+/** 시연(Mock) 모드 작업 내역 — 백엔드 run이 없어도 History를 그럴듯하게 채운다.
+ *  created_at은 고정 ISO(결정적). 실제 run과 함께 목록 상단에 표시(표시 전용 샘플). */
+const MOCK_RUNS: Manifest[] = [
+  { run_id: "demo-jb-youth", title: "전북은행 청년 적금 캠페인", created_at: "2026-06-12T09:00:00Z",
+    step_status: { brainstorming: "done", design: "done", review: "done", deploy: "done" } },
+  { run_id: "demo-jb-fx-card", title: "외환 카드 다국어 프로모션 (ko·en·vi·zh)", created_at: "2026-06-10T14:30:00Z",
+    step_status: { brainstorming: "done", design: "done", review: "done" } },
+  { run_id: "demo-jb-loan", title: "봄맞이 주택담보대출 안내", created_at: "2026-06-07T11:15:00Z",
+    step_status: { brainstorming: "done", design: "active" } },
+];
+
 /** created_at(ISO 또는 null)을 간결한 로컬 표기로. 파싱 실패는 원문, 누락은 "-". */
 function formatDate(iso: string | null): string {
   if (!iso) return "-";
@@ -328,12 +339,15 @@ export function RunList() {
     setState("loading");
     try {
       const { runs: rs } = await api.listRuns();
-      setRuns(rs);
+      // Mock 시연: 실제 run 앞에 시연용 캠페인 내역을 얹어 History를 채운다.
+      setRuns(c.mockMode ? [...MOCK_RUNS, ...rs] : rs);
       setState("ok");
     } catch {
-      setState("error");
+      // mock 모드면 백엔드 실패해도 시연용 목록은 보여준다.
+      if (c.mockMode) { setRuns(MOCK_RUNS); setState("ok"); }
+      else setState("error");
     }
-  }, []);
+  }, [c.mockMode]);
 
   React.useEffect(() => {
     void load();
