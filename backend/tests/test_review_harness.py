@@ -532,7 +532,7 @@ def test_r2_system_is_persona_b_and_meta_passed(tmp_path, make_scripted):
     h.handle_turn(req, provider=sp, store=store)  # R2
     call = sp.calls_complete[0]
     assert call["system"] == PERSONA_B
-    assert call["kw"].get("meta") == {"studio": "review", "step": "R2"}
+    assert call["kw"].get("meta") == {"studio": "review", "step": "R2", "medium": "image"}
     assert call["model"] is None  # model=provider.name 제거
 
 
@@ -558,7 +558,7 @@ def test_r3_system_is_persona_c_and_meta_passed(tmp_path, make_scripted):
     h.handle_turn(req, provider=sp, store=store)  # R3
     call = sp.calls_complete[0]
     assert call["system"] == PERSONA_C
-    assert call["kw"].get("meta") == {"studio": "review", "step": "R3"}
+    assert call["kw"].get("meta") == {"studio": "review", "step": "R3", "medium": "image"}
     assert call["model"] is None
 
 

@@ -20,8 +20,8 @@ def test_assemble_skips_none_schema_but_keeps_empty_string():
 
 def test_meta_carries_studio_and_step():
     spec = PromptSpec(persona="P", studio="review", step="R2")
-    assert spec.meta == {"studio": "review", "step": "R2"}
-    assert PromptSpec(persona="P").meta == {"studio": "", "step": ""}
+    assert spec.meta == {"studio": "review", "step": "R2", "medium": "image"}
+    assert PromptSpec(persona="P").meta == {"studio": "", "step": "", "medium": "image"}
 
 
 def test_advisor_assemble_equals_system_prompt():
@@ -30,4 +30,4 @@ def test_advisor_assemble_equals_system_prompt():
 
     spec = PromptSpec(persona=SYSTEM_PROMPT, studio="deploy", step="advisor_chat")
     assert spec.assemble() == SYSTEM_PROMPT
-    assert spec.meta == {"studio": "deploy", "step": "advisor_chat"}
+    assert spec.meta == {"studio": "deploy", "step": "advisor_chat", "medium": "image"}

@@ -119,6 +119,7 @@ export type CockpitContextValue = {
   ackReview: () => Promise<void>;
   restartReview: () => Promise<void>;
   saveSceneJson: (content: string) => Promise<void>;
+  saveVideoStoryboard: (content: string) => Promise<void>;
   answerAsk: (choice: string) => Promise<void>;
   closeAsk: () => void;
   setStudio: (s: Studio) => void;
@@ -485,6 +486,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
           provider: p.provider, is_marker: p.isMarker,
+          medium: videoMedium,
           mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
@@ -498,7 +500,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         throw e;
       }
     },
-    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest],
+    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, videoMedium],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
@@ -614,6 +616,13 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     } finally {
       setVideoRendering(false);
     }
+  }, [refreshTree]);
+
+  const saveVideoStoryboard = useCallback(async (content: string) => {
+    const id = runIdRef.current;
+    if (!id) return;
+    await api.vfsPut(id, "video/storyboard/storyboard.spec.json", content, "application/json");
+    await refreshTree();
   }, [refreshTree]);
 
   /** 검토 시작/계속(spec §8.3): composite PNG 업로드 후 백엔드 상태머신을 done까지 순차 완주.
@@ -1037,6 +1046,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     ackReview,
     restartReview,
     saveSceneJson,
+    saveVideoStoryboard,
     answerAsk,
     closeAsk,
     setStudio,

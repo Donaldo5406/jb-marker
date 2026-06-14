@@ -41,3 +41,10 @@ if (typeof globalThis.IntersectionObserver === "undefined") {
   globalThis.IntersectionObserver =
     IntersectionObserverStub as unknown as typeof IntersectionObserver;
 }
+
+// jsdom은 Element.prototype.scrollTo를 구현하지 않는다(window에만 no-op 존재).
+// ChatPane 등 메시지 목록 컴포넌트가 마운트 effect에서 scrollRef.current.scrollTo를
+// 호출하므로 최소 no-op stub을 둔다.
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollTo !== "function") {
+  Element.prototype.scrollTo = (() => {}) as Element["scrollTo"];
+}
