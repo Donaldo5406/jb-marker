@@ -4,7 +4,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { useCockpit } from "./CockpitProvider";
 import { FileTree } from "./FileTree";
 import { ChatPane } from "./ChatPane";
-import { PipelineRail } from "./PipelineRail";
+import { PipelineRail, VIDEO_STEPS } from "./PipelineRail";
 import { VideoSettings } from "./VideoSettings";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +23,7 @@ export function VideoStudio() {
 
   return (
     <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
-      <PipelineRail step={c.videoStep} gate={c.videoGate} busy={busy}
+      <PipelineRail step={c.videoStep} steps={VIDEO_STEPS} gate={c.videoGate} busy={busy}
         onAdvance={() => act("advance")} onRegenerate={() => act("regenerate")}
         settingsOpen={showSettings} onToggleSettings={() => setShowSettings((v) => !v)} />
       {showSettings && (

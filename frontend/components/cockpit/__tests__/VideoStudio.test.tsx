@@ -5,7 +5,13 @@ let ctx: any;
 vi.mock("../CockpitProvider", () => ({ useCockpit: () => ctx }));
 vi.mock("../ChatPane", () => ({ ChatPane: () => <div data-testid="chat-pane" /> }));
 vi.mock("../FileTree", () => ({ FileTree: () => <div data-testid="file-tree" /> }));
-vi.mock("../PipelineRail", () => ({ PipelineRail: (p: any) => <div data-testid="pipeline-rail" data-step={p.step} /> }));
+vi.mock("../PipelineRail", () => ({
+  PipelineRail: (p: any) => <div data-testid="pipeline-rail" data-step={p.step} data-steps={(p.steps ?? []).map((s: any) => s.id).join(",")} />,
+  VIDEO_STEPS: [
+    { id: "V0", label: "셋업" }, { id: "V1", label: "콘티" }, { id: "V2a", label: "촬영" },
+    { id: "V2b", label: "카피" }, { id: "V2c", label: "브랜드" }, { id: "V3", label: "Final" }, { id: "done", label: "완료" },
+  ],
+}));
 
 import { VideoStudio } from "../VideoStudio";
 
@@ -38,5 +44,9 @@ describe("VideoStudio", () => {
   it("언어 스위처를 렌더한다", () => {
     render(<VideoStudio />);
     expect(screen.getByText("vi")).toBeTruthy();
+  });
+  it("PipelineRail에 영상 단계(VIDEO_STEPS)를 주입한다", () => {
+    render(<VideoStudio />);
+    expect(screen.getByTestId("pipeline-rail").dataset.steps).toBe("V0,V1,V2a,V2b,V2c,V3,done");
   });
 });

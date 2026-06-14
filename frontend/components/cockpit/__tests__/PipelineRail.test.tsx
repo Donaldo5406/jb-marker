@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PipelineRail } from "../PipelineRail";
+import { PipelineRail, VIDEO_STEPS } from "../PipelineRail";
 
 describe("PipelineRail", () => {
   it("현재 step 세그먼트가 active", () => {
@@ -52,5 +52,12 @@ describe("PipelineRail", () => {
     expect(btn.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(btn);
     expect(toggle).toHaveBeenCalled();
+  });
+
+  it("steps prop으로 영상 단계(V-) currentId를 매칭한다", () => {
+    render(<PipelineRail step="V1" steps={VIDEO_STEPS} onAdvance={() => {}} onRegenerate={() => {}} />);
+    expect(screen.getByTestId("step-seg-V1").dataset.state).toBe("active");
+    expect(screen.getByTestId("step-seg-V0").dataset.state).toBe("done");
+    expect(screen.getByText("콘티")).toBeInTheDocument(); // V1 라벨
   });
 });
