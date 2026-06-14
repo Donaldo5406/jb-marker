@@ -12,16 +12,21 @@ class NoopWS {
   constructor(public url: string) {}
 }
 
-/** 백엔드 layout.spec(슬롯/카피 포함) — assembleScene 입력. */
+/** 백엔드 layout.spec(슬롯/카피 포함) — assembleScene 입력.
+ *  원-레이어(a746ddf): 헤드라인/바디/CTA는 배경 이미지에 베이크되어 scene 텍스트로 방출되지 않는다.
+ *  scene에 textbox로 남는 언어별 카피는 disclosure뿐 → 언어 동등성(R2)은 disclosure로 검증한다. */
 const LAYOUT_SPEC = {
   aspect: "1:1",
   slots: [
     { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1080 }, z: 0 },
     { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 200 }, z: 2, copy_key: "headline" },
+    { role: "disclosure", bbox: { x: 80, y: 980, w: 920, h: 60 }, z: 3, copy_key: "disclosure" },
   ],
   copy: {
-    ko: { headline: "든든한 적금" }, en: { headline: "Solid Savings" },
-    vi: { headline: "Tiết kiệm vững" }, zh: { headline: "稳健储蓄" },
+    ko: { headline: "든든한 적금", disclosure: "예금자보호 ko" },
+    en: { headline: "Solid Savings", disclosure: "Depositor Protection en" },
+    vi: { headline: "Tiết kiệm vững", disclosure: "Bảo hiểm vi" },
+    zh: { headline: "稳健储蓄", disclosure: "存款保护 zh" },
   },
 };
 
@@ -99,12 +104,14 @@ describe("scene-assembly wiring (C1/I4)", () => {
 
     const scenePut = puts.find((p) => p.url.includes("design/final/en/main.scene"));
     expect(scenePut, "final/en/main.scene 로 PUT 되어야 함").toBeTruthy();
-    // 조립된 scene이 valid한 Fabric JSON이고 텍스트가 영어 카피로 들어갔는지 확인.
+    // 조립된 scene이 valid한 Fabric JSON이고 언어별 텍스트(disclosure)가 영어 카피로 들어갔는지 확인.
     const scene = JSON.parse(scenePut!.body.content);
     expect(scene.version).toBe("6.0.0");
-    const hl = scene.objects.find((o: any) => o.role === "headline");
-    expect(hl.text).toBe("Solid Savings");
-    expect(hl.lang).toBe("en");
+    // 원-레이어: 헤드라인은 배경에 베이크되어 scene 텍스트로 방출되지 않는다(회귀 가드).
+    expect(scene.objects.find((o: any) => o.role === "headline")).toBeUndefined();
+    const disc = scene.objects.find((o: any) => o.role === "disclosure");
+    expect(disc.text).toBe("Depositor Protection en");
+    expect(disc.lang).toBe("en");
     // 배경 슬롯은 고정 비주얼 경로로 연결.
     const bg = scene.objects.find((o: any) => o.role === "background");
     expect(bg.type).toBe("image");
@@ -150,21 +157,24 @@ describe("scene-assembly wiring (C1/I4)", () => {
     await act(async () => { await captured!.openRun("run3"); });
     await act(async () => { await captured!.runDesign("advance"); });
     // 4언어 모두 main.scene PUT + 언어별로 올바른 카피/lang가 조립돼야 함(R2 동등성 입력).
+    // 원-레이어: 헤드라인은 배경 베이크 → scene 텍스트는 disclosure로 언어 동등성을 검증.
     const EXPECT: Record<string, string> = {
-      ko: "든든한 적금", en: "Solid Savings", vi: "Tiết kiệm vững", zh: "稳健储蓄",
+      ko: "예금자보호 ko", en: "Depositor Protection en", vi: "Bảo hiểm vi", zh: "存款保护 zh",
     };
-    const headlines: string[] = [];
+    const discTexts: string[] = [];
     for (const lang of LANGS) {
       const put = puts.find((p) => p.url.includes(`design/final/${lang}/main.scene`));
       expect(put, `final/${lang}/main.scene PUT 누락`).toBeTruthy();
       const scene = JSON.parse(put!.body.content);
-      const hl = scene.objects.find((o: any) => o.role === "headline");
-      expect(hl.lang, `${lang} headline.lang 불일치`).toBe(lang);
-      expect(hl.text, `${lang} headline 카피 불일치`).toBe(EXPECT[lang]);
-      headlines.push(hl.text);
+      expect(scene.objects.find((o: any) => o.role === "headline"),
+        `${lang} 헤드라인은 배경 베이크라 textbox로 방출되면 안 됨`).toBeUndefined();
+      const disc = scene.objects.find((o: any) => o.role === "disclosure");
+      expect(disc.lang, `${lang} disclosure.lang 불일치`).toBe(lang);
+      expect(disc.text, `${lang} disclosure 카피 불일치`).toBe(EXPECT[lang]);
+      discTexts.push(disc.text);
     }
     // 잘못된 단일 언어 일괄 조립(예: 전부 langs[0]) 회귀 가드 — 4개 텍스트가 모두 달라야 함.
-    expect(new Set(headlines).size).toBe(LANGS.length);
+    expect(new Set(discTexts).size).toBe(LANGS.length);
   });
 
   it("rough spec이 없으면 scene을 만들지 않는다(no-op)", async () => {

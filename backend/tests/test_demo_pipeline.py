@@ -213,3 +213,94 @@ def test_review_demo_passes_after_remediation(monkeypatch):
     assert last_step == "R3"
     assert gate.get("status") == "PASS", f"교정 후 PASS 기대, 실제 {gate}"
     assert gate.get("critical_count") == 0
+
+
+def test_design_chat_remediation_cleans_layout_copy(monkeypatch):
+    """리뷰 후 done 상태 디자인 챗의 교정 지시 → S2b 재교정으로 layout.spec copy가 clean.
+
+    결정 B안(디자인 챗 입력으로 교정): 사용자가 '리뷰 결과대로 수정' 류를 입력하면 done
+    고정점을 우회해 S2b를 재실행, 위반 카피(업계 최고/4.0%)를 clean 카피로 교체한다.
+    프론트는 meta.remediated 신호로 layout.spec을 main.scene으로 재조립(리뷰 재검토 통과)."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+
+    # 디자인 done + 위반 카피 스테이징 확인
+    state = client.get(f"/vfs/{rid}/design/_state.json").json()["content_text"]
+    assert '"step": "done"' in state
+    before = client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"]
+    assert "업계 최고" in before          # COPY_VIOLATING headline(ko)
+
+    # 디자인 챗 자유 교정 지시(action 없음 + 교정 토큰) → remediate 재진입
+    r = _run(client, rid, "design", "리뷰 결과대로 카피 수정해줘")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body.get("meta") or {}).get("remediated") is True
+    assert "교정" in (body.get("text") or "")
+
+    after = client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"]
+    assert "업계 최고" not in after        # 과장광고 제거
+    assert "연 4.0%" not in after          # 금리 불일치 제거
+    assert "연 3.5% JB 정기예금" in after   # clean 카피 반영
+    assert "예금자보호" in after            # 모든 언어 예금자보호 고지 보강(R2 critical 해소)
+    assert "theo luật" in after            # vi 현지화 고지 보강
+
+
+def test_design_chat_nonremediation_keeps_pipeline(monkeypatch):
+    """교정 토큰이 없는 일반 디자인 챗(done 상태)은 remediate를 발동하지 않는다(오발동 가드)."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+    r = _run(client, rid, "design", "고마워 잘 됐네")   # 교정 의도 없음
+    assert r.status_code == 200
+    assert (r.json().get("meta") or {}).get("remediated") is not True
+    # 위반 카피는 그대로 유지(조기 소거 없음)
+    after = client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"]
+    assert "업계 최고" in after
+
+
+def _assemble_one_layer(client, rid):
+    """프론트 sceneAssembler(원-레이어)를 백엔드 테스트에서 재현: 헤드라인은 배경 베이크,
+    main.scene에는 disclosure textbox만(copy 필드 없음). + 합성 렌더 시드(vision_skipped 방지)."""
+    ls = json.loads(client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"])
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n\x00demo").decode()
+    for lang in ("ko", "en", "vi", "zh"):
+        disc = (ls.get("copy", {}).get(lang, {}) or {}).get("disclosure", "")
+        scene = {"version": "6.0.0", "objects": [
+            {"type": "image", "role": "background"},
+            {"type": "image", "role": "logo"},
+            {"type": "textbox", "role": "disclosure", "text": disc},
+        ]}
+        client.put(f"/vfs/{rid}/design/final/{lang}/main.scene",
+                   json={"content": json.dumps(scene, ensure_ascii=False), "mime": "application/json"})
+        client.put(f"/vfs/{rid}/review/_render/{lang}.png",
+                   json={"content": png, "content_encoding": "base64", "mime": "image/png"})
+
+
+def test_design_chat_remediation_then_review_passes(monkeypatch):
+    """작업 B 전체 시나리오: 원-레이어 검토 BLOCKED(vi/zh 고지 누락) → 디자인 챗 교정 →
+    재조립 → 재검토 PASS. 라이브 동작(헤드라인 배경 베이크)을 그대로 재현해 검증한다."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+
+    # 1차: 원-레이어 main.scene 조립 → 검토 BLOCKED(예금자보호 고지 누락이 진짜 critical)
+    _assemble_one_layer(client, rid)
+    last, gate = _drive_review(client, rid)
+    assert gate.get("status") == "BLOCKED" and gate.get("critical_count", 0) >= 1
+
+    # 디자인 챗 교정 → layout.spec에 4개 언어 예금자보호 고지 보강
+    r = _run(client, rid, "design", "리뷰 결과대로 카피 수정해줘")
+    assert (r.json().get("meta") or {}).get("remediated") is True
+
+    # 교정된 layout.spec으로 재조립 → 재검토 PASS
+    _assemble_one_layer(client, rid)
+    last, gate = _drive_review(client, rid, restart_first=True)
+    assert gate.get("status") == "PASS", f"교정 후 PASS 기대, 실제 {gate}"
+    assert gate.get("critical_count") == 0
