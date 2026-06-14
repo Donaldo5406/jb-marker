@@ -7,7 +7,7 @@ from app.gateway.harness_review import ReviewHarness
 
 
 class _FakeMedia:
-    def generate_image(self, prompt, *, aspect="1:1"):
+    def generate_image(self, prompt, *, aspect="1:1", image=None):
         return b"png"
 
     def review_image(self, image_bytes, prompt, *, mime="image/png"):

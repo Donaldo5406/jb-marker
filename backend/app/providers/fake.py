@@ -19,7 +19,8 @@ class FakeProvider(Provider):
         return ProviderResponse(text=f"{prefix}echo: {last}", model=model, raw=None,
                                 citations=citations)
 
-    def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
+    def generate_image(self, prompt: str, *, aspect: str = "1:1",
+                       image: bytes | None = None) -> bytes:
         # 의존 없는 최소 1x1 PNG(결정론적 더미 — 오프라인/테스트)
         import base64
         return base64.b64decode(

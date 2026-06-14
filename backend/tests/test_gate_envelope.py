@@ -219,5 +219,6 @@ def test_design_bypass_chain_done_has_no_gate(tmp_path):
     res = h.handle_turn(_design_req(), provider=FakeProvider(), store=s)
     assert res.meta["step"] == "done"
     assert res.gate is None
-    assert res.meta["auto_advanced"] == ["S1", "S2a", "S2b", "S2c", "S3"]
+    # Task 3 재편: 카피(S2b)가 비주얼(S2a) 앞 — auto_advanced도 새 순서
+    assert res.meta["auto_advanced"] == ["S1", "S2b", "S2a", "S2c", "S3"]
     assert "gate" not in res.meta

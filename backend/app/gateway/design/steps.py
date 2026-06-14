@@ -24,7 +24,7 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
-from .prompts import PERSONA, S1_INSTR, S2A_VISION_INSTR, S2B_INSTR
+from .prompts import PERSONA, S1_INSTR, S2B_INSTR, build_vision_instr
 from .scoring import RUBRIC, run_critic
 
 # S3 채점 raw의 턴 캐시 키 — S3Final.run이 기록, critic_gate가 재사용(백로그 ②).
@@ -32,6 +32,8 @@ S3_CRITIC_CACHE = "s3_critic"
 
 # S2a 비전 검증 findings의 턴 캐시 키 — S2aVisual.run이 기록, critic_gate가 재사용(S3 전례).
 S2A_VISION_CACHE = "s2a_vision"
+
+MAX_BAKE_ATTEMPTS = 2   # 베이크 텍스트 정확성 재생성 상한(내부 루프). 외부 게이트 재생성과 합성.
 
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
@@ -78,6 +80,17 @@ DISCLOSURE_DISPLAY = {
         "en": "Protected up to KRW 50M under the Depositor Protection Act.",
     },
 }
+
+
+def _bundled_logo() -> bytes:
+    """번들 공식 JB금융 로고(국문가로조합 시그니처) PNG 바이트를 로드.
+
+    히어로 텍스트는 AI가 베이크하지만 공식 로고는 정확성이 필수라 결정론 오버레이로 핀한다
+    (S2cBrand가 VFS에 기록 + layout_spec logo 슬롯의 asset_ref로 노출 → 프론트가 image로 렌더)."""
+    p = os.path.join(os.path.dirname(__file__), "..", "..", "references", "design",
+                     "jb-logo-signature-h.png")
+    with open(p, "rb") as f:
+        return f.read()
 
 
 def load_references() -> list[dict]:
@@ -197,19 +210,29 @@ class S2aVisual(PipelineStep):
         spec = read_json_node(ctx.store, f"{base}/rough/layout.spec.json")
         concept = spec.get("visual_concept", "금융 브랜드 추상 배경")
         aspect = spec.get("aspect", "1:1")
-        # M8: Nano Banana 실패(키 없음 등) → 보이는 그라데이션 placeholder 폴백(턴 전체 500 방지, spec §9).
-        fallback = False
-        try:
-            png = self._image_provider.generate_image(concept, aspect=aspect)
-        except Exception:
-            from ...core.placeholder_image import placeholder_png
-            png = placeholder_png(aspect)
-            fallback = True
+        lang = (ctx.state.get("languages") or ["ko"])[0]
+        copy = (spec.get("copy") or {}).get(lang, {})
+        base_prompt = self._bake_prompt(concept, copy)
+        png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
-        # 비전 검증 — findings를 cache에 무조건부 기록(critic_gate 재사용). 실패는 fail-open.
-        findings, vision_failed = self._vision_check(png)
+        spec.setdefault("visual_by_lang", {})[lang] = "design-system/components/visual/v1.png"
+        # 추가 언어: image-edit 변형(같은 비주얼 유지, 텍스트만 교체). 비차단(경고+에디터 교정).
+        for vlang in (ctx.state.get("languages") or ["ko"])[1:]:
+            vcopy = (spec.get("copy") or {}).get(vlang, {})
+            try:
+                var_png = self._image_provider.generate_image(self._edit_prompt(vcopy),
+                                                              aspect=aspect, image=png)
+            except Exception:
+                continue   # 변형 실패는 무시(주 언어는 이미 확보) — 에디터 안전망
+            self._vision_check(var_png, vcopy)   # findings는 경고용(게이트 비차단)
+            vpath = f"{base}/design-system/components/visual/v1.{vlang}.png"
+            ctx.store.put(vpath, var_png, source="gemini", mime="image/png",
+                          meta={"lang": vlang, "edited_from": "v1.png"})
+            spec["visual_by_lang"][vlang] = f"design-system/components/visual/v1.{vlang}.png"
+        ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
+                      source="marker", mime="application/json")
         ctx.cache[S2A_VISION_CACHE] = findings
         text = ("비주얼을 생성했습니다." if not fallback else
                 "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
@@ -219,10 +242,47 @@ class S2aVisual(PipelineStep):
                   "image_fallback": fallback, "vision_failed": vision_failed},
             events=[{"type": "artifact", "path": path}])
 
-    def _vision_check(self, png: bytes) -> tuple[list, bool]:
+    def _bake_prompt(self, concept: str, copy: dict) -> str:
+        lines = [concept,
+                 "다음 문구를 디자인 요소로 **정확히** 렌더하세요(오타·누락 금지):"]
+        for k in ("headline", "body", "cta"):
+            if copy.get(k):
+                lines.append(f"- {k}: {copy[k]}")
+        lines.append("좌상단 모서리와 하단 스트립은 텍스트·로고 없이 비워 두세요"
+                     "(공식 로고·법령 고지 오버레이 영역).")
+        return "\n".join(lines)
+
+    def _edit_prompt(self, copy: dict) -> str:
+        lines = ["이 포스터의 텍스트만 다음으로 정확히 교체하고, 인물·배경·구도·색은 그대로 유지:"]
+        for k in ("headline", "body", "cta"):
+            if copy.get(k):
+                lines.append(f"- {k}: {copy[k]}")
+        return "\n".join(lines)
+
+    def _bake_with_retry(self, base_prompt, aspect, copy):
+        feedback = ""
+        png, findings, vision_failed, fallback = None, [], False, False
+        for attempt in range(MAX_BAKE_ATTEMPTS):
+            prompt = base_prompt if not feedback else f"{base_prompt}\n이전 시도 교정: {feedback}"
+            try:
+                png = self._image_provider.generate_image(prompt, aspect=aspect)
+                fallback = False
+            except Exception:
+                from ...core.placeholder_image import placeholder_png
+                png = placeholder_png(aspect); fallback = True
+                findings, vision_failed = [], True
+                break
+            findings, vision_failed = self._vision_check(png, copy)
+            criticals = [f for f in findings if f.get("severity") == "critical"]
+            if not criticals:
+                break
+            feedback = "; ".join(f.get("evidence", "") for f in criticals)
+        return png, findings, vision_failed, fallback
+
+    def _vision_check(self, png: bytes, copy: dict) -> tuple[list, bool]:
         """review_image로 비전 점검 → (findings, vision_failed). 미지원/실패는 ([], True)."""
         try:
-            resp = self._image_provider.review_image(png, S2A_VISION_INSTR, mime="image/png")
+            resp = self._image_provider.review_image(png, build_vision_instr(copy), mime="image/png")
             return ((parse_json_block(resp.text).get("findings") or []), False)
         except Exception:
             return ([], True)   # 비전 미지원/실패 → fail-open(빈 findings로 통과)
@@ -329,13 +389,23 @@ class S2cBrand(PipelineStep):
                           text, source="marker", mime="text/plain", meta={"lang": lang})
             ctx.store.put(f"{base}/design-system/components/logo/{lang}.txt",
                           "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
-        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합
-        # (slots/visual_concept/aspect/기존 copy 등 나머지는 보존). S2bCopy와 동일 idiom.
+        # 공식 로고 핀(결정론 오버레이): 번들 PNG 바이트를 VFS에 기록. 히어로 텍스트는 AI가
+        # 베이크하지만 공식 로고는 정확성이 필수라 placeholder가 아닌 실 바이트로 박는다.
+        logo_path = f"{base}/design-system/components/logo/v1.png"
+        ctx.store.put(logo_path, _bundled_logo(), source="marker", mime="image/png")
+        # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합하고,
+        # logo 슬롯(asset_ref)을 같은 spec에 추가(slots/visual_concept/aspect/기존 copy 등 나머지는
+        # 보존). 한 번의 read/put으로 직렬화 — 별도 read/put 금지(경합·덮어쓰기 방지). S2bCopy 동일 idiom.
         spec = read_json_node(ctx.store, f"{base}/rough/layout.spec.json")
         spec.setdefault("copy", {})
         for lang, text in notices.items():
             spec["copy"].setdefault(lang, {})
             spec["copy"][lang]["disclosure"] = text
+        spec.setdefault("slots", [])
+        if not any(s.get("role") == "logo" for s in spec["slots"]):
+            spec["slots"].append({"role": "logo", "z": 9,
+                "bbox": {"x": 48, "y": 48, "w": 300, "h": 96},
+                "asset_ref": "design-system/components/logo/v1.png"})
         ctx.store.put(f"{base}/rough/layout.spec.json",
                       json.dumps(spec, ensure_ascii=False), source="marker",
                       mime="application/json")
@@ -403,7 +473,7 @@ class S3Final(PipelineStep):
 
 
 # step 객체 선언이 단일 출처 — 수기 튜플과의 이름 불일치 원천 차단(spec §4.1, 체크리스트 ⑪).
-STEP_CLASSES = (S0Setup, S1Rough, S2aVisual, S2bCopy, S2cBrand, S3Final)
+STEP_CLASSES = (S0Setup, S1Rough, S2bCopy, S2aVisual, S2cBrand, S3Final)
 STEPS = tuple(c.name for c in STEP_CLASSES) + (DONE,)
 GATED_STEPS = tuple(c.name for c in STEP_CLASSES if c.gated)
 CRITIC_STEPS = (S1Rough.name, S3Final.name)   # 7항목 시각 critic(S2b는 grounding — critic_gate 참조)

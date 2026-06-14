@@ -16,7 +16,7 @@ class GoogleProvider(Provider):
     name = "google"
 
     def __init__(self, api_key: str | None, *,
-                 image_model: str = "gemini-2.5-flash-image") -> None:
+                 image_model: str = "gemini-3-pro-image") -> None:
         self._api_key = api_key
         self._image_model = image_model
 
@@ -42,21 +42,25 @@ class GoogleProvider(Provider):
         usage = _extract_google_usage(resp)
         return ProviderResponse(text=text, model=model, raw=resp, citations=citations, usage=usage)
 
-    def generate_image(self, prompt: str, *, aspect: str = "1:1") -> bytes:
+    def generate_image(self, prompt: str, *, aspect: str = "1:1",
+                       image: bytes | None = None) -> bytes:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=self._api_key)
-        full = (f"{prompt}\n\n"
-                "CRITICAL: 이미지에 어떤 글자/숫자/로고/워터마크도 렌더하지 마세요. "
-                "텍스트는 별도 레이어로 처리됩니다. 배경/키비주얼만 생성.")
         # 종횡비는 프롬프트 텍스트로는 무시되므로 image_config로 전달해야 실제 적용된다
         # (이전엔 항상 1:1 정사각으로 생성돼 4:5 세로 포스터가 깨졌다).
         cfg = None
         if aspect in _SUPPORTED_ASPECTS:
             cfg = types.GenerateContentConfig(
                 image_config=types.ImageConfig(aspect_ratio=aspect))
+        # image 주어지면 image-to-image 편집(입력 이미지 Part를 prompt 앞에 둔다).
+        # 프롬프트는 호출측이 소유 — 여기서 글자금지 등 suffix를 덧붙이지 않는다.
+        if image is not None:
+            contents = [types.Part.from_bytes(data=image, mime_type="image/png"), prompt]
+        else:
+            contents = prompt
         resp = client.models.generate_content(
-            model=self._image_model, contents=full, config=cfg)
+            model=self._image_model, contents=contents, config=cfg)
         for part in resp.candidates[0].content.parts:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):

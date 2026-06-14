@@ -47,12 +47,25 @@ def _ctx(store, provider):
                        base="/r1/design")
 
 
+def test_pipeline_order_copy_before_visual():
+    """베이크는 grounded 카피를 입력받아야 하므로 S2b가 S2a보다 먼저."""
+    from app.gateway.design.steps import STEPS, STEP_CLASSES
+    names = [c.name for c in STEP_CLASSES]
+    assert names.index("S2b") < names.index("S2a")
+    assert STEPS.index("S2b") < STEPS.index("S2a")
+    from app.gateway.harness_design import next_step
+    assert next_step("S1") == "S2b"
+    assert next_step("S2b") == "S2a"
+    assert next_step("S2a") == "S2c"
+
+
 def test_step_declarations_derive_constants():
     # 선언↔유도 동기(spec §7-2): 수기 튜플과 step 객체의 이름 불일치 원천 차단(체크리스트 ⑪)
     assert STEPS == tuple(c.name for c in STEP_CLASSES) + ("done",)
-    assert STEPS == ("S0", "S1", "S2a", "S2b", "S2c", "S3", "done")
+    # Task 3 재편: 카피(S2b)가 비주얼(S2a) 앞 — grounded 카피를 베이크 입력으로
+    assert STEPS == ("S0", "S1", "S2b", "S2a", "S2c", "S3", "done")
     assert GATED_STEPS == tuple(c.name for c in STEP_CLASSES if c.gated)
-    assert GATED_STEPS == ("S1", "S2a", "S2b", "S2c", "S3")
+    assert GATED_STEPS == ("S1", "S2b", "S2a", "S2c", "S3")
     assert CRITIC_STEPS == ("S1", "S3")
     assert set(CRITIC_STEPS) <= set(GATED_STEPS)
 
@@ -96,3 +109,28 @@ def test_harness_reexports_are_derived_and_orchestrator_synced():
     h = DesignHarness(image_provider=FakeProvider())
     assert h._orch.step_names == STEPS          # 인스턴스 조립 누락 방지(동기 가드)
     assert h._orch.studio == "design"
+
+
+def test_s2c_pins_official_logo(tmp_path):
+    """S2cBrand가 번들 로고를 VFS에 기록하고 layout_spec에 logo 슬롯(asset_ref)을 추가."""
+    import json
+    from app.gateway.design.steps import S2cBrand
+    from app.gateway.pipeline import StepContext
+    from app.gateway.harness import HarnessRequest
+    from app.vfs.local import LocalVfsStore
+
+    store = LocalVfsStore(storage_dir=str(tmp_path)); store.create_run("r1", languages=["ko"])
+    store.put("/r1/brainstorming/plan.md", "---\ndisclosures: []\nlanguages: [ko]\n---\n본문",
+              source="marker", mime="text/markdown")
+    store.put("/r1/design/rough/layout.spec.json",
+              json.dumps({"slots": [], "copy": {"ko": {}}}), source="marker",
+              mime="application/json")
+    ctx = StepContext(req=HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                      provider="fake", is_marker=True), provider=None, store=store,
+                      state={"languages": ["ko"]}, base="/r1/design")
+    S2cBrand().run(ctx)
+    logo = store.get("/r1/design/design-system/components/logo/v1.png")
+    assert logo is not None and logo.blob and len(logo.blob) > 0   # blob 바이트
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    logo_slot = next(s for s in spec["slots"] if s["role"] == "logo")
+    assert logo_slot["asset_ref"] == "design-system/components/logo/v1.png"

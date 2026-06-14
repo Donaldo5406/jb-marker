@@ -6,20 +6,20 @@ const SPEC = {
   slots: [
     { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1080 }, z: 0,
       asset_ref: "design-system/components/visual/v1.png" },
-    { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 200 }, z: 2, copy_key: "headline" },
+    { role: "disclosure", bbox: { x: 80, y: 120, w: 920, h: 200 }, z: 2, copy_key: "disclosure" },
   ],
-  copy: { ko: { headline: "든든한 적금" }, en: { headline: "Solid Savings" } },
+  copy: { ko: { disclosure: "예금자보호 5천만원" }, en: { disclosure: "Protected" } },
 };
 
 describe("assembleScene", () => {
-  it("배경 슬롯은 image, 텍스트 슬롯은 textbox 객체로", () => {
+  it("배경 슬롯은 image, 텍스트(disclosure) 슬롯은 textbox 객체로", () => {
     const scene = assembleScene(SPEC as any, "ko", (r) => `/vfs/r1/${r}`);
     const obj = scene.objects;
     expect(obj.find((o: any) => o.role === "background").type).toBe("image");
-    const hl = obj.find((o: any) => o.role === "headline");
-    expect(hl.type).toBe("textbox");
-    expect(hl.text).toBe("든든한 적금");
-    expect(hl.lang).toBe("ko");
+    const disc = obj.find((o: any) => o.role === "disclosure");
+    expect(disc.type).toBe("textbox");
+    expect(disc.text).toBe("예금자보호 5천만원");
+    expect(disc.lang).toBe("ko");
   });
 
   it("bbox가 배열 [x,y,w,h]여도 좌표/크기를 숫자로 정규화한다 (demo_fixtures 호환)", () => {
@@ -30,27 +30,27 @@ describe("assembleScene", () => {
       slots: [
         { role: "background", bbox: [0, 0, 1080, 1080], z: 0,
           asset_ref: "design-system/components/visual/v1.png" },
-        { role: "headline", bbox: [80, 120, 920, 300], z: 1, copy_key: "headline" },
+        { role: "disclosure", bbox: [80, 120, 920, 300], z: 1, copy_key: "disclosure" },
       ],
-      copy: { ko: { headline: "연 3.5% JB 정기예금" } },
+      copy: { ko: { disclosure: "예금자보호법에 따라 보호됩니다." } },
     };
     const scene = assembleScene(spec as any, "ko", (r) => `/vfs/r1/${r}`);
     const bg = scene.objects.find((o: any) => o.role === "background");
     expect(bg.left).toBe(0);
     expect(bg.top).toBe(0);
     expect(bg.width).toBe(1080);   // FabricEditor.scaleToWidth(o.width)가 동작하려면 숫자여야 함
-    const hl = scene.objects.find((o: any) => o.role === "headline");
-    expect(hl.left).toBe(80);
-    expect(hl.top).toBe(120);
-    expect(hl.width).toBe(920);
+    const disc = scene.objects.find((o: any) => o.role === "disclosure");
+    expect(disc.left).toBe(80);
+    expect(disc.top).toBe(120);
+    expect(disc.width).toBe(920);
   });
 
   it("bbox가 객체 {x,y,w,h}면 좌표를 그대로 숫자로 매핑한다", () => {
     const scene = assembleScene(SPEC as any, "ko", (r) => r);
-    const hl = scene.objects.find((o: any) => o.role === "headline");
-    expect(hl.left).toBe(80);
-    expect(hl.top).toBe(120);
-    expect(hl.width).toBe(920);
+    const disc = scene.objects.find((o: any) => o.role === "disclosure");
+    expect(disc.left).toBe(80);
+    expect(disc.top).toBe(120);
+    expect(disc.width).toBe(920);
   });
 
   it("copy_key 없는 슬롯은 role을 키로 사용(disclosure 고지 렌더)", () => {
@@ -67,16 +67,6 @@ describe("assembleScene", () => {
     expect(disc.text).toBe("본 이미지는 AI로 생성되었습니다.");
   });
 
-  it("swapLanguage는 텍스트 객체 콘텐츠만 교체, 레이아웃 보존", () => {
-    const ko = assembleScene(SPEC as any, "ko", (r) => r);
-    const en = swapLanguage(ko, SPEC as any, "en");
-    const koHl = ko.objects.find((o: any) => o.role === "headline");
-    const enHl = en.objects.find((o: any) => o.role === "headline");
-    expect(enHl.text).toBe("Solid Savings");
-    expect(enHl.left).toBe(koHl.left);    // bbox 보존
-    expect(enHl.lang).toBe("en");
-  });
-
   it("aspect로 캔버스 width/height를 산출한다(4:5→1080×1350)", () => {
     const scene = assembleScene({ ...SPEC, aspect: "4:5" } as any, "ko", (r) => r);
     expect(scene.width).toBe(1080);
@@ -84,36 +74,83 @@ describe("assembleScene", () => {
   });
 
   // 하이브리드 렌더: font_px 위계 회복 + 텍스트 슬롯 스크림(복잡한 비주얼 위 가독성)
+  // 원-레이어 구조에서 헤드라인/바디/CTA는 배경에 베이크되므로 disclosure만 textbox/scrim.
   const SCRIM_SPEC = {
     aspect: "1:1",
     slots: [
       { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1080 }, z: 0, asset_ref: "v1.png" },
-      { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 180 }, z: 3, copy_key: "headline",
-        font_px: 96, color: "#0B1324" },
       { role: "disclosure", bbox: { x: 80, y: 980, w: 920, h: 120 }, z: 1, copy_key: "disclosure",
         font_px: 30, color: "#FFFFFF" },
     ],
-    copy: { ko: { headline: "미래를 더 크게", disclosure: "예금자보호법에 따라 보호" } },
+    copy: { ko: { disclosure: "예금자보호법에 따라 보호" } },
   };
 
-  it("textbox가 layout.spec의 font_px를 반영(48 하드코딩 제거)", () => {
+  it("textbox가 layout.spec의 font_px를 반영(disclosure)", () => {
     const scene = assembleScene(SCRIM_SPEC as any, "ko", (r) => `/vfs/${r}`);
-    expect(scene.objects.find((o: any) => o.role === "headline" && o.type === "textbox").fontSize).toBe(96);
     expect(scene.objects.find((o: any) => o.role === "disclosure" && o.type === "textbox").fontSize).toBe(30);
   });
 
-  it("각 textbox 슬롯마다 그보다 낮은 z의 스크림 rect가 삽입된다", () => {
+  it("disclosure textbox 슬롯에 그보다 낮은 z의 스크림 rect가 삽입된다", () => {
     const scene = assembleScene(SCRIM_SPEC as any, "ko", (r) => `/vfs/${r}`);
-    expect(scene.objects.filter((o: any) => o.role === "scrim").length).toBe(2); // headline·disclosure(background 제외)
-    const idxScrim = scene.objects.findIndex((o: any) => o.role === "scrim" && o.slotId === "headline");
-    const idxText = scene.objects.findIndex((o: any) => o.type === "textbox" && o.role === "headline");
+    expect(scene.objects.filter((o: any) => o.role === "scrim").length).toBe(1); // disclosure(background 제외)
+    const idxScrim = scene.objects.findIndex((o: any) => o.role === "scrim" && o.slotId === "disclosure");
+    const idxText = scene.objects.findIndex((o: any) => o.type === "textbox" && o.role === "disclosure");
     expect(idxScrim).toBeLessThan(idxText);   // 스크림이 textbox보다 먼저(아래) 그려짐
   });
 
-  it("밝은 글자(#FFFFFF)는 어두운 스크림, 어두운 글자(#0B1324)는 밝은 스크림", () => {
+  it("밝은 글자(#FFFFFF)는 어두운 스크림(disclosure)", () => {
     const scene = assembleScene(SCRIM_SPEC as any, "ko", (r) => `/vfs/${r}`);
     expect(scene.objects.find((o: any) => o.role === "scrim" && o.slotId === "disclosure").fill).toBe("rgba(0,0,0,0.38)");
-    expect(scene.objects.find((o: any) => o.role === "scrim" && o.slotId === "headline").fill).toBe("rgba(255,255,255,0.42)");
+  });
+});
+
+describe("assembleScene (원-레이어)", () => {
+  const SPEC: any = {
+    aspect: "4:5",
+    visual_by_lang: { ko: "visual/v1.png", en: "visual/v1.en.png" },
+    slots: [
+      { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1350 }, z: 0, asset_ref: "visual/v1.png" },
+      { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 180 }, z: 3, copy_key: "headline", font_px: 96 },
+      { role: "cta", bbox: { x: 80, y: 980, w: 520, h: 96 }, z: 3, copy_key: "cta" },
+      { role: "disclosure", bbox: { x: 80, y: 1180, w: 920, h: 120 }, z: 1, copy_key: "disclosure", color: "#3A3A3A" },
+      { role: "logo", bbox: { x: 48, y: 48, w: 300, h: 96 }, z: 9, asset_ref: "logo/v1.png" },
+    ],
+    copy: { ko: { headline: "청년 적금", cta: "지금 신청", disclosure: "예금자보호 5천만원" },
+            en: { headline: "Youth Savings", cta: "Apply", disclosure: "Protected" } },
+  };
+
+  it("headline·cta는 textbox/scrim을 방출하지 않는다(배경에 베이크)", () => {
+    const s = assembleScene(SPEC, "ko", (r) => `/vfs/${r}`);
+    expect(s.objects.some((o: any) => o.role === "headline")).toBe(false);
+    expect(s.objects.some((o: any) => o.role === "cta")).toBe(false);
+  });
+
+  it("배경(풀 포스터)·로고 image + disclosure textbox만 방출", () => {
+    const s = assembleScene(SPEC, "ko", (r) => `/vfs/${r}`);
+    expect(s.objects.find((o: any) => o.role === "background").type).toBe("image");
+    expect(s.objects.find((o: any) => o.role === "logo").type).toBe("image");
+    const disc = s.objects.find((o: any) => o.role === "disclosure");
+    expect(disc.type).toBe("textbox");
+    expect(disc.text).toBe("예금자보호 5천만원");
+  });
+
+  it("visual_by_lang로 언어별 배경 asset_ref를 해석", () => {
+    const en = assembleScene(SPEC, "en", (r) => `/vfs/${r}`);
+    expect(en.objects.find((o: any) => o.role === "background").src).toBe("/vfs/visual/v1.en.png");
+  });
+
+  it("visual_by_lang 없으면 배경 슬롯 asset_ref 폴백", () => {
+    const { visual_by_lang, ...noMap } = SPEC;
+    const s = assembleScene(noMap, "ko", (r) => `/vfs/${r}`);
+    expect(s.objects.find((o: any) => o.role === "background").src).toBe("/vfs/visual/v1.png");
+  });
+
+  it("swapLanguage는 베이크 배경 + disclosure를 언어별 교체(로고 불변)", () => {
+    const ko = assembleScene(SPEC, "ko", (r) => `/vfs/${r}`);
+    const en = swapLanguage(ko, SPEC, "en", (r) => `/vfs/${r}`);
+    expect(en.objects.find((o: any) => o.role === "background").src).toBe("/vfs/visual/v1.en.png");
+    expect(en.objects.find((o: any) => o.role === "disclosure").text).toBe("Protected");
+    expect(en.objects.find((o: any) => o.role === "logo").src).toBe("/vfs/logo/v1.png");
   });
 });
 

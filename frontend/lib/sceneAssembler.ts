@@ -12,6 +12,8 @@ export type Slot = {
 };
 export type LayoutSpec = {
   aspect?: string;
+  // 언어별 베이크 배경(풀 포스터) asset_ref 맵. 예: { ko: "...v1.png", en: "...v1.en.png" }.
+  visual_by_lang?: Record<string, string>;
   slots: Slot[];
   copy?: Record<string, Record<string, string>>;
 };
@@ -82,14 +84,19 @@ export function assembleScene(
         role: s.role, slotId: `${s.role}`,
       };
       if (IMAGE_ROLES.has(s.role)) {
-        return [{ ...common, type: "image",
-          src: s.asset_ref ? assetUrl(s.asset_ref) : "" }];
+        // 배경(풀 포스터)은 언어별 베이크 visual을 visual_by_lang에서 해석, 없으면 슬롯 asset_ref 폴백.
+        const ref = s.role === "background"
+          ? (spec.visual_by_lang?.[lang] ?? s.asset_ref)
+          : s.asset_ref;
+        return [{ ...common, type: "image", src: ref ? assetUrl(ref) : "" }];
       }
+      // 헤드라인/바디/CTA는 배경에 베이크됨 → 어떤 객체도 방출하지 않음. disclosure만 오버레이.
+      if (s.role !== "disclosure") return [];
       const key = s.copy_key ?? s.role;
       const color = s.color ?? "#0b1324";
       const textbox = { ...common, type: "textbox", lang,
         text: (key && copy[key]) || "",
-        fontSize: s.font_px ?? 48, fill: color };
+        fontSize: s.font_px ?? 30, fill: color };
       // 스크림을 먼저(낮은 z), 텍스트를 그 위로
       return [scrimFor(bb, color, s.role), textbox];
     });
@@ -97,15 +104,18 @@ export function assembleScene(
   return { version: "6.0.0", objects, width, height };
 }
 
-/** 텍스트 객체 콘텐츠만 언어 교체(레이아웃·비주얼 보존). */
+/** 원-레이어 언어 교체: 베이크 배경(visual_by_lang) + disclosure 텍스트를 언어별 교체.
+ *  로고·레이아웃은 보존. assetUrl로 언어별 배경 asset_ref를 해석. */
 export function swapLanguage(
-  scene: FabricScene, spec: LayoutSpec, lang: string,
+  scene: FabricScene, spec: LayoutSpec, lang: string, assetUrl: (ref: string) => string,
 ): FabricScene {
   const copy = spec.copy?.[lang] ?? {};
   const slotByRole = new Map(spec.slots.map((s) => [s.role, s]));
+  const bgRef = spec.visual_by_lang?.[lang];
   return {
     ...scene,
     objects: scene.objects.map((o) => {
+      if (o.role === "background" && bgRef) return { ...o, src: assetUrl(bgRef) };
       if (o.type !== "textbox") return o;
       const slot = slotByRole.get(o.role);
       const key = slot?.copy_key ?? slot?.role;

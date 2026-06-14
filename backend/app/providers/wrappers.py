@@ -25,8 +25,8 @@ class ModelBoundProvider:
     def complete(self, messages, *, model=None, system=None, **kw):
         return self._p.complete(messages, model=self._model, system=system, **kw)
 
-    def generate_image(self, prompt, *, aspect="1:1"):
-        return self._p.generate_image(prompt, aspect=aspect)
+    def generate_image(self, prompt, *, aspect="1:1", image=None):
+        return self._p.generate_image(prompt, aspect=aspect, image=image)
 
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
         return self._p.review_image(image_bytes, prompt, mime=mime)
@@ -76,8 +76,8 @@ class TrackedProvider:
         )
         return resp
 
-    def generate_image(self, prompt, *, aspect="1:1"):
-        out = self._inner.generate_image(prompt, aspect=aspect)
+    def generate_image(self, prompt, *, aspect="1:1", image=None):
+        out = self._inner.generate_image(prompt, aspect=aspect, image=image)
         used_model = (self._settings.google_image_model if self.name == "google"
                       else self._model_for())
         entry = usage_log.record_usage(
