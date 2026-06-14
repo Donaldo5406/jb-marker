@@ -70,6 +70,12 @@ _PROTOCOL = (
     '"document": "갱신된 전체 문서(--- YAML frontmatter --- 다음 마크다운 본문)", '
     '"ask": null 또는 {"trigger":"a|b|c","question":"...","options":["..."]}, '
     '"ready": true/false}'
+    # 출력 규칙(파싱 안정화) — 웹검색이 발동해도 최종 출력은 JSON 하나만,
+    # reply는 짧게(선택지 상세는 ask.options로), 문자열 값 안 따옴표/줄바꿈 금지.
+    "\n\n[출력 규칙] 웹검색을 하더라도 최종 출력은 위 JSON 객체 하나만 내보내세요 — "
+    "그 앞뒤에 인사·검색 요약·설명 같은 어떤 텍스트도 붙이지 마세요. "
+    "reply는 2~3문장으로 간결히 쓰고, 선택지(추천안)의 상세 설명은 reply가 아니라 ask.options 배열에 담으세요. "
+    "JSON 문자열 값 안에서는 큰따옴표(\") 대신 작은따옴표(')나 「」를 쓰고, 실제 줄바꿈 대신 공백을 사용하세요."
 )
 
 # Stage A 지시 블록 — PromptSpec.constraints 단일 원소(문자열은 인라인 시절과 동일, D6).
@@ -234,10 +240,26 @@ class BrainstormingHarness(Harness):
         existing = len(store.list(f"{base}/assets/research"))
         for i, c in enumerate(citations or []):
             p = f"{base}/assets/research/article/src_{existing + i}.md"
-            body = c.get("snippet") or f"# {c.get('title') or ''}\n\n{c.get('url') or ''}"
-            store.put(p, body, source="research",
+            store.put(p, self._article_md(c), source="research",
                       meta={"source_url": c.get("url"), "title": c.get("title")}, mime="text/markdown")
         return len(citations or [])
+
+    def _article_md(self, c: dict) -> str:
+        """인용 1건 → research 산출 마크다운. 본문 우선순위: fixture body(mock·결정적)
+        → 원문 URL 스크랩(실모드) → snippet 폴백. 한 줄짜리 빈약한 산출을 막는다."""
+        title = c.get("title") or "참고자료"
+        url = c.get("url") or ""
+        # 1) mock fixture가 풀 본문을 직접 제공 → 그대로(스크랩 불필요·결정적).
+        body = (c.get("body") or "").strip()
+        # 2) 실모드: 원문 기사 본문 best-effort 스크랩.
+        if not body and url:
+            from ..core.article_fetch import fetch_article_text
+            body = (fetch_article_text(url) or "").strip()
+        # 3) 폴백: snippet(최소한의 요약).
+        if not body:
+            body = (c.get("snippet") or "").strip()
+        header = f"# {title}\n\n> 출처: {url}\n" if url else f"# {title}\n"
+        return f"{header}\n{body}\n" if body else header
 
     def _stage_a(self, req: HarnessRequest, provider, store, state: dict, msgs: list[dict]) -> HarnessResult:
         base = self._base(req.run_id)

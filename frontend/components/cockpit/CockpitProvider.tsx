@@ -67,6 +67,8 @@ export type CockpitContextValue = {
   upsellOpen: boolean;
   messages: ChatMessage[];
   pendingGate: GateEnvelope | null;   // kind==="ask" 봉투만 보관(AskUserToast 소비)
+  chatPending: boolean;               // answerAsk/sendChat 등 챗 응답 대기 중 — ChatPane '생성 중…' 표시
+
   brainStage: string | null;          // _state.json.stage
   designStep: string;                 // "S0".."done"
   designLang: string;                 // 현재 편집 언어
@@ -183,6 +185,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingGate, setPendingGate] = useState<GateEnvelope | null>(null);
+  // 챗 응답 대기 플래그 — AskUserToast 선택(answerAsk)은 ChatPane 로컬 loading을 거치지 않으므로
+  // Provider가 직접 보유해 '생성 중…' 인디케이터가 토스트 선택 경로에서도 뜨도록 한다.
+  const [chatPending, setChatPending] = useState(false);
   // 채팅 입력 포커스 신호 — AskUserToast 등 별개 컴포넌트가 ChatPane textarea에 포커스를 요청.
   const [chatFocusNonce, setChatFocusNonce] = useState(0);
   const requestChatFocus = useCallback(() => setChatFocusNonce((n) => n + 1), []);
@@ -486,6 +491,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       const id = runIdRef.current;
       if (!id) return null;
       setMessages((m) => [...m, { role: "user", content: p.prompt }]);
+      setChatPending(true);
       try {
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
@@ -501,6 +507,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         const status = (e as { status?: number }).status;
         if (status === 402) { setUpsellOpen(true); return null; }
         throw e;
+      } finally {
+        setChatPending(false);
       }
     },
     [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest],
@@ -735,6 +743,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     if (!id || pendingGate?.kind !== "ask") return;
     setMessages((m) => [...m, { role: "user", content: choice }]);
     setPendingGate(null);
+    setChatPending(true);   // 토스트 선택 직후 '생성 중…' 표시(ChatPane이 chatPending 구독).
     try {
       const res = await api.gatewayRun({
         run_id: id, studio: "brainstorming", prompt: choice,
@@ -747,6 +756,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 402) setUpsellOpen(true);
+    } finally {
+      setChatPending(false);
     }
   }, [pendingGate, applyGate, refreshTree, loadBrainState, loadManifest]);
 
@@ -996,6 +1007,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     upsellOpen,
     messages,
     pendingGate,
+    chatPending,
     brainStage,
     designStep,
     designLang,
