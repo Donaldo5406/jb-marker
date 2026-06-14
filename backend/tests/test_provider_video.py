@@ -145,3 +145,31 @@ def test_google_generate_video_prompt_has_cinematic_ad_direction(monkeypatch):
     assert "시네마틱" in p and "광고" in p   # 실광고 연출 지시
     assert "글자" in p                       # no-text 가드 유지(컴플라이언스)
     assert "적금 캠페인 키비주얼" in p        # 호출측 프롬프트 보존
+
+
+def test_tracked_provider_delegates_generate_video():
+    """TrackedProvider가 generate_video를 위임(미구현이면 V2a가 항상 still 폴백했던 버그)."""
+    from app.providers.wrappers import TrackedProvider
+
+    class _Inner:
+        name = "demo"
+        _model = "demo-1"
+        def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+            return b"\x00\x00\x00 ftypisom_VIDEO"
+
+    tp = TrackedProvider(_Inner(), store=None, run_id="r", step="video", settings=None)
+    out = tp.generate_video("배경", aspect="9:16", duration_sec=8)
+    assert out == b"\x00\x00\x00 ftypisom_VIDEO"
+
+
+def test_modelbound_provider_delegates_generate_video(monkeypatch):
+    from app.providers import wrappers
+
+    class _P:
+        def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+            return b"MB_VIDEO_BYTES"
+
+    monkeypatch.setattr(wrappers, "get_provider", lambda name, settings: _P())
+    monkeypatch.setattr(wrappers, "_model_map", lambda s: {})
+    mb = wrappers.ModelBoundProvider("demo", None)
+    assert mb.generate_video("배경", aspect="9:16") == b"MB_VIDEO_BYTES"
