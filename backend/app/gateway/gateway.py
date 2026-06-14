@@ -26,8 +26,9 @@ class MarkerGateway:
         self._wrap_provider = wrap_provider
 
     def run(self, req: HarnessRequest, harness: Harness) -> HarnessResult:
+        # mock(시연 데모)은 유료 게이트를 우회 — 자유·결정적 데모가 목적(spec §5.2).
         check_entitlement(is_marker=req.is_marker,
-                          override=self._entitlement_check(req.user_id))
+                          override=req.mock or self._entitlement_check(req.user_id))
         provider = self._provider_factory(req.provider)
         if self._wrap_provider is not None:
             provider = self._wrap_provider(provider, req)
