@@ -11,18 +11,60 @@ def _client(monkeypatch):
     return TestClient(create_app())
 
 
-def test_mock_true_forces_demo_text_provider(monkeypatch):
-    """mock=true면 provider='anthropic'이어도 DemoProvider가 응답 — 실 키 호출 안 함."""
+def test_mock_true_routes_marker_harness_not_passthrough(monkeypatch):
+    """mock=true면 is_marker=false(프론트 기본 모델 Claude)여도 Marker 하네스로 라우팅된다.
+
+    시연 footgun 회귀 가드: 예전엔 mock이 provider만 demo로 바꾸고 is_marker는 그대로라,
+    기본 모델(Claude=is_marker:false)이면 PassthroughHarness로 빠져 _passthrough.md만 쓰고
+    빈 echo → 프론트가 _messages/_state.json을 404로 못 읽어 챗이 멈췄다. 이제 mock=true는
+    Marker 하네스를 강제 → BrainStorming stage A의 ask 게이트와 _state.json이 생성된다."""
     client = _client(monkeypatch)
     rid = client.post("/runs", json={"title": "M"}).json()["run_id"]
     r = client.post("/gateway/run", json={
-        "run_id": rid, "studio": "brainstorming", "prompt": "안녕",
+        "run_id": rid, "studio": "brainstorming", "prompt": "정기예금 캠페인 만들어줘",
         "provider": "anthropic", "is_marker": False, "mock": True,
     })
     assert r.status_code == 200
-    # passthrough가 DemoProvider.complete 결과를 그대로 영속(미매칭 system → 빈 reply JSON).
-    got = client.get(f"/vfs/{rid}/brainstorming/_passthrough.md")
-    assert got.status_code == 200
+    body = r.json()
+    # Marker(BrainStorming) 하네스가 동작 → stage A ask 게이트 + source=marker.
+    assert (body.get("gate") or {}).get("kind") == "ask"
+    assert body["meta"]["source"] == "marker"
+    # passthrough 경로가 아님 → _passthrough.md 없음, 대신 marker 상태/대화가 영속.
+    assert client.get(f"/vfs/{rid}/brainstorming/_passthrough.md").status_code == 404
+    assert client.get(f"/vfs/{rid}/brainstorming/_state.json").status_code == 200
+
+
+def test_mock_true_bypasses_entitlement_when_free(monkeypatch):
+    """mock=true면 무료(entitlement OFF)여도 402가 아니라 Marker 하네스가 무료로 완주한다.
+
+    시연용 Mock은 '자유·결정적 데모'가 목적 → 유료 게이트(check_entitlement)를 우회한다.
+    design(프론트가 is_marker:true 전송)도 entitlement 없이 통과해야 한다."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "0")  # 유료 게이트 활성(우회 없음)
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={}).json()["run_id"]
+    # entitlement PUT 하지 않음 → 무료 사용자. mock=true가 게이트를 뚫어야 200.
+    r = client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design", "prompt": "디자인 시작",
+        "provider": "anthropic", "is_marker": True, "mock": True,
+    })
+    assert r.status_code == 200, f"mock인데 402로 막힘: {r.status_code} {r.text[:200]}"
+
+
+def test_no_mock_free_user_still_blocked_402(monkeypatch):
+    """회귀 가드: mock 없이 is_marker=true + 무료면 종전대로 402(유료 게이트 유지)."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("ENTITLEMENT_OVERRIDE", "0")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={}).json()["run_id"]
+    r = client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design", "prompt": "x",
+        "provider": "anthropic", "is_marker": True,
+    })
+    assert r.status_code == 402
 
 
 def test_mock_omitted_keeps_existing_behavior(monkeypatch):

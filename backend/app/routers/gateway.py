@@ -59,12 +59,17 @@ async def gateway_run(body: GatewayRun, request: Request,
                       user_id: str = Depends(get_user_id)) -> dict:
     state = request.app.state
     require_owner(request, body.run_id, user_id)
+    # 시연용 Mock: provider/미디어를 demo로, 그리고 Marker 하네스를 강제한다.
+    # mock인데 is_marker=false(프론트 기본 모델 Claude)면 PassthroughHarness로 빠져
+    # 빈 echo만 남아 시연이 깨졌다 → mock=true는 항상 Marker 하네스로 라우팅하고,
+    # 유료 게이트는 gateway.run(req.mock)이 우회한다.
+    marker = True if body.mock else body.is_marker
     provider_name = "demo" if body.mock else body.provider
     req = HarnessRequest(run_id=body.run_id, studio=body.studio,
                          user_prompt=body.prompt, provider=provider_name,
-                         is_marker=body.is_marker, answer=body.answer,
+                         is_marker=marker, answer=body.answer,
                          action=body.action, user_id=user_id,
-                         bypass_map=body.bypass_map)
+                         bypass_map=body.bypass_map, mock=body.mock)
     media_name = "demo" if body.mock else "google"
 
     def _media_provider():
@@ -72,7 +77,7 @@ async def gateway_run(body: GatewayRun, request: Request,
         return tracked_provider(media_name, state.settings, store=state.store,
                                 run_id=body.run_id, step=body.studio)
 
-    harness = select_harness(body.studio, body.is_marker,
+    harness = select_harness(body.studio, marker,
                              media_provider_factory=_media_provider)
     try:
         result = state.gateway.run(req, harness)
