@@ -283,13 +283,16 @@ def load_poster_bg() -> bytes:
 
 # 실 Veo 생성 광고 footage(텍스트-free 시네마틱) — 시연/Mock용 결정론 영상.
 # Veo 크레딧 없이도 demo가 진짜 광고영상을 렌더하도록 V2aFootage가 이 바이트를 클립으로 사용.
-_DEMO_VIDEO = os.path.join(os.path.dirname(__file__), "..", "references", "design", "veo_sample.mp4")
+# ⚠️ base64 텍스트로 보관(.txt) — HF Space는 *.mp4를 LFS로 추적하는데 신규 LFS 객체가
+#    Docker 빌드 컨텍스트에 미해결되는 이슈가 있어, LFS를 타지 않는 텍스트로 박아 항상 배포되게 한다.
+_DEMO_VIDEO_B64 = os.path.join(os.path.dirname(__file__), "..", "references", "design", "veo_sample_b64.txt")
 
 
 def load_demo_video() -> bytes:
-    """시연용 실 Veo 광고 footage(mp4) 바이트. 파일 부재 시 still 폴백(load_poster_bg)."""
+    """시연용 실 Veo 광고 footage(mp4) 바이트. base64 텍스트를 디코드, 부재 시 still 폴백."""
     try:
-        with open(_DEMO_VIDEO, "rb") as f:
-            return f.read()
-    except OSError:
+        with open(_DEMO_VIDEO_B64, "rb") as f:
+            import base64
+            return base64.b64decode(f.read())
+    except (OSError, ValueError):
         return load_poster_bg()
