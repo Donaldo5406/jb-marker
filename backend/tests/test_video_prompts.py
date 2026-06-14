@@ -26,3 +26,15 @@ def test_v1_instr_directs_cinematic_scene_and_keeps_text_free():
 def test_v1_example_footage_is_concrete_scene():
     # JSON 예시의 footage_prompt가 구체 장면(인물/공간)을 담는다
     assert "카페" in vp.V1_INSTR
+
+
+def test_demo_storyboard_footage_is_real_scene_and_text_free():
+    shots = STORYBOARD_SPEC["shots"]
+    assert len(shots) == 4
+    for sh in shots:
+        fp = sh["footage_prompt"]
+        assert "추상" not in fp                     # 추상 톤 제거
+        assert "텍스트 없음" in fp                   # 텍스트-free 마커 유지(컴플라이언스)
+    # 적어도 한 샷은 구체적 인물/공간 장면을 담는다
+    joined = " ".join(sh["footage_prompt"] for sh in shots)
+    assert "카페" in joined or "거실" in joined or "직장인" in joined
