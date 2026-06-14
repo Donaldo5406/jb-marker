@@ -119,6 +119,7 @@ export type CockpitContextValue = {
   ackReview: () => Promise<void>;
   restartReview: () => Promise<void>;
   saveSceneJson: (content: string) => Promise<void>;
+  saveVideoStoryboard: (content: string) => Promise<void>;
   answerAsk: (choice: string) => Promise<void>;
   closeAsk: () => void;
   setStudio: (s: Studio) => void;
@@ -616,6 +617,13 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
   }, [refreshTree]);
 
+  const saveVideoStoryboard = useCallback(async (content: string) => {
+    const id = runIdRef.current;
+    if (!id) return;
+    await api.vfsPut(id, "video/storyboard/storyboard.spec.json", content, "application/json");
+    await refreshTree();
+  }, [refreshTree]);
+
   /** 검토 시작/계속(spec §8.3): composite PNG 업로드 후 백엔드 상태머신을 done까지 순차 완주.
    *  백엔드 review는 gateway 호출 1번당 한 단계(R0→R1→R2→R3)만 전진하므로, 한 번의 사용자
    *  액션으로 끝까지 돌도록 done(=R3 실행)까지 루프한다. 중간 단계에서 호출해도 백엔드 현재
@@ -1037,6 +1045,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     ackReview,
     restartReview,
     saveSceneJson,
+    saveVideoStoryboard,
     answerAsk,
     closeAsk,
     setStudio,
