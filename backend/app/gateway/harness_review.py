@@ -216,36 +216,40 @@ class ReviewHarness(Harness):
         return vid
 
     def _collect_scene_copy(self, store, run_id: str, languages: list[str]) -> dict:
-        """모든 언어 scene의 copy 슬롯 모음.
+        """모든 언어 scene의 copy 슬롯 모음 — layout.spec(베이크 카피) + main.scene(씬 상태) 병합.
 
-        프론트 어셈블러는 main.scene을 {version, objects}로 저장(copy 필드 없음) →
-        텍스트박스 objects에서 role→text로 카피를 복원한다. main.scene이 없거나 비면
-        백엔드가 생성한 layout.spec.json[copy][lang]로 폴백 → 검토가 실제 카피를 본다
-        (이 폴백이 없으면 scene_copy가 비어 R1/R2가 콘텐츠를 못 봐 오탐/무탐).
+        원-레이어 구조에선 헤드라인/바디/CTA가 배경 v1.png에 **베이크**되어 main.scene의
+        textbox엔 disclosure만 남는다. 이 textbox만 보면 R1 법률 검토가 헤드라인의 과장광고·
+        금리 불일치('업계 최고'/4.0%)를 못 봐 무탐이 된다. 따라서 백엔드 layout.spec.json[copy]
+        (베이크된 헤드라인/바디/CTA 보유)를 **베이스**로 깔고, main.scene의 실제 씬 상태
+        (사용자 편집·disclosure 등)를 **오버레이**해 병합한다 → R1이 헤드라인 카피를, R2가
+        disclosure를 모두 본다. main.scene이 없으면 layout.spec만, layout.spec이 없으면 scene만.
         """
         out: dict = {}
         for lang in languages:
-            copy: dict = {}
+            # 베이스: 베이크된 헤드라인/바디/CTA(R1 과장광고·금리 검사용).
+            layout_copy: dict = {}
+            ls = store.get(f"/{run_id}/design/rough/layout.spec.json")
+            if ls:
+                try:
+                    layout_copy = (json.loads(ls.content_text).get("copy") or {}).get(lang) or {}
+                except Exception:
+                    layout_copy = {}
+            # 오버레이: main.scene의 실제 씬 상태(사용자 편집·disclosure) — 있으면 우선.
+            scene: dict = {}
             n = store.get(f"/{run_id}/design/final/{lang}/main.scene")
             if n:
                 try:
                     spec = json.loads(n.content_text)
                 except Exception:
                     spec = {}
-                copy = (spec.get("copy") or {}).get(lang) or {}
-                if not copy:
-                    copy = {o.get("role"): o.get("text", "")
-                            for o in spec.get("objects", [])
-                            if str(o.get("type", "")).lower() == "textbox" and o.get("role")}
-            if not copy:
-                ls = store.get(f"/{run_id}/design/rough/layout.spec.json")
-                if ls:
-                    try:
-                        spec = json.loads(ls.content_text)
-                        copy = (spec.get("copy") or {}).get(lang) or {}
-                    except Exception:
-                        copy = {}
-            out[lang] = copy
+                scene = (spec.get("copy") or {}).get(lang) or {}
+                if not scene:
+                    scene = {o.get("role"): o.get("text", "")
+                             for o in spec.get("objects", [])
+                             if str(o.get("type", "")).lower() == "textbox" and o.get("role")}
+            # 병합: 베이크 카피 위에 씬 상태를 덮어쓴다(빈 값은 베이스 보존).
+            out[lang] = {**layout_copy, **{k: v for k, v in scene.items() if v}}
         return out
 
     def _r1_legal(self, req: HarnessRequest, provider, store, state: dict) -> HarnessResult:

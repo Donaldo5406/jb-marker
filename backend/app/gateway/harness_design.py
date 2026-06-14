@@ -136,12 +136,23 @@ class DesignHarness(Harness):
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
+        # 비주얼도 교정 — clean 카피로 v1.png(및 추가언어 변형)를 재베이크한다. sceneAssembler가
+        # visual_by_lang→background로 v1.png를 그대로 쓰므로(헤드라인 배경 베이크), 카피만 고치면
+        # 캔버스 배경엔 과장표현('업계 최고'/4.0%)이 그대로 남는다. layout.spec.copy는 위에서
+        # clean으로 갱신됐으므로 S2aVisual이 그 카피를 다시 베이크 → 캔버스도 교정본으로 갱신.
+        # 실패(이미지 생성 오류 등)해도 카피·고지 교정은 이미 저장됐으므로 graceful 진행.
+        try:
+            S2aVisual(self._image_provider).run(ctx)
+        except Exception:
+            pass
         self._save_state(store, req.run_id, state)   # step=done 유지
         text = ("리뷰에서 지적된 예금자보호 고지 누락(베트남어·중국어)과 과장광고 표현을 반영해 "
                 "카피를 교정하고 4개 언어에 예금자보호 고지를 보강했습니다. 캔버스를 갱신했어요 — "
                 "검토(review)를 다시 실행하면 통과합니다.")
         events = list(res.events) + [
-            {"type": "artifact", "path": f"{base}/rough/layout.spec.json"}]
+            {"type": "artifact", "path": f"{base}/rough/layout.spec.json"},
+            {"type": "artifact",
+             "path": f"{base}/design-system/components/visual/v1.png"}]
         return HarnessResult(text=text,
                              output_path=f"{base}/rough/layout.spec.json",
                              meta={"source": "marker", "step": DONE,

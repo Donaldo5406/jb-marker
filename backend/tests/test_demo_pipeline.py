@@ -158,6 +158,28 @@ def test_review_demo_blocks_on_staged_violations(monkeypatch):
     assert state.status_code == 200 and '"step": "done"' in state.json()["content_text"]
 
 
+def test_review_r1_flags_ko_exaggeration_and_rate(monkeypatch):
+    """R1 법률 검토가 ko 헤드라인 과장광고('업계 최고')·바디 금리 불일치(4.0%≠3.5%)를 적발한다.
+
+    원-레이어에서 헤드라인/바디가 배경 v1.png에 베이크돼 main.scene textbox(=scene_copy)엔
+    disclosure만 남아 R1이 무탐이던 회귀 가드 — _collect_scene_copy가 layout.spec 카피를
+    베이스로 병합해야 R1이 헤드라인 카피를 본다."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+    for _ in range(6):
+        r = _run(client, rid, "review", "검토 시작")
+        if (r.json().get("meta") or {}).get("step") == "R3":
+            break
+    report = client.get(f"/vfs/{rid}/review/report.md").json()["content_text"]
+    r1 = report.split("## R1 법률 검토")[1].split("## R2")[0]
+    # ko 헤드라인 과장광고(표시광고법 §3) + 바디 금리 불일치(4.0%)가 R1 섹션에 critical로 등장.
+    assert "ko" in r1 and "표시" in r1, f"R1이 ko 과장광고를 적발하지 못함:\n{r1}"
+    assert ("업계 최고" in r1) or ("4.0%" in r1), f"R1 ko 위반 증거 누락:\n{r1}"
+
+
 # 교정된 4언어 카피 — 위반 토큰 제거 + vi/zh 예금자보호 고지 현지화 키워드 포함.
 # (FabricEditor 씬 수동 편집 = 결정 A안의 결과물을 백엔드 테스트에서 재현)
 _REMEDIATED = {
@@ -254,6 +276,35 @@ def test_design_chat_remediation_cleans_layout_copy(monkeypatch):
     assert "연 3.5% JB 정기예금" in after   # clean 카피 반영
     assert "예금자보호" in after            # 모든 언어 예금자보호 고지 보강(R2 critical 해소)
     assert "theo luật" in after            # vi 현지화 고지 보강
+
+
+def test_design_chat_remediation_rebakes_visual(monkeypatch):
+    """리뷰 후 디자인 챗 교정 시 v1.png(캔버스 배경)도 clean 카피로 재베이크된다.
+
+    sceneAssembler가 visual_by_lang→background로 v1.png를 그대로 쓰므로(헤드라인 배경 베이크),
+    카피·고지만 고치고 비주얼을 두면 캔버스에 위반 텍스트('업계 최고'/4.0%)가 남는다. 회귀 가드."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+
+    vpath = f"/vfs/{rid}/design/design-system/components/visual/v1.png"
+    before = client.get(vpath)
+    assert before.status_code == 200
+    before_png = before.content   # 이미지는 raw bytes 응답(JSON 아님)
+
+    # 디자인 챗 자유 교정 지시 → 카피·고지 교정 + 비주얼(v1.png) 재베이크
+    r = _run(client, rid, "design", "리뷰 결과대로 카피 수정해줘")
+    assert r.status_code == 200, r.text
+    assert (r.json().get("meta") or {}).get("remediated") is True
+
+    after = client.get(vpath)
+    assert after.status_code == 200
+    after_png = after.content
+    # 위반 카피(업계 최고/4.0%) 베이크 → clean 카피(연 3.5%) 베이크로 비주얼이 달라져야 한다.
+    assert after_png != before_png, \
+        "remediate 후 v1.png가 재베이크되지 않음 — 캔버스에 위반 비주얼이 잔존한다"
 
 
 def test_design_chat_nonremediation_keeps_pipeline(monkeypatch):
