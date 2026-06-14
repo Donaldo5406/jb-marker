@@ -91,7 +91,14 @@ class GoogleProvider(Provider):
             op = client.operations.get(op)
         videos = getattr(getattr(op, "response", None), "generated_videos", None) or []
         for gv in videos:
-            data = getattr(getattr(gv, "video", None), "video_bytes", None)
+            v = getattr(gv, "video", None)
+            if v is None:
+                continue
+            data = getattr(v, "video_bytes", None)
+            # Veo는 영상을 파일 uri로 반환한다(video_bytes는 비어 옴) — files.download로 채운다.
+            if not data and getattr(v, "uri", None):
+                client.files.download(file=v)
+                data = getattr(v, "video_bytes", None)
             if data:
                 return data
         raise RuntimeError("Veo 응답에 영상 파트가 없습니다")
