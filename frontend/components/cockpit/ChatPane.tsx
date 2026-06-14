@@ -15,10 +15,16 @@ export function ChatPane() {
   const [model, setModel] = React.useState<ModelChoice>(MODELS[1]); // 기본 Claude(무료)
   const [loading, setLoading] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [c.messages, loading]);
+
+  // AskUserToast '채팅으로 답하기' 등 외부 포커스 요청 — nonce 증가 시 입력에 포커스(초기 0은 무시).
+  React.useEffect(() => {
+    if (c.chatFocusNonce > 0) inputRef.current?.focus();
+  }, [c.chatFocusNonce]);
 
   const send = async () => {
     const prompt = input.trim();
@@ -100,6 +106,7 @@ export function ChatPane() {
       <div className="border-t border-outline-variant bg-surface-container-low p-3">
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest focus-within:ring-1 focus-within:ring-primary">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}

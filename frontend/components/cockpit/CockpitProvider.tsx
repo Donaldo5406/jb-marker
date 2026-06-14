@@ -121,6 +121,8 @@ export type CockpitContextValue = {
   saveSceneJson: (content: string) => Promise<void>;
   answerAsk: (choice: string) => Promise<void>;
   closeAsk: () => void;
+  requestChatFocus: () => void;       // ChatPane 입력 포커스 요청(AskUserToast '채팅으로 답하기' 탈출구)
+  chatFocusNonce: number;             // 증가 신호 — ChatPane이 구독해 textarea.focus()를 실행
   setStudio: (s: Studio) => void;
   setView: (v: CockpitView) => void;
   selectedHistoryRun: string | null;
@@ -181,6 +183,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingGate, setPendingGate] = useState<GateEnvelope | null>(null);
+  // 채팅 입력 포커스 신호 — AskUserToast 등 별개 컴포넌트가 ChatPane textarea에 포커스를 요청.
+  const [chatFocusNonce, setChatFocusNonce] = useState(0);
+  const requestChatFocus = useCallback(() => setChatFocusNonce((n) => n + 1), []);
   const [brainStage, setBrainStage] = useState<string | null>(null);
   const [designStep, setDesignStep] = useState("S0");
   const [designLang, setDesignLang] = useState("ko");
@@ -1039,6 +1044,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     saveSceneJson,
     answerAsk,
     closeAsk,
+    requestChatFocus,
+    chatFocusNonce,
     setStudio,
     setView,
     selectedHistoryRun,

@@ -1,15 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { MessageCircleQuestion, X } from "lucide-react";
+import { MessageCircleQuestion, PencilLine, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 
 /** View가 기대하는 ask 모양(구 페이로드와 동형) — 봉투에서 컨테이너가 매핑해 전달. */
 type AskView = { trigger: "a" | "b" | "c"; question: string; options: string[] };
 
-export function AskUserToastView({ ask, onSelect, onClose }: {
+export function AskUserToastView({ ask, onSelect, onClose, onFreeInput }: {
   ask: AskView | null; onSelect: (choice: string) => void; onClose: () => void;
+  // 제시된 옵션 외로 답하기 위한 탈출구 — 누르면 토스트를 닫고 채팅 입력으로 보낸다(컨테이너 배선).
+  // 미지정이면 칩을 렌더하지 않아 기존 호출부(테스트 포함)의 동작을 보존한다.
+  onFreeInput?: () => void;
 }) {
   if (!ask) return null;
   const tone = ask.trigger === "c" ? "border-severity-warning" : "border-outline-variant";
@@ -30,6 +33,14 @@ export function AskUserToastView({ ask, onSelect, onClose }: {
               {opt}
             </button>
           ))}
+          {/* 탈출구: 제시 옵션이 마음에 안 들면 채팅으로 자유롭게 답하도록 안내(옵션과 구분되는 outline 칩). */}
+          {onFreeInput && (
+            <button type="button" onClick={onFreeInput}
+              className="inline-flex items-center gap-1 rounded-full border border-outline-variant px-3 py-1.5 text-caption font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high">
+              <PencilLine className="h-3 w-3" aria-hidden />
+              채팅으로 답하기
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -45,5 +56,13 @@ export function AskUserToast() {
       // trigger는 tone(c=경고 강조)에만 쓰임 — 누락/빈값이면 "a"(기본 tone)로 폴백.
       ? { trigger: g.trigger || "a", question: g.question, options: g.options }
       : null;
-  return <AskUserToastView ask={ask} onSelect={(choice) => void c.answerAsk(choice)} onClose={c.closeAsk} />;
+  return (
+    <AskUserToastView
+      ask={ask}
+      onSelect={(choice) => void c.answerAsk(choice)}
+      onClose={c.closeAsk}
+      // 탈출구: 토스트를 닫고 채팅 입력에 포커스 — 사용자가 옵션 밖 답을 바로 타이핑하도록.
+      onFreeInput={() => { c.closeAsk(); c.requestChatFocus(); }}
+    />
+  );
 }
