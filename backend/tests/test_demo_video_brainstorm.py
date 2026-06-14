@@ -32,3 +32,12 @@ def test_stage_b_image_unchanged():
     resp = demo.complete([Message("user", "go")], system=system, meta=_meta("stage_b", "image"))
     data = json.loads(resp.text)
     assert "creative_direction" in (data.get("document") or "")
+
+
+def test_video_spec_passes_sufficiency_gate():
+    """demo VIDEO_SPEC_MD가 REQUIRED_SPEC_FIELDS를 모두 충족해 보충 게이트에 막히지 않는다."""
+    from app.gateway.harness_brainstorming import REQUIRED_SPEC_FIELDS, _frontmatter_keys
+    from app.providers import demo_fixtures as F
+    keys = _frontmatter_keys(F.VIDEO_SPEC_MD)
+    missing = REQUIRED_SPEC_FIELDS - keys
+    assert missing == set(), f"VIDEO_SPEC_MD missing required spec fields: {sorted(missing)}"

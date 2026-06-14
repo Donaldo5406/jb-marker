@@ -34,6 +34,7 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
   const footage = useAuthedBlob(runId, footageRest);
   const [videoBroke, setVideoBroke] = React.useState(false);
   React.useEffect(() => setVideoBroke(false), [footage.url]);
+  const rulerRef = React.useRef<HTMLDivElement>(null);
 
   if (!sb) {
     return (
@@ -55,7 +56,6 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
   const selLayer: VideoLayer | null =
     t.sel && sb.shots ? sb.shots.find((s) => s.id === t.sel!.shotId)?.layers?.[t.sel.layerIdx] ?? null : null;
 
-  const rulerRef = React.useRef<HTMLDivElement>(null);
   const seekFromEvent = (clientX: number) => {
     const el = rulerRef.current;
     if (!el) return;

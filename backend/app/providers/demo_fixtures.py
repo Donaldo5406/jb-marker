@@ -191,15 +191,17 @@ disclosures: [예금자보호법에 따라 5천만원까지 보호]
 VIDEO_SPEC_MD = """---
 goal: 2030 사회초년생 대상 정기예금 캠페인 — 영상(릴스)
 medium: video
-audience: 2030 사회초년생
+target_segments: [2030 사회초년생, 직장인]
+key_messages: [3.5% 정기예금, 모바일 간편 가입]
 channels: [instagram_reels]
-languages: [ko]
+languages: [ko, en, vi, zh]
+multinational: true
 tone: 밝고 신뢰감 있는
-key_message: 3.5% 정기예금, 모바일로 간편 가입
-disclosures: [예금자보호, 세전금리]
 factsheet:
-  product: 정기예금
-  rate: "3.5%"
+  product: JB 정기예금
+  interest_rate: 3.5%
+  term: 12개월
+disclosures: [예금자보호법에 따라 5천만원까지 보호]
 ---
 # 기획(spec) — 영상
 2030 사회초년생을 위한 9:16 릴스. 훅→혜택→신뢰→CTA 4비트.

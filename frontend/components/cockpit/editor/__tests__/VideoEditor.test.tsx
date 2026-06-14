@@ -92,4 +92,14 @@ describe("VideoEditor", () => {
       rendering={false} onRender={vi.fn()} onSave={vi.fn()} />);
     expect(screen.getByTestId("video-editor-empty")).toBeInTheDocument();
   });
+
+  it("유효 content로 마운트 후 무효 content로 재렌더해도 훅 위반 없이 안내로 전환", () => {
+    const { rerender } = render(<VideoEditor content={content} runId="r1" lang="ko"
+      rendering={false} onRender={vi.fn()} onSave={vi.fn()} />);
+    expect(screen.getByTestId("video-preview")).toBeInTheDocument();
+    // 같은 인스턴스가 무효 storyboard로 재렌더 → 훅 카운트가 줄면 React가 throw.
+    rerender(<VideoEditor content="{broken" runId="r1" lang="ko"
+      rendering={false} onRender={vi.fn()} onSave={vi.fn()} />);
+    expect(screen.getByTestId("video-editor-empty")).toBeInTheDocument();
+  });
 });
