@@ -492,7 +492,16 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
         applyGate(res.gate);
         // loadManifest: step_status 변경(D8 done→design 활성)을 ProcessBar에 세션 내 반영.
-        await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
+        // _messages.json 복원은 brainstorming만 — design/video 챗은 방금 추가한 대화를
+        // loadBrainState가 [](404)로 덮어쓰지 않도록 스킵(피드백 주고받기가 화면에 남게).
+        await Promise.all([refreshTree(), loadManifest(id),
+          activeStudio === "brainstorming" ? loadBrainState(id) : Promise.resolve()]);
+        // design/video 챗은 현재 단계 산출물(예: S2b 카피 교정)을 재생성한다 — 파일 캐시를
+        // 무효화하고 열린 파일을 재동기화해 갱신된 카피가 즉시 보이게(캐시된 옛 내용 방지).
+        if (activeStudio !== "brainstorming") {
+          fileCacheRef.current.clear();
+          if (openFile) await selectFile(openFile.path);
+        }
         return { text: res.text, gate: res.gate ?? null };
       } catch (e) {
         const status = (e as { status?: number }).status;
@@ -500,7 +509,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         throw e;
       }
     },
-    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, videoMedium],
+    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, videoMedium,
+     openFile, selectFile],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
