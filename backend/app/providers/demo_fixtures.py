@@ -188,6 +188,37 @@ disclosures: [예금자보호법에 따라 5천만원까지 보호]
 훅→혜택(3.5%)→신뢰(예금자보호)→CTA 4비트, 9:16 15초 릴스.
 """
 
+VIDEO_SPEC_MD = """---
+goal: 2030 사회초년생 대상 정기예금 캠페인 — 영상(릴스)
+medium: video
+audience: 2030 사회초년생
+channels: [instagram_reels]
+languages: [ko]
+tone: 밝고 신뢰감 있는
+key_message: 3.5% 정기예금, 모바일로 간편 가입
+disclosures: [예금자보호, 세전금리]
+factsheet:
+  product: 정기예금
+  rate: "3.5%"
+---
+# 기획(spec) — 영상
+2030 사회초년생을 위한 9:16 릴스. 훅→혜택→신뢰→CTA 4비트.
+"""
+
+VIDEO_PLAN_MD_PARTIAL = """---
+medium: video
+video_direction:
+  duration_sec: 15
+  aspect: "9:16"
+  fps: 30
+  pacing: medium
+footage_concept: 밝은 톤의 실제 광고 씬(카페·모바일뱅킹)
+languages: [ko]
+---
+# 영상 구현 계획 (초안)
+필수 요소(scene_beats·disclosures·material_matrix)를 더 채워야 합니다.
+"""
+
 STORYBOARD_SPEC = {
     "aspect": "9:16", "duration_sec": 15, "fps": 30, "bg_color": "#0B2B5B",
     "shots": [
