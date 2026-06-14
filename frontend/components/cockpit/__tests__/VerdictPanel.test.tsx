@@ -10,6 +10,7 @@ const base = {
   onAck: vi.fn(),
   onRestart: vi.fn(),
   onBackToDesign: vi.fn(),
+  onProceedDeploy: vi.fn(),
 };
 
 describe("VerdictPanel effStatus (게이트 0/0 → PASS)", () => {
@@ -21,6 +22,7 @@ describe("VerdictPanel effStatus (게이트 0/0 → PASS)", () => {
     expect(screen.getByText("PASS")).toBeTruthy();              // 배지 = effStatus
     expect(screen.queryByTestId("gate-action-ack")).toBeNull(); // '경고 확인 후 진행' 숨김
     expect(screen.getByText("위반 없음. 배포 진입 가능.")).toBeTruthy();
+    expect(screen.getByTestId("gate-action-deploy")).toBeTruthy(); // PASS+done → Deploy 이동 버튼 노출
   });
 
   it("실제 WARN(warning>0)이면 PASS로 바꾸지 않고 ack 버튼을 노출한다", () => {
@@ -39,5 +41,6 @@ describe("VerdictPanel effStatus (게이트 0/0 → PASS)", () => {
     );
     expect(screen.getByText("BLOCKED")).toBeTruthy();
     expect(screen.queryByTestId("gate-action-ack")).toBeNull();
+    expect(screen.queryByTestId("gate-action-deploy")).toBeNull(); // BLOCKED엔 Deploy 이동 없음
   });
 });
