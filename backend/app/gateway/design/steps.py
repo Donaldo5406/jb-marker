@@ -402,10 +402,15 @@ class S2cBrand(PipelineStep):
             spec["copy"].setdefault(lang, {})
             spec["copy"][lang]["disclosure"] = text
         spec.setdefault("slots", [])
-        if not any(s.get("role") == "logo" for s in spec["slots"]):
+        logo_slot = next((s for s in spec["slots"] if s.get("role") == "logo"), None)
+        if logo_slot is None:
             spec["slots"].append({"role": "logo", "z": 9,
                 "bbox": {"x": 48, "y": 48, "w": 300, "h": 96},
                 "asset_ref": "design-system/components/logo/v1.png"})
+        else:
+            # 기존 logo 슬롯(데모 fixture 등)에 asset_ref가 없으면 핀할 공식 로고 경로를 채운다 —
+            # 없으면 어셈블러가 빈 src로 로고를 못 그린다(Mock에서 JB 로고 미표시 원인).
+            logo_slot.setdefault("asset_ref", "design-system/components/logo/v1.png")
         ctx.store.put(f"{base}/rough/layout.spec.json",
                       json.dumps(spec, ensure_ascii=False), source="marker",
                       mime="application/json")

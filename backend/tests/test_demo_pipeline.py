@@ -114,6 +114,14 @@ def test_design_demo_produces_layout_and_visual(monkeypatch):
     assert ls.status_code == 200 and "slots" in ls.json()["content_text"]
     png = client.get(f"/vfs/{rid}/design/design-system/components/visual/v1.png")
     assert png.status_code == 200
+    # JB 로고 핀: S2c가 기존 logo 슬롯에도 asset_ref를 채우고 로고 PNG를 VFS에 기록해야
+    # 어셈블러가 로고를 그린다(Mock 로고 미표시 회귀 가드).
+    spec = json.loads(ls.json()["content_text"])
+    logo = next((s for s in spec["slots"] if s.get("role") == "logo"), None)
+    assert logo and logo.get("asset_ref") == "design-system/components/logo/v1.png", \
+        f"logo 슬롯 asset_ref 누락: {logo}"
+    logo_png = client.get(f"/vfs/{rid}/design/design-system/components/logo/v1.png")
+    assert logo_png.status_code == 200
 
 
 def test_review_demo_blocks_on_staged_violations(monkeypatch):
