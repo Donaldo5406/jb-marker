@@ -186,3 +186,32 @@ def test_render_video_real_ffmpeg_produces_nontrivial_mp4(tmp_path):
     path = render_video(s, "rv", lang="ko")   # auto-detect ffmpeg
     blob = s.get(path).blob
     assert blob is not None and len(blob) > len(STUB_MP4)
+
+
+def _put_storyboard(client, run_id, story):
+    # PUT /vfs 텍스트 노드(content_encoding 미지정) → store.put(path, content) 텍스트 저장.
+    # 검증됨: routers/vfs.py PutText{content,mime,content_encoding}, get_text로 회수.
+    return client.put(f"/vfs/{run_id}/video/storyboard/storyboard.spec.json",
+                      json={"content": json.dumps(story), "mime": "application/json"})
+
+
+def test_render_route_returns_422_on_noncompliant(local_client, monkeypatch):
+    monkeypatch.setenv("MARKER_DISABLE_FFMPEG", "1")
+    run_id = local_client.post("/runs", json={"title": "v"}).json()["run_id"]
+    _put_storyboard(local_client, run_id, _story_bad_disclosure())
+    r = local_client.post("/gateway/run", json={
+        "run_id": run_id, "studio": "video", "prompt": "",
+        "is_marker": True, "mock": True, "action": "render"})
+    assert r.status_code == 422
+    assert "고지" in r.json()["detail"]
+
+
+def test_render_route_returns_200_and_render_path(local_client, monkeypatch):
+    monkeypatch.setenv("MARKER_DISABLE_FFMPEG", "1")
+    run_id = local_client.post("/runs", json={"title": "v"}).json()["run_id"]
+    _put_storyboard(local_client, run_id, STORY_OK)
+    r = local_client.post("/gateway/run", json={
+        "run_id": run_id, "studio": "video", "prompt": "",
+        "is_marker": True, "mock": True, "action": "render"})
+    assert r.status_code == 200
+    assert r.json()["output_path"] == f"/{run_id}/review/_render/final.mp4"
