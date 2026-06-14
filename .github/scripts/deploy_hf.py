@@ -8,4 +8,7 @@ api.upload_file(path_or_fileobj="backend/SPACE_README.md", path_in_repo="README.
 api.upload_file(path_or_fileobj="backend/Dockerfile", path_in_repo="Dockerfile", repo_id=RID, repo_type="space")
 api.upload_file(path_or_fileobj="backend/requirements-deploy.txt", path_in_repo="requirements-deploy.txt", repo_id=RID, repo_type="space")
 api.upload_folder(folder_path="backend/app", path_in_repo="app", repo_id=RID, repo_type="space", ignore_patterns=["**/__pycache__/*", "*.pyc"])
+# Dockerfile의 `COPY assets ./assets`가 의존 — 음악 베드/폰트 등 assets를 Space로 업로드해야
+# 빌드 컨텍스트에 /assets가 존재한다(미업로드 시 "/assets: not found"로 BUILD_ERROR).
+api.upload_folder(folder_path="backend/assets", path_in_repo="assets", repo_id=RID, repo_type="space", ignore_patterns=["**/__pycache__/*", "*.pyc"])
 print("HF Space updated:", RID)
