@@ -83,7 +83,7 @@ export const api = {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...p, answer: p.answer ?? null,
         action: p.action ?? null, bypass_map: p.bypass_map ?? null,
-        medium: p.medium ?? null, mock: p.mock ?? false }),
+        medium: p.medium ?? "image", mock: p.mock ?? false }),
     }));
   },
   async vfsList(runId: string): Promise<{ nodes: VfsNode[] }> {

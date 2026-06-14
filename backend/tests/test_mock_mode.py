@@ -168,3 +168,20 @@ def test_advisor_mock_forces_scripted(monkeypatch):
     })
     assert r.status_code == 200
     assert "_usage" not in r.json()   # scripted는 usage 미노출(routers/deploy.py 분기)
+
+
+def test_gateway_accepts_null_medium(monkeypatch):
+    """프론트 advance 계열 요청은 medium을 빠뜨려 null로 보낸다(lib/api: `medium ?? null`).
+
+    백엔드 GatewayRun.medium은 Literal["image","video"]라 '키 부재'엔 기본값 'image'가
+    먹지만 **명시적 null**은 검증 실패(422)였다 — design '다음 단계 →'(action="advance")가
+    라이브에서 무반응이던 근본 원인(프론트↔백 계약 불일치). medium=null은 'image'로
+    정규화돼 200이어야 한다(하위호환 회귀 가드)."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    r = client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design", "prompt": "",
+        "provider": "anthropic", "is_marker": True, "action": "advance",
+        "mock": True, "medium": None,
+    })
+    assert r.status_code == 200, f"medium=null인데 거부됨: {r.status_code} {r.text[:200]}"
