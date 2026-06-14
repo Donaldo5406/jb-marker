@@ -140,3 +140,49 @@ def test_build_ffmpeg_command_without_music_has_no_audio_map():
                                 [], out_path="/o/final.mp4", w=1080, h=1920, fps=30,
                                 music_path=None)
     assert "-stream_loop" not in argv and "-shortest" not in argv
+
+
+def _seed_footage(store, run_id, sid, content: bytes, mime: str):
+    store.put(f"/{run_id}/video/design-system/components/footage/clip_{sid}.mp4",
+              content, source="marker", mime=mime)
+
+
+def test_render_video_fallback_writes_stub_when_no_ffmpeg(tmp_path):
+    from app.gateway.video.render import render_video
+    s = LocalVfsStore(storage_dir=str(tmp_path))
+    _seed(s, "rv", STORY_OK)
+    _seed_footage(s, "rv", "s1", b"\x89PNG\r\n\x1a\n", "image/png")
+    # s2 footage 누락 → color 세그먼트 폴백
+    path = render_video(s, "rv", lang="ko", ffmpeg=None)
+    assert path == "/rv/review/_render/final.mp4"
+    node = s.get(path)
+    assert node is not None and node.blob is not None
+    assert node.mime == "video/mp4"
+
+
+def test_render_video_raises_compliance_before_touching_ffmpeg(tmp_path):
+    from app.gateway.video.render import render_video, ComplianceError
+    s = LocalVfsStore(storage_dir=str(tmp_path))
+    _seed(s, "rv", _story_bad_disclosure())
+    with pytest.raises(ComplianceError):
+        render_video(s, "rv", lang="ko", ffmpeg=None)
+    assert s.get("/rv/review/_render/final.mp4") is None   # 산출물 없음
+
+
+def test_render_video_missing_storyboard_raises(tmp_path):
+    from app.gateway.video.render import render_video, ComplianceError
+    s = LocalVfsStore(storage_dir=str(tmp_path))
+    s.create_run("rv", languages=["ko"])
+    with pytest.raises(ComplianceError):
+        render_video(s, "rv", lang="ko", ffmpeg=None)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg 미설치")
+def test_render_video_real_ffmpeg_produces_nontrivial_mp4(tmp_path):
+    from app.gateway.video.render import render_video, STUB_MP4
+    s = LocalVfsStore(storage_dir=str(tmp_path))
+    _seed(s, "rv", STORY_OK)
+    _seed_footage(s, "rv", "s1", b"\x89PNG\r\n\x1a\n", "image/png")  # 깨진 PNG → color 폴백 경유
+    path = render_video(s, "rv", lang="ko")   # auto-detect ffmpeg
+    blob = s.get(path).blob
+    assert blob is not None and len(blob) > len(STUB_MP4)

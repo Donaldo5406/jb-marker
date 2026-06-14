@@ -7,7 +7,12 @@ ffmpeg 바이너리 없이 결정론적으로 테스트된다. 렌더 전 고지
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from .scoring import evaluate_timing
 
@@ -128,3 +133,108 @@ def build_ffmpeg_command(segments: list["Segment"], drawtext: list[str], *,
         argv += ["-map", f"{music_idx}:a", "-c:a", "aac", "-shortest"]
     argv += ["-r", str(fps), "-c:v", "libx264", "-pix_fmt", "yuv420p", out_path]
     return argv
+
+
+# 의존 없는 최소 mp4 시그니처(fake provider와 동일) — ffmpeg 부재/실패 시 결정론 stub.
+STUB_MP4 = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+
+_AUTO = object()   # render_video(ffmpeg=...) 기본 — env+which 자동 해석 sentinel
+
+RENDER_PATH = "/{run_id}/review/_render/final.mp4"
+FOOTAGE_PATH = "/{run_id}/video/design-system/components/footage/clip_{sid}.mp4"
+
+# fonts-noto-cjk(Dockerfile) 설치 경로. env override 우선.
+_FONT_CANDIDATES = (
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+)
+
+
+def _resolve_ffmpeg(override):
+    """ffmpeg 경로 해석. _AUTO=env+which, None=강제 stub, str=그대로."""
+    if override is None:
+        return None
+    if override is not _AUTO:
+        return override
+    if os.environ.get("MARKER_DISABLE_FFMPEG"):
+        return None
+    return shutil.which("ffmpeg")
+
+
+def _resolve_font() -> str | None:
+    p = os.environ.get("MARKER_CJK_FONT")
+    if p and Path(p).exists():
+        return p
+    for c in _FONT_CANDIDATES:
+        if Path(c).exists():
+            return c
+    return None
+
+
+def _resolve_music() -> str | None:
+    """backend/assets/music/bed.* 드롭인(미커밋 — README 참조). 없으면 무음."""
+    base = Path(__file__).resolve().parents[3] / "assets" / "music"
+    for ext in ("m4a", "mp3", "wav", "aac", "ogg"):
+        f = base / f"bed.{ext}"
+        if f.exists():
+            return str(f)
+    return None
+
+
+def _build_segments(store, run_id: str, storyboard: dict, tmpdir: str,
+                    *, w: int, h: int) -> list["Segment"]:
+    """샷별 footage 노드 → Segment. video/image=temp 파일로 구현화, 누락/실패=color."""
+    bg = storyboard.get("bg_color") or "#000000"
+    segs: list[Segment] = []
+    for shot in storyboard.get("shots", []) or []:
+        sid = shot.get("id")
+        dur = max(0.1, float(shot.get("end", 0)) - float(shot.get("start", 0)))
+        node = store.get(FOOTAGE_PATH.format(run_id=run_id, sid=sid))
+        blob = getattr(node, "blob", None) if node else None
+        if not blob:
+            segs.append(Segment(kind="color", path=None, dur=dur, color=bg))
+            continue
+        mime = (node.mime or (node.meta or {}).get("mime") or "")
+        kind = "video" if "video" in mime else "image"
+        ext = ".mp4" if kind == "video" else ".png"
+        fp = Path(tmpdir) / f"{sid}{ext}"
+        fp.write_bytes(blob)
+        segs.append(Segment(kind=kind, path=str(fp), dur=dur))
+    return segs
+
+
+def render_video(store, run_id: str, *, lang: str = "ko", ffmpeg=_AUTO) -> str:
+    """확정 storyboard → review/_render/final.mp4. 위반 시 ComplianceError. 산출 경로 반환.
+
+    ffmpeg 부재/실패 시 결정론 stub mp4로 폴백(데모·CI가 ffmpeg 없이 동작).
+    """
+    storyboard = load_storyboard(store, run_id)
+    assert_render_compliance(storyboard)            # 위반 시 ComplianceError(산출 전)
+
+    out_path = RENDER_PATH.format(run_id=run_id)
+    w, h = 1080, 1920
+    fps = int(storyboard.get("fps", 30) or 30)
+    ffmpeg_bin = _resolve_ffmpeg(ffmpeg)
+
+    data = STUB_MP4
+    if ffmpeg_bin:
+        with tempfile.TemporaryDirectory() as td:
+            segs = _build_segments(store, run_id, storyboard, td, w=w, h=h)
+            if segs:
+                dt = build_drawtext_filters(storyboard, lang, font_path=_resolve_font())
+                local_out = str(Path(td) / "final.mp4")
+                argv = build_ffmpeg_command(segs, dt, out_path=local_out,
+                                            w=w, h=h, fps=fps, music_path=_resolve_music())
+                argv[0] = ffmpeg_bin
+                try:
+                    subprocess.run(argv, check=True, capture_output=True, timeout=600)
+                    rendered = Path(local_out).read_bytes()
+                    if rendered:
+                        data = rendered
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+                    data = STUB_MP4                  # ffmpeg 실패 → stub 폴백(렌더 비차단)
+    store.put(out_path, data, source="marker", mime="video/mp4",
+              meta={"type": "video", "source": "marker", "mime": "video/mp4",
+                    "render": "ffmpeg" if (ffmpeg_bin and data is not STUB_MP4) else "stub",
+                    "lang": lang})
+    return out_path
