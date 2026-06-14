@@ -9,7 +9,7 @@ import { useSessionHeartbeat } from "@/lib/useSessionHeartbeat";
 import { STUDIOS, type Studio, type VideoMedium } from "@/lib/cockpit-nav";
 import type { SessionHeartbeat, SessionListItem, SessionLivenessName, SessionResumeResult, SessionStatus } from "@/lib/api";
 import { isImagePath } from "@/lib/fileType";
-import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
+import { assembleScene, type LayoutSpec, type Slot } from "@/lib/sceneAssembler";
 import { renderAndUploadAll } from "@/lib/sceneRender";
 import { EDITED_PATH, addLang, parseEdited } from "@/lib/editor/editedLangs";
 import { setRunTag } from "@/lib/sentry";
@@ -431,9 +431,19 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     catch { return; }
     // 배경 슬롯을 S2a 생성 비주얼(고정 경로)에 연결(언어 무관·1회 변형).
     const VISUAL = "design-system/components/visual/v1.png";
+    const LOGO = "design-system/components/logo/v1.png";
     if (Array.isArray(spec?.slots)) {
       const bg = spec.slots.find((s) => s.role === "background");
       if (bg) bg.asset_ref = VISUAL;
+      // 로고 슬롯도 고정 경로로 보장(background와 동일 방어). S2c의 layout.spec 반영
+      // 타이밍/경합으로 logo 슬롯이 누락된 채 done이 와도 항상 JB 로고를 방출한다
+      // (Mock 로고 미표시 회귀 방지 — 교정 후에만 로고가 박히던 문제 해소).
+      let logo = spec.slots.find((s) => s.role === "logo");
+      if (!logo) {
+        logo = { role: "logo", z: 9, bbox: { x: 48, y: 48, w: 300, h: 96 } } as Slot;
+        spec.slots.push(logo);
+      }
+      logo.asset_ref = LOGO;
     }
     let editedLangs: string[] = [];
     try { editedLangs = parseEdited((await api.vfsGet(id, EDITED_PATH)).content_text); } catch { /* 없음 */ }
