@@ -1,12 +1,13 @@
 "use client";
 
-import { Check, ChevronRight, Lock } from "lucide-react";
+import { Check, ChevronRight, Clapperboard, ImageIcon, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { STUDIOS, studioNavState, type NavStatus, type Studio } from "@/lib/cockpit-nav";
+import { STUDIOS, productionStudio, studioNavState, type NavStatus, type Studio, type VideoMedium } from "@/lib/cockpit-nav";
 
 const LABELS: Record<Studio, string> = {
   brainstorming: "brainstorming",
   design: "design",
+  video: "video",
   review: "review",
   deploy: "deploy",
 };
@@ -42,6 +43,7 @@ export type ProcessBarProps = {
   stepStatus: Record<string, string>;
   active: Studio;
   onSelect: (s: Studio) => void;
+  medium?: VideoMedium;   // 제작 슬롯 스왑(기본 image=design). page가 c.videoMedium 주입.
 };
 
 /**
@@ -50,7 +52,7 @@ export type ProcessBarProps = {
  * 완료 판정·set_step_status 쓰기·review→deploy BLOCK 판정은 M3+ 소관.
  * 따라서 모든 탭은 자유롭게 클릭 가능(blocked 포함) — 항상 onSelect 호출.
  */
-export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
+export function ProcessBar({ stepStatus, active, onSelect, medium = "image" }: ProcessBarProps) {
   const nav = studioNavState(stepStatus);
 
   return (
@@ -60,25 +62,30 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
     >
       {STUDIOS.map((s, i) => {
         const status = nav[s];
-        const isActive = active === s;
+        // 가운데 'design' 셀은 제작 슬롯 — medium으로 design↔video 렌더 치환.
+        const isProduction = s === "design";
+        const slot: Studio = isProduction ? productionStudio(medium) : s;
+        const isActive = active === slot;
         const blocked = status === "blocked";
-        // M5 §8.1: review 셀은 raw step_status(BLOCKED/WARN/PASS/in_progress)에서
-        // 별도 색상을 가져온다 — 일반 NavStatus와 어휘가 다름. 매칭 없으면 빈 문자열로 fallback.
+        // M5 §8.1: review 셀 raw step_status 색상(일반 NavStatus와 어휘 다름).
         const reviewRaw = s === "review" ? stepStatus.review : undefined;
         const reviewColor = s === "review" ? reviewColorClass(reviewRaw) : "";
-        // M6 T22: deploy 셀 색 매핑(review 패턴과 동일 어휘).
+        // M6 T22: deploy 셀 색 매핑(review 패턴 동일 어휘).
         const deployRaw = s === "deploy" ? stepStatus.deploy : undefined;
         const deployColor = s === "deploy" ? deployColorClass(deployRaw) : "";
+        // 슬롯 디자인 A: 제작 슬롯 매체 아이콘(영상=Clapperboard, 이미지=ImageIcon).
+        const MediaIcon = slot === "video" ? Clapperboard : ImageIcon;
         return (
           <div key={s} className="flex items-center">
             <button
               type="button"
-              data-testid={`step-${s}`}
+              data-testid={`step-${slot}`}
               data-status={status}
+              data-medium={isProduction ? medium : undefined}
               data-review-status={s === "review" ? (reviewRaw ?? "") : undefined}
               data-deploy-status={s === "deploy" ? (deployRaw ?? "") : undefined}
               aria-current={isActive ? "step" : undefined}
-              onClick={() => onSelect(s)}
+              onClick={() => onSelect(slot)}
               className={cn(
                 "group inline-flex items-center gap-2 rounded-full border border-transparent px-3 py-1.5 text-body-sm transition-colors",
                 isActive
@@ -86,6 +93,8 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
                   : "text-on-surface-variant hover:bg-surface-container",
                 // D8: blocked는 잠금 '시각 표현'만 — 흐림 처리하되 클릭은 막지 않음.
                 blocked && "opacity-60",
+                // 슬롯 A: 제작 슬롯 액센트 틴트(#eaddff) — 매체 토글로 스왑되는 셀임을 시각화.
+                isProduction && "bg-[#eaddff] text-on-surface hover:bg-[#e3d3ff]",
                 // M5: review 셀 색 매핑(active 토큰 위에 우선 적용).
                 reviewColor,
                 // M6 T22: deploy 셀 색 매핑(review와 동일 우선순위).
@@ -97,11 +106,13 @@ export function ProcessBar({ stepStatus, active, onSelect }: ProcessBarProps) {
                   <Check className="h-3.5 w-3.5 text-primary" aria-label="완료" />
                 ) : blocked ? (
                   <Lock className="h-3.5 w-3.5 text-error" aria-label="잠금" />
+                ) : isProduction ? (
+                  <MediaIcon className="h-3.5 w-3.5 text-on-surface-variant" aria-hidden />
                 ) : (
                   <span className={cn("inline-block h-2 w-2 rounded-full", DOT_TONE[status])} />
                 )}
               </span>
-              <span className="capitalize">{LABELS[s]}</span>
+              <span className="capitalize">{LABELS[slot]}</span>
             </button>
             {i < STUDIOS.length - 1 && (
               <ChevronRight className="mx-0.5 h-4 w-4 shrink-0 text-outline" aria-hidden />

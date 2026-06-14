@@ -6,7 +6,7 @@ import { api, authedFetch, type DesignGate, type GateEnvelope, type Manifest, ty
 import { ensureSession } from "@/lib/supabase";
 import { useRunSocket } from "@/lib/useRunSocket";
 import { useSessionHeartbeat } from "@/lib/useSessionHeartbeat";
-import { STUDIOS, type Studio } from "@/lib/cockpit-nav";
+import { STUDIOS, type Studio, type VideoMedium } from "@/lib/cockpit-nav";
 import type { SessionHeartbeat, SessionListItem, SessionLivenessName, SessionResumeResult, SessionStatus } from "@/lib/api";
 import { isImagePath } from "@/lib/fileType";
 import { assembleScene, type LayoutSpec } from "@/lib/sceneAssembler";
@@ -75,6 +75,16 @@ export type CockpitContextValue = {
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
   designGate: DesignGate | null;          // confirm 봉투 매핑 — 현재 confirm 게이트 상태(critic/auto_advanced)
+  // ---- video state (P3 §9) — design 표면 미러 ----
+  videoStep: string;                  // "V0".."done"
+  videoLang: string;
+  switchVideoLang: (lang: string) => Promise<void>;
+  videoBypass: Record<string, boolean>;
+  setVideoBypass: (id: string, on: boolean) => void;
+  videoGate: DesignGate | null;       // confirm 봉투 매핑(design과 동일 형태 재사용)
+  videoMedium: VideoMedium;           // 브레인스토밍 매체 토글 → nav 제작 슬롯 스왑
+  setVideoMedium: (m: VideoMedium) => void;
+  videoRendering: boolean;            // 확정 렌더 진행 상태
   regenConfirm: { open: boolean; onConfirm: () => void; onCancel: () => void };   // scene-wins 재생성 confirm 게이트
   // ---- review state (M5 spec §8.3) ----
   reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
@@ -103,6 +113,8 @@ export type CockpitContextValue = {
   sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean })
     => Promise<{ text?: string; gate?: GateEnvelope | null } | null>;
   runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
+  runVideo: (action: string, prompt?: string) => Promise<{ text: string }>;
+  renderVideo: () => Promise<void>;
   runReview: () => Promise<{ text: string }>;
   ackReview: () => Promise<void>;
   restartReview: () => Promise<void>;
@@ -174,6 +186,13 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [designLang, setDesignLang] = useState("ko");
   const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
   const [designGate, setDesignGate] = useState<DesignGate | null>(null);
+  // P3: video 표면 상태(design 미러). run 전환 시 리셋(openRun/startRun).
+  const [videoStep, setVideoStep] = useState("V0");
+  const [videoLang, setVideoLang] = useState("ko");
+  const [videoBypass, setVideoBypassState] = useState<Record<string, boolean>>({});
+  const [videoGate, setVideoGate] = useState<DesignGate | null>(null);
+  const [videoMedium, setVideoMedium] = useState<VideoMedium>("image");
+  const [videoRendering, setVideoRendering] = useState(false);
   // scene-wins: 재생성 confirm 게이트 상태(수동 편집본이 있을 때만 노출). Promise resolve 핸들러를 보관.
   const [regenConfirm, setRegenConfirm] = useState<{ open: boolean; onConfirm: () => void; onCancel: () => void }>(
     { open: false, onConfirm: () => {}, onCancel: () => {} });
@@ -293,6 +312,17 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     } catch { /* design 미시작 — 기본값 유지 */ }
   }, []);
 
+  /** video 내부 상태(_state.json)를 서버에서 복원. 없으면(미시작) 무시. */
+  const loadVideoState = useCallback(async (id: string) => {
+    try {
+      const st = await api.vfsGet(id, "video/_state.json");
+      const s = st.content_text ? JSON.parse(st.content_text) : {};
+      if (typeof s.step === "string") setVideoStep(s.step);
+      if (s.bypass && typeof s.bypass === "object") setVideoBypassState(s.bypass);
+      if (Array.isArray(s.languages) && s.languages[0]) setVideoLang(s.languages[0]);
+    } catch { /* video 미시작 — 기본값 유지 */ }
+  }, []);
+
   const openRun = useCallback(
     async (id: string) => {
       setRunId(id);
@@ -306,14 +336,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       // T18 isDeployUnlocked를 거짓 해제하지 않도록.
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새로 연 run은 stale design 게이트 없이 시작.
+      setVideoGate(null); setVideoStep("V0"); setVideoBypassState({}); setVideoMedium("image"); setVideoRendering(false);
       // M6 T19: deploy state 리셋(이전 run 잔여 차단).
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
       setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(id);
-      await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id),
+      await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id), loadVideoState(id),
         api.vfsList(id).then(({ nodes: ns }) => setNodes(ns)).catch(() => setNodes([]))]);
     },
-    [loadManifest, loadBrainState, loadDesignState, syncRunQuery],
+    [loadManifest, loadBrainState, loadDesignState, loadVideoState, syncRunQuery],
   );
 
   const startRun = useCallback(
@@ -328,6 +359,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setMessages([]); setPendingGate(null); setBrainStage("A");
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
+      setVideoGate(null); setVideoStep("V0"); setVideoBypassState({}); setVideoMedium("image"); setVideoRendering(false);
       setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
       setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(run_id);
@@ -522,6 +554,67 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     (id: string, on: boolean) => setDesignBypassState((m) => ({ ...m, [id]: on })),
     [],
   );
+
+  /** video 파이프라인 1턴 — gateway(studio="video", is_marker, action). runDesign 미러(씬 조립 없음).
+   *  confirm 봉투→videoGate, ask 봉투→pendingGate. done이면 videoGate 클리어. */
+  const runVideo = useCallback(async (action: string, prompt = "") => {
+    const id = runIdRef.current;
+    if (!id) return { text: "" };
+    const res = await api.gatewayRun({
+      run_id: id, studio: "video", prompt,
+      provider: "anthropic", is_marker: true, action,
+      bypass_map: videoBypass,
+      mock: mockModeRef.current,
+    });
+    await refreshTree();
+    const st = res.meta?.step;
+    if (typeof st === "string") setVideoStep(st);
+    const g = res.gate;
+    if (g?.kind === "confirm") {
+      setVideoGate({ step: g.step ?? "", critic: g.critic ?? null, auto_advanced: g.auto_advanced ?? [], actions: g.actions ?? [] });
+    } else if (g?.kind === "ask") {
+      setPendingGate(g);
+    }
+    if (st === "done") setVideoGate(null);
+    return { text: res.text };
+  }, [refreshTree, videoBypass]);
+
+  const switchVideoLang = useCallback(async (lang: string) => {
+    // P3은 편집 언어 상태만 전환. P4 VideoEditor가 해당 언어 storyboard/copy 프리뷰를 재조립한다.
+    setVideoLang(lang);
+  }, []);
+
+  const setVideoBypass = useCallback(
+    (id: string, on: boolean) => setVideoBypassState((m) => ({ ...m, [id]: on })),
+    [],
+  );
+
+  /** 확정 → 렌더: action="render"로 백엔드 ffmpeg 합성 트리거(P2). 422(고지 <3초)는 안내로 흡수. */
+  const renderVideo = useCallback(async () => {
+    const id = runIdRef.current;
+    if (!id) return;
+    setVideoRendering(true);
+    try {
+      const res = await api.gatewayRun({
+        run_id: id, studio: "video", prompt: "",
+        provider: "anthropic", is_marker: true, action: "render",
+        mock: mockModeRef.current,
+      });
+      await refreshTree();
+      if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      if (status === 402) {
+        setUpsellOpen(true);
+      } else if (status === 422) {
+        setMessages((m) => [...m, { role: "assistant", content: "고지(disclosure) 노출이 3초 미만이라 렌더할 수 없습니다. 고지 노출 시간을 늘린 뒤 다시 시도하세요." }]);
+      } else {
+        throw e;
+      }
+    } finally {
+      setVideoRendering(false);
+    }
+  }, [refreshTree]);
 
   /** 검토 시작/계속(spec §8.3): composite PNG 업로드 후 백엔드 상태머신을 done까지 순차 완주.
    *  백엔드 review는 gateway 호출 1번당 한 단계(R0→R1→R2→R3)만 전진하므로, 한 번의 사용자
@@ -906,6 +999,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     designBypass,
     setDesignBypass,
     designGate,
+    videoStep,
+    videoLang,
+    switchVideoLang,
+    videoBypass,
+    setVideoBypass,
+    videoGate,
+    videoMedium,
+    setVideoMedium,
+    videoRendering,
     regenConfirm,
     reviewStage,
     reviewGate,
@@ -929,6 +1031,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     saveFile,
     sendChat,
     runDesign,
+    runVideo,
+    renderVideo,
     runReview,
     ackReview,
     restartReview,

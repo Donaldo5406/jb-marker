@@ -9,6 +9,7 @@ import { FileTree } from "./FileTree";
 import { EditorPane } from "./EditorPane";
 import { ChatPane } from "./ChatPane";
 import { DesignStudio } from "./DesignStudio";
+import { VideoStudio } from "./VideoStudio";
 import { ReviewStudio } from "./ReviewStudio";
 import { DeployStudio } from "./DeployStudio";
 import { StudioPlaceholder } from "./StudioPlaceholder";
@@ -69,6 +70,7 @@ export function WorkspacePanel() {
   const isDesign = c.activeStudio === "design";
   const isReview = c.activeStudio === "review";
   const isDeploy = c.activeStudio === "deploy";
+  const isVideo = c.activeStudio === "video";
 
   // brainstorming: 드래그 리사이즈 3분할(FileTree / EditorPane / ChatPane). 너비는 useDefaultLayout로 persist.
   // react-resizable-panels v4 API: Group(orientation)/Panel(defaultSize·minSize·id)/Separator(role="separator").
@@ -98,6 +100,11 @@ export function WorkspacePanel() {
   // design: 자체 4-panel(VFS·캔버스·챗) 셸을 full-width로 단독 렌더(좌측 260px FileTree 그리드 미사용).
   if (isDesign) {
     return <DesignStudio />;
+  }
+
+  // video: DesignStudio와 동형의 full-width 셸을 단독 렌더.
+  if (isVideo) {
+    return <VideoStudio />;
   }
 
   // review/deploy(및 그 외): 좌측 FileTree 고정 + 스튜디오 콘텐츠(현행 유지).
