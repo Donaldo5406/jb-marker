@@ -70,7 +70,7 @@ export function VideoStudio() {
         <Separator className="w-px bg-outline-variant data-[separator=hover]:bg-on-surface-variant data-[separator=active]:bg-on-surface-variant" />
         <Panel id="video-chat" collapsible defaultSize={24} minSize={16} collapsedSize={3}
           className="min-h-0 overflow-hidden border-l border-outline-variant">
-          <div className="flex min-h-0 flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <div className="flex items-center gap-1.5 border-b border-outline-variant bg-surface-container-low px-3 py-2">
               <span className="mr-1 text-caption text-on-surface-variant">언어</span>
               {LANGS.map((l) => (
