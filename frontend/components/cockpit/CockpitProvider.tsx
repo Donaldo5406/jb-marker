@@ -288,7 +288,11 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   /** brain 내부 상태(_messages/_state)를 서버에서 복원.
    *  404 = 아직 대화/상태 없음(정상) → 기본값으로. 그 외 오류(네트워크/서버) → 기존 값 보존
    *  (일시 오류로 대화가 통째로 비워지는 휘발을 막는다). 재시도는 vfsGetRetry가 1회 수행. */
-  const loadBrainState = useCallback(async (id: string) => {
+  // syncGate=false: 라이브 턴(sendChat/answerAsk)이 호출한 새로고침. 이때 pendingGate는 이미
+  // applyGate(res.gate)가 권위 있게 세팅했으므로 _state.json에서 다시 세팅하지 않는다.
+  // (applyGate→loadBrainState 이중 setPendingGate가 AskUserToast를 재마운트시켜 '같은 팝업이
+  //  두 번 뜨는' 깜빡임을 유발했다. 복원/초기로드 경로만 syncGate=true로 gate를 복원한다.)
+  const loadBrainState = useCallback(async (id: string, syncGate: boolean = true) => {
     try {
       const m = await vfsGetRetry(id, "brainstorming/_messages.json");
       setMessages(m.content_text ? JSON.parse(m.content_text) : []);
@@ -301,13 +305,15 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setBrainStage(parsed?.stage ?? null);
       // _state.json의 pending_ask는 구 dict 형식 {trigger, question, options}(내부 상태) —
       // 복원 시 ask 봉투로 매핑한다(T1-P2 §4.4).
-      const pa = parsed?.pending_ask;
-      setPendingGate(pa ? {
-        kind: "ask", actions: ["answer"],
-        trigger: pa.trigger, question: pa.question, options: pa.options,
-      } : null);
+      if (syncGate) {
+        const pa = parsed?.pending_ask;
+        setPendingGate(pa ? {
+          kind: "ask", actions: ["answer"],
+          trigger: pa.trigger, question: pa.question, options: pa.options,
+        } : null);
+      }
     } catch (e) {
-      if ((e as { status?: number }).status === 404) { setBrainStage(null); setPendingGate(null); }
+      if ((e as { status?: number }).status === 404) { setBrainStage(null); if (syncGate) setPendingGate(null); }
     }
   }, []);
 
@@ -500,8 +506,20 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
         applyGate(res.gate);
+        // 디자인 챗 교정(remediated): 백엔드가 layout.spec copy를 정제 갱신 → main.scene 재조립
+        // (리뷰 지적 반영 → 재검토 통과). design 스튜디오 done 상태에서만 발생.
+        if (activeStudio === "design" && (res.meta as { remediated?: boolean } | undefined)?.remediated) {
+          let langs: string[] = [];
+          try {
+            const sn = await api.vfsGet(id, "design/_state.json");
+            const s = JSON.parse(sn.content_text ?? "{}");
+            if (Array.isArray(s.languages)) langs = s.languages.filter((x: unknown) => typeof x === "string");
+          } catch { /* _state 없음 → 단일 언어 폴백 */ }
+          if (!langs.length) langs = [designLang];
+          await assembleScenes(langs, designLang);
+        }
         // loadManifest: step_status 변경(D8 done→design 활성)을 ProcessBar에 세션 내 반영.
-        await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
+        await Promise.all([refreshTree(), loadBrainState(id, false), loadManifest(id)]);
         return { text: res.text, gate: res.gate ?? null };
       } catch (e) {
         const status = (e as { status?: number }).status;
@@ -511,7 +529,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         setChatPending(false);
       }
     },
-    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest],
+    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, assembleScenes, designLang],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
@@ -752,7 +770,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
       applyGate(res.gate);
       // loadManifest: plan-lock(D8 done)이 ProcessBar/design 활성에 세션 내 반영되도록.
-      await Promise.all([refreshTree(), loadBrainState(id), loadManifest(id)]);
+      await Promise.all([refreshTree(), loadBrainState(id, false), loadManifest(id)]);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 402) setUpsellOpen(true);

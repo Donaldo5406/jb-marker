@@ -233,6 +233,16 @@ def _empty_findings() -> str:
     return json.dumps({"findings": []}, ensure_ascii=False)
 
 
+# S2a bake/edit 프롬프트의 카피 라인('- headline: ...' / '- body: ...' / '- cta: ...') 파서.
+# steps.py S2aVisual._bake_prompt / _edit_prompt가 이 형식으로 언어별 카피를 실어 보낸다.
+_COPY_LINE = re.compile(r"^\s*-\s*(headline|body|cta)\s*:\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _copy_from_prompt(prompt: str) -> dict:
+    """generate_image 프롬프트에서 헤드라인/바디/CTA 카피를 추출(베이크 입력)."""
+    return {m.group(1): m.group(2) for m in _COPY_LINE.finditer(prompt or "")}
+
+
 def _user_text(messages) -> str:
     """messages에서 마지막 user 콘텐츠 추출(콘텐츠 기반 탐지 입력)."""
     for m in reversed(list(messages or [])):
@@ -308,8 +318,21 @@ class DemoProvider(Provider):
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1",
                        image: bytes | None = None) -> bytes:
-        # 사용자 제공 배경 비주얼(텍스트-free) 반환 — 단색 placeholder 대체. 부재 시 폴백.
-        return F.load_poster_bg()
+        """실모드 S2a는 Gemini가 카피를 이미지에 베이크한다 — mock은 동등 결과를 결정적 재현.
+
+        bake/edit 프롬프트에서 헤드라인/바디/CTA를 파싱해 배경(텍스트-free)에 PIL로 합성.
+        (이전엔 텍스트-free 배경을 그대로 반환 → 최종 포스터에 카피가 빠져 '맨 배경'으로 보였다.)
+        카피 없음/합성 실패는 배경 원본으로 graceful 폴백.
+        """
+        bg = F.load_poster_bg()
+        copy = _copy_from_prompt(prompt)
+        if copy:
+            try:
+                from ..core.poster_bake import bake_copy
+                return bake_copy(bg, copy, aspect=aspect)
+            except Exception:
+                logger.exception("demo: 포스터 베이크 실패 — 배경 원본 반환")
+        return bg
 
     def generate_video(self, prompt: str, *, aspect: str = "9:16",
                        duration_sec: int = 15, fps: int = 30) -> bytes:

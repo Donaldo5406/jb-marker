@@ -106,12 +106,15 @@ export function ProcessBar({ stepStatus, active, onSelect, medium = "image" }: P
                   <Check className="h-3.5 w-3.5 text-primary" aria-label="완료" />
                 ) : blocked ? (
                   <Lock className="h-3.5 w-3.5 text-error" aria-label="잠금" />
-                ) : isProduction ? (
-                  <MediaIcon className="h-3.5 w-3.5 text-on-surface-variant" aria-hidden />
                 ) : (
+                  // 모든 셀(제작 슬롯 포함)이 동일한 상태 도트를 쓴다 — active면 펄스(다른 스튜디오와 패턴 일치).
                   <span className={cn("inline-block h-2 w-2 rounded-full", DOT_TONE[status])} />
                 )}
               </span>
+              {/* 슬롯 A: 제작 슬롯은 매체 식별 아이콘을 라벨 앞에 유지(도트와 별개로 image↔video 시각화). */}
+              {isProduction && status !== "done" && status !== "blocked" && (
+                <MediaIcon className="h-3.5 w-3.5 text-on-surface-variant" aria-hidden />
+              )}
               <span className="capitalize">{LABELS[slot]}</span>
             </button>
             {i < STUDIOS.length - 1 && (
