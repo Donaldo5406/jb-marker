@@ -543,7 +543,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       }
     },
     [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, videoMedium,
-     openFile, selectFile],
+     openFile, selectFile, assembleScenes, designLang],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후

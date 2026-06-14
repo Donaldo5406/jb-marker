@@ -52,6 +52,8 @@ export function DesignEditor({
   const importSeqRef = React.useRef(0);                            // asset 파일명 충돌 회피용 시퀀스
   const importedUrlsRef = React.useRef<string[]>([]);              // import objectURL — 언마운트 시 revoke
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const wrapRef = React.useRef<HTMLDivElement>(null);             // 캔버스 래퍼 — fit 계산용 가용 영역 측정
+  const fittedRef = React.useRef(false);                          // 사용자가 수동 줌하면 리사이즈 자동 재fit 중단
 
   const cx = (scene?.width ?? 1080) / 2;
   const cy = (scene?.height ?? 1080) / 2;
@@ -191,10 +193,51 @@ export function DesignEditor({
     try { await onSave(s); setDirty(false); } finally { setSaving(false); }
   }, [snapshot, onSave]);
 
+  // 줌 = 내부 좌표 스케일 + 캔버스 표시 치수 동기. 표시 치수를 scene*zoom으로 맞춰야
+  // 캔버스가 컨테이너에 fit되고(레터박스 중앙), 확대 시에만 overflow-auto 스크롤이 생긴다.
   const applyZoom = React.useCallback((z: number) => {
-    if (!canvas) return; const clamped = Math.min(4, Math.max(0.1, z));
-    canvas.setZoom(clamped); setZoom(clamped); canvas.renderAll();
-  }, [canvas]);
+    if (!canvas) return;
+    const clamped = Math.min(4, Math.max(0.05, z));
+    const w = scene?.width ?? 1080; const h = scene?.height ?? 1080;
+    canvas.setZoom(clamped);
+    canvas.setDimensions({ width: Math.round(w * clamped), height: Math.round(h * clamped) });
+    setZoom(clamped); canvas.renderAll();
+  }, [canvas, scene]);
+
+  // fit-to-view: 컨테이너 가용 영역(패딩 제외)에 scene 전체가 한눈에 들어오도록 배율 산정.
+  const fitZoom = React.useCallback(() => {
+    if (!canvas || !wrapRef.current) return;
+    const w = scene?.width ?? 1080; const h = scene?.height ?? 1080;
+    const PAD = 32;   // p-4 여백(상하/좌우) 여유분
+    const availW = wrapRef.current.clientWidth - PAD;
+    const availH = wrapRef.current.clientHeight - PAD;
+    if (availW <= 0 || availH <= 0) return;
+    const scale = Math.min(availW / w, availH / h);   // 한 변이라도 넘치지 않게 최소 비율
+    fittedRef.current = true;
+    applyZoom(scale);
+  }, [canvas, scene, applyZoom]);
+
+  // 캔버스 준비/씬 재로드(언어 전환·재생성) 시 자동 fit — 줌·표시치수만 바꾸므로 dirty/history 무관.
+  React.useEffect(() => {
+    if (!canvas) return;
+    fittedRef.current = false;
+    fitZoom();
+  }, [canvas, loadVersion, fitZoom]);
+
+  // 컨테이너(패널 드래그·창 리사이즈) 변화 시 재fit — 단, 사용자가 수동 줌한 뒤에는 배율을 보존.
+  React.useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || !canvas) return;
+    const ro = new ResizeObserver(() => { if (fittedRef.current) fitZoom(); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [canvas, fitZoom]);
+
+  // 수동 줌(버튼·휠): 자동 재fit 중단 플래그를 끄고 절대 배율 적용.
+  const manualZoom = React.useCallback((z: number) => {
+    fittedRef.current = false;
+    applyZoom(z);
+  }, [applyZoom]);
 
   const duplicateActive = React.useCallback(async () => {
     if (!canvas) return; const a = canvas.getActiveObject(); if (!a) return;
@@ -378,7 +421,7 @@ export function DesignEditor({
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
       <Group orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <Panel id="de-canvas" defaultSize={72} minSize={40} className="min-h-0 overflow-auto bg-surface-container">
-          <div className="flex min-h-full items-center justify-center p-6"
+          <div ref={wrapRef} className="flex h-full min-h-full items-center justify-center p-4"
             onDragOver={(e) => e.preventDefault()} onDrop={onDropCanvas}>
             <canvas ref={elRef} className="block shadow-ambient" />
           </div>
@@ -401,7 +444,7 @@ export function DesignEditor({
       <Toolbar
         canUndo={canUndo} canRedo={canRedo} zoom={zoom} saving={saving} dirty={dirty} canAlign={selCount >= 1}
         onUndo={() => restore(undoHistory())} onRedo={() => restore(redoHistory())}
-        onZoomIn={() => applyZoom(zoom + 0.1)} onZoomOut={() => applyZoom(zoom - 0.1)} onZoomFit={() => applyZoom(1)}
+        onZoomIn={() => manualZoom(zoom + 0.1)} onZoomOut={() => manualZoom(zoom - 0.1)} onZoomFit={fitZoom}
         onSave={() => void doSave()} onClose={onClose}
         onAddText={() => addObject("textbox")} onAddRect={() => addObject("rect")}
         onAddCircle={() => addObject("circle")} onAddLine={() => addObject("line")}
