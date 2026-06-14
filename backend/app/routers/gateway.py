@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from ..auth import AuthError, resolve_user_id
 from ..gateway.harness import HarnessRequest
 from ..gateway.registry import select_harness
+from ..gateway.video.render import ComplianceError
 from ..providers.wrappers import tracked_provider
 from ..schemas import ErrorOut, GatewayRunOut, OWNER_RESPONSES
 from .deps import get_user_id, require_owner
@@ -35,7 +36,7 @@ class GatewayRun(BaseModel):
     # (gateway/pipeline.py — confirm 게이트가 GATE_ACTIONS=["confirm","regenerate"]를 선언),
     # review: restart·ack·regenerate (harness_review.py)
     # ask 게이트의 actions=["answer"]는 action이 아니라 answer 필드로 응답(wire 관례).
-    action: Literal["advance", "confirm", "regenerate", "restart", "ack"] | None = None
+    action: Literal["advance", "confirm", "regenerate", "restart", "ack", "render"] | None = None
     bypass_map: dict | None = None
     mock: bool = False   # 시연용 전역 Mock — true면 전 provider를 fake로 강제(요청 단위)
 
@@ -83,6 +84,8 @@ async def gateway_run(body: GatewayRun, request: Request,
         result = state.gateway.run(req, harness)
     except PermissionError as e:
         raise HTTPException(402, str(e))
+    except ComplianceError as e:
+        raise HTTPException(422, str(e))
     now = _now_ms()
     kind = "ask_answer" if body.answer is not None else "user_turn"
     hb = state.session_store.heartbeat(body.run_id, body.studio, now)
