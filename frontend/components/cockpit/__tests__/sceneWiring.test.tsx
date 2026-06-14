@@ -116,6 +116,12 @@ describe("scene-assembly wiring (C1/I4)", () => {
     const bg = scene.objects.find((o: any) => o.role === "background");
     expect(bg.type).toBe("image");
     expect(bg.src).toContain("design-system/components/visual/v1.png");
+    // 로고 슬롯이 layout.spec에 없어도(LAYOUT_SPEC에 logo 미포함) 어셈블러가 JB 로고를
+    // 고정 경로로 방출해야 함 — Mock 로고 미표시(교정 후에만 박히던) 회귀 가드.
+    const logo = scene.objects.find((o: any) => o.role === "logo");
+    expect(logo, "logo 슬롯이 없어도 로고가 방출되어야 함").toBeTruthy();
+    expect(logo.type).toBe("image");
+    expect(logo.src).toContain("design-system/components/logo/v1.png");
     // designLang 상태도 전환됨.
     expect(captured!.designLang).toBe("en");
   });

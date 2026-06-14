@@ -10,8 +10,8 @@ import { gateActionLabel } from "@/lib/gateActions";
 const STEPS: Step[] = [
   { id: "S0", label: "셋업" },
   { id: "S1", label: "Rough" },
-  { id: "S2a", label: "비주얼" },
   { id: "S2b", label: "카피" },
+  { id: "S2a", label: "비주얼" },
   { id: "S2c", label: "브랜드" },
   { id: "S3", label: "Final" },
   { id: "done", label: "완료" },
