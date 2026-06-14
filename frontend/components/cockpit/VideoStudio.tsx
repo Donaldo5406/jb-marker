@@ -6,6 +6,8 @@ import { FileTree } from "./FileTree";
 import { ChatPane } from "./ChatPane";
 import { PipelineRail, VIDEO_STEPS } from "./PipelineRail";
 import { VideoSettings } from "./VideoSettings";
+import { VideoEditor } from "./editor/VideoEditor";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const LANGS = ["ko", "en", "vi", "zh"];
@@ -20,6 +22,18 @@ export function VideoStudio() {
   const layoutStorage = React.useMemo(
     () => (typeof window !== "undefined" ? window.localStorage : { getItem: () => null, setItem: () => {} }), []);
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "cockpit-cols-video", storage: layoutStorage });
+
+  const [sbContent, setSbContent] = React.useState<string | null>(null);
+  // 콘티(V1)부터 storyboard가 존재 — videoStep 변경/렌더 완료 시 재로딩.
+  React.useEffect(() => {
+    const id = c.runId;
+    if (!id) { setSbContent(null); return; }
+    let cancelled = false;
+    api.vfsGet(id, "video/storyboard/storyboard.spec.json")
+      .then((n) => { if (!cancelled) setSbContent(n.content_text ?? null); })
+      .catch(() => { if (!cancelled) setSbContent(null); });
+    return () => { cancelled = true; };
+  }, [c.runId, c.videoStep, c.videoRendering]);
 
   return (
     <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
@@ -39,17 +53,24 @@ export function VideoStudio() {
         </Panel>
         <Separator className="w-px bg-outline-variant data-[separator=hover]:bg-on-surface-variant data-[separator=active]:bg-on-surface-variant" />
         <Panel id="video-canvas" defaultSize={60} minSize={36} className="min-h-0 overflow-hidden">
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
-            <p className="text-body-lg font-medium text-on-surface">영상 에디터</p>
-            <p className="max-w-sm text-body-sm text-on-surface-variant">
-              콘티가 생성되면 여기서 라이브 프리뷰·타임라인으로 편집하고 확정해 렌더할 수 있습니다. 우측 챗으로 지시하거나 좌측 트리에서 storyboard.spec.json을 선택하세요.
-            </p>
-          </div>
+          {sbContent ? (
+            <VideoEditor content={sbContent} runId={c.runId} lang={c.videoLang}
+              rendering={c.videoRendering} onRender={c.renderVideo} onSave={c.saveVideoStoryboard} />
+          ) : (
+            <div data-testid="video-canvas-empty"
+              className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
+              <p className="text-body-lg font-medium text-on-surface">영상 에디터</p>
+              <p className="max-w-sm text-body-sm text-on-surface-variant">
+                콘티가 생성되면 여기서 라이브 프리뷰·타임라인으로 편집하고 확정해 렌더할 수 있습니다.
+                우측 챗으로 지시하거나 좌측 트리에서 storyboard.spec.json을 선택하세요.
+              </p>
+            </div>
+          )}
         </Panel>
         <Separator className="w-px bg-outline-variant data-[separator=hover]:bg-on-surface-variant data-[separator=active]:bg-on-surface-variant" />
         <Panel id="video-chat" collapsible defaultSize={24} minSize={16} collapsedSize={3}
           className="min-h-0 overflow-hidden border-l border-outline-variant">
-          <div className="flex min-h-0 flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <div className="flex items-center gap-1.5 border-b border-outline-variant bg-surface-container-low px-3 py-2">
               <span className="mr-1 text-caption text-on-surface-variant">언어</span>
               {LANGS.map((l) => (

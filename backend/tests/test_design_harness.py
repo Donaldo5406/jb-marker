@@ -630,7 +630,7 @@ def test_s1_system_is_preserved_and_meta_passed(tmp_path):
     i_tok = sysp.index("[tokens]")
     i_ref = sysp.index("[references]")
     assert i_instr < i_tok < i_ref
-    assert p.calls[0]["meta"] == {"studio": "design", "step": "S1"}   # ③ 신호
+    assert p.calls[0]["meta"] == {"studio": "design", "step": "S1", "medium": "image"}   # ③ 신호
 
 
 def test_s2b_system_is_preserved_and_meta_passed(tmp_path):
@@ -647,7 +647,7 @@ def test_s2b_system_is_preserved_and_meta_passed(tmp_path):
     sysp = p.calls[0]["system"]
     assert sysp.startswith(hd.PERSONA)
     assert sysp.index("[S2b") < sysp.index("[factsheet]")
-    assert p.calls[0]["meta"] == {"studio": "design", "step": "S2b"}
+    assert p.calls[0]["meta"] == {"studio": "design", "step": "S2b", "medium": "image"}
 
 
 def test_critic_system_is_preserved_and_meta_passed(tmp_path):
@@ -660,7 +660,7 @@ def test_critic_system_is_preserved_and_meta_passed(tmp_path):
     sysp = p.calls[1]["system"]
     assert sysp.startswith(hd.PERSONA)
     assert "[자기-크리틱]" in sysp
-    assert p.calls[1]["meta"] == {"studio": "design", "step": "critic"}
+    assert p.calls[1]["meta"] == {"studio": "design", "step": "critic", "medium": "image"}
 
 
 # ---- T3 P2 백로그 ⑤: pending_ask 죽은 키 제거 ----

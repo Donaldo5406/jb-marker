@@ -20,9 +20,17 @@ def test_fake_generate_video_returns_bytes():
     assert isinstance(out, bytes) and len(out) > 0
 
 
-def test_demo_generate_video_returns_bytes():
+def test_demo_generate_video_returns_real_mp4():
+    """demo footage = 실 Veo 광고영상(mp4) — Veo 크레딧 없이도 진짜 광고물 렌더."""
     out = DemoProvider().generate_video("추상 금융 배경", aspect="9:16")
-    assert isinstance(out, bytes) and len(out) > 0
+    assert isinstance(out, bytes) and len(out) > 100_000   # 실 영상(>100KB)
+    assert b"ftyp" in out[:32]                             # mp4 시그니처
+
+
+def test_load_demo_video_is_mp4():
+    from app.providers import demo_fixtures as F
+    out = F.load_demo_video()
+    assert isinstance(out, bytes) and b"ftyp" in out[:32]
 
 
 def _fake_genai_video(captured: dict):
@@ -80,6 +88,49 @@ def test_google_generate_video_omits_config_for_unsupported_aspect(monkeypatch):
     assert captured["config"] is None
 
 
+def test_google_generate_video_downloads_uri_when_bytes_empty(monkeypatch):
+    """Veo가 영상을 video_bytes 대신 uri로 반환할 때 files.download로 바이트를 채운다."""
+    genai = pytest.importorskip("google.genai")
+    from google.genai import types
+    from app.providers.google_client import GoogleProvider
+    called = {}
+
+    class _Vid:
+        video_bytes = b""           # 비어 옴(실제 Veo 응답)
+        uri = "https://generativelanguage.googleapis.com/v1beta/files/x:download"
+
+    class _GenVid:
+        video = _Vid()
+
+    class _Resp:
+        generated_videos = [_GenVid()]
+
+    class _Op:
+        done = True
+        response = _Resp()
+
+    class _Files:
+        def download(self, *, file):
+            file.video_bytes = b"REAL_VEO_VIDEO_BYTES"
+            called["download"] = True
+
+    class _Models:
+        def generate_videos(self, *, model, prompt, config=None):
+            return _Op()
+
+    class _Client:
+        def __init__(self, *a, **k):
+            self.models = _Models()
+            self.files = _Files()
+
+    monkeypatch.setattr(genai, "Client", _Client)
+    monkeypatch.setattr(types, "GenerateVideosConfig",
+                        lambda **kw: {"video_cfg": kw}, raising=False)
+    out = GoogleProvider("k").generate_video("적금 캠페인", aspect="9:16")
+    assert out == b"REAL_VEO_VIDEO_BYTES"
+    assert called.get("download") is True
+
+
 def test_google_generate_video_prompt_has_cinematic_ad_direction(monkeypatch):
     """Veo 래퍼가 시네마틱 광고 지시를 포함하되 no-text 가드를 유지한다."""
     genai = pytest.importorskip("google.genai")
@@ -94,3 +145,31 @@ def test_google_generate_video_prompt_has_cinematic_ad_direction(monkeypatch):
     assert "시네마틱" in p and "광고" in p   # 실광고 연출 지시
     assert "글자" in p                       # no-text 가드 유지(컴플라이언스)
     assert "적금 캠페인 키비주얼" in p        # 호출측 프롬프트 보존
+
+
+def test_tracked_provider_delegates_generate_video():
+    """TrackedProvider가 generate_video를 위임(미구현이면 V2a가 항상 still 폴백했던 버그)."""
+    from app.providers.wrappers import TrackedProvider
+
+    class _Inner:
+        name = "demo"
+        _model = "demo-1"
+        def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+            return b"\x00\x00\x00 ftypisom_VIDEO"
+
+    tp = TrackedProvider(_Inner(), store=None, run_id="r", step="video", settings=None)
+    out = tp.generate_video("배경", aspect="9:16", duration_sec=8)
+    assert out == b"\x00\x00\x00 ftypisom_VIDEO"
+
+
+def test_modelbound_provider_delegates_generate_video(monkeypatch):
+    from app.providers import wrappers
+
+    class _P:
+        def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+            return b"MB_VIDEO_BYTES"
+
+    monkeypatch.setattr(wrappers, "get_provider", lambda name, settings: _P())
+    monkeypatch.setattr(wrappers, "_model_map", lambda s: {})
+    mb = wrappers.ModelBoundProvider("demo", None)
+    assert mb.generate_video("배경", aspect="9:16") == b"MB_VIDEO_BYTES"

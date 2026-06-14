@@ -16,13 +16,14 @@ class HarnessRequest:
     run_id: str
     studio: str            # brainstorming|design|review|deploy
     user_prompt: str
-    provider: str          # anthropic|openai|google|fake
+    provider: str = "fake"  # anthropic|openai|google|fake
     is_marker: bool = False
     history: list[Message] = field(default_factory=list)
     answer: str | None = None      # gate kind="ask" 응답(다음 턴 재개)
     action: str | None = None      # action: advance|confirm(design) | regenerate(design·review) | restart|ack(review)
     user_id: str = "demo"          # 게이트(entitlement) 평가 대상. 기본 demo(로컬-우선)
     bypass_map: dict | None = None  # design 단계별 게이트 OFF 맵(프론트 전체 전송)
+    medium: str = "image"           # 브레인스토밍 매체(image|video) — Stage A/B 라우팅
     mock: bool = False             # 시연용 Mock — true면 유료 게이트(entitlement) 우회(자유·결정적 데모)
 
 

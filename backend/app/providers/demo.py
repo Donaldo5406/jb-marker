@@ -155,7 +155,7 @@ def _section_after(system: str, marker: str) -> str:
     return (system[i + len(marker):]).strip() if i >= 0 else ""
 
 
-def _stage_a_brainstorm(messages):
+def _stage_a_brainstorm(messages, medium="image"):
     """Stage A — 리서치+질문으로 점진 구체화(턴 기반). bypass 패스트패스는 제거됨.
 
     Returns: (response_text, citations). 1턴에 리서치 인용을 동반(파일 트리에 research 산출).
@@ -182,17 +182,29 @@ def _stage_a_brainstorm(messages):
                     "options": ["국문만", "영어 포함", "영어+베트남어+중국어"]},
             "ready": False,
         }, ensure_ascii=False), []
-    # 정보 충분 → 전체 spec 작성(ready).
+    # 정보 충분 → spec 작성(매체별).
+    if medium == "video":
+        return json.dumps({"reply": "영상 기획을 정리했어요.", "document": F.VIDEO_SPEC_MD,
+                           "ask": None, "ready": True}, ensure_ascii=False), []
     return _spec_json(), []
 
 
-def _stage_b_brainstorm(system: str) -> str:
+def _stage_b_brainstorm(system: str, medium="image") -> str:
     """Stage B — 1차 누락 초안 → 보충 후 완성(bypass 패스트패스는 제거됨).
 
     현재 plan.md(system의 '[현재 plan.md]' 구간)가 비어 있으면 1차(누락) 초안을,
     있으면(보충 단계) 완성 plan을 반환. 누락 초안은 하네스 critic이 'c'(보충)로 유도.
     """
     cur = _section_after(system, "[현재 plan.md]")
+    if medium == "video":
+        if not cur:
+            return json.dumps({"reply": "영상 계획 초안을 잡았어요. 고지·장면 비트를 더 채워야 합니다.",
+                               "document": F.VIDEO_PLAN_MD_PARTIAL, "ask": None, "ready": False},
+                              ensure_ascii=False)
+        return json.dumps({"reply": "빠졌던 고지와 장면 비트를 보강해 영상 계획을 완성했어요.",
+                           "document": F.VIDEO_PLAN_MD, "ask": None, "ready": True},
+                          ensure_ascii=False)
+    # 기존 image 경로(변경 없음)
     if not cur:
         return json.dumps({
             "reply": "계획 초안을 잡았어요. 다만 컴플라이언스 고지와 슬롯 정의를 더 채워야 합니다.",
@@ -285,12 +297,13 @@ class DemoProvider(Provider):
         """
         m = meta or {}
         key = (m.get("studio"), m.get("step"))
+        medium = m.get("medium", "image")
         s = system or ""
         if key == ("brainstorming", "stage_a"):   # Stage A — 리서치+멀티턴
-            text, citations = _stage_a_brainstorm(messages)
+            text, citations = _stage_a_brainstorm(messages, medium)
             return ProviderResponse(text=text, model="demo", citations=citations)
         if key == ("brainstorming", "stage_b"):   # Stage B — 1차 누락→보충 완성
-            return ProviderResponse(text=_stage_b_brainstorm(s), model="demo")
+            return ProviderResponse(text=_stage_b_brainstorm(s, medium), model="demo")
         if key == ("design", "S1"):               # 러프 레이아웃
             return ProviderResponse(text=_layout_json(), model="demo", raw=None)
         if key == ("design", "S2b"):              # 카피(위반→교정은 콘텐츠 기반)
@@ -336,8 +349,10 @@ class DemoProvider(Provider):
 
     def generate_video(self, prompt: str, *, aspect: str = "9:16",
                        duration_sec: int = 15, fps: int = 30) -> bytes:
-        # 시연용 결정론 footage — 배경 still 바이트(프론트 VideoEditor가 모션 부여).
-        return F.load_poster_bg()
+        # 시연용 결정론 footage — 실 Veo 생성 광고영상(텍스트-free 시네마틱) mp4 바이트.
+        # Veo 크레딧 없이도 V2aFootage가 진짜 광고영상 클립을 써 렌더가 실광고물을 만든다.
+        # (파일 부재 시 load_demo_video가 still로 graceful 폴백.)
+        return F.load_demo_video()
 
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
         return ProviderResponse(text=_empty_findings(), model="demo")

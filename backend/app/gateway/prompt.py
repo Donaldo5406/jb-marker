@@ -16,6 +16,7 @@ class PromptSpec:
     output_schema: str | None = None      # 구조화 출력 지시(현행 인라인 JSON 지시문)
     studio: str = ""                      # 명시 신호
     step: str = ""                        # 명시 신호 (예: "stage_a", "S1", "R2")
+    medium: str = "image"                 # 매체 신호(image|video) — demo 라우팅용
 
     def assemble(self) -> str:
         """결정론적 결합. 블록들은 자체 구분자를 포함한다(D6 — 현행 문자열 보존)."""
@@ -27,4 +28,4 @@ class PromptSpec:
 
     @property
     def meta(self) -> dict:
-        return {"studio": self.studio, "step": self.step}
+        return {"studio": self.studio, "step": self.step, "medium": self.medium}

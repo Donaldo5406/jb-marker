@@ -121,6 +121,7 @@ export type CockpitContextValue = {
   ackReview: () => Promise<void>;
   restartReview: () => Promise<void>;
   saveSceneJson: (content: string) => Promise<void>;
+  saveVideoStoryboard: (content: string) => Promise<void>;
   answerAsk: (choice: string) => Promise<void>;
   closeAsk: () => void;
   requestChatFocus: () => void;       // ChatPane 입력 포커스 요청(AskUserToast '채팅으로 답하기' 탈출구)
@@ -502,6 +503,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
           provider: p.provider, is_marker: p.isMarker,
+          medium: videoMedium,
           mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
@@ -519,7 +521,16 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
           await assembleScenes(langs, designLang);
         }
         // loadManifest: step_status 변경(D8 done→design 활성)을 ProcessBar에 세션 내 반영.
-        await Promise.all([refreshTree(), loadBrainState(id, false), loadManifest(id)]);
+        // _messages.json 복원은 brainstorming만 — design/video 챗은 방금 추가한 대화를
+        // loadBrainState가 [](404)로 덮어쓰지 않도록 스킵(피드백 주고받기가 화면에 남게).
+        await Promise.all([refreshTree(), loadManifest(id),
+          activeStudio === "brainstorming" ? loadBrainState(id) : Promise.resolve()]);
+        // design/video 챗은 현재 단계 산출물(예: S2b 카피 교정)을 재생성한다 — 파일 캐시를
+        // 무효화하고 열린 파일을 재동기화해 갱신된 카피가 즉시 보이게(캐시된 옛 내용 방지).
+        if (activeStudio !== "brainstorming") {
+          fileCacheRef.current.clear();
+          if (openFile) await selectFile(openFile.path);
+        }
         return { text: res.text, gate: res.gate ?? null };
       } catch (e) {
         const status = (e as { status?: number }).status;
@@ -529,7 +540,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         setChatPending(false);
       }
     },
-    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, assembleScenes, designLang],
+    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, videoMedium,
+     openFile, selectFile, assembleScenes, designLang],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
@@ -645,6 +657,13 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     } finally {
       setVideoRendering(false);
     }
+  }, [refreshTree]);
+
+  const saveVideoStoryboard = useCallback(async (content: string) => {
+    const id = runIdRef.current;
+    if (!id) return;
+    await api.vfsPut(id, "video/storyboard/storyboard.spec.json", content, "application/json");
+    await refreshTree();
   }, [refreshTree]);
 
   /** 검토 시작/계속(spec §8.3): composite PNG 업로드 후 백엔드 상태머신을 done까지 순차 완주.
@@ -1072,6 +1091,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     ackReview,
     restartReview,
     saveSceneJson,
+    saveVideoStoryboard,
     answerAsk,
     closeAsk,
     requestChatFocus,

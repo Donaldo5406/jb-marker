@@ -57,11 +57,25 @@ export function ChatPane() {
       <div className="flex items-center gap-2 border-b border-outline-variant px-4 py-2.5">
         <Sparkles className="h-4 w-4 text-primary" aria-hidden />
         <span className="text-body-sm font-medium text-on-surface">AI 챗</span>
-        {c.brainStage && (
-          <span className="ml-auto rounded-full bg-surface-container-high px-2 py-0.5 text-caption text-on-surface-variant">
-            {c.brainStage === "A" ? "Stage A · 탐색" : c.brainStage === "B" ? "Stage B · 계획" : "완료"}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {c.activeStudio === "brainstorming" && (
+            <div className="flex items-center gap-0.5 rounded-full bg-surface-container-high p-0.5">
+              {([["image", "이미지"], ["video", "영상"]] as const).map(([m, label]) => (
+                <button key={m} type="button" data-testid={`medium-${m}`}
+                  onClick={() => c.setVideoMedium(m)}
+                  className={cn("rounded-full px-2.5 py-0.5 text-caption",
+                    c.videoMedium === m ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-highest")}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {c.brainStage && (
+            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-caption text-on-surface-variant">
+              {c.brainStage === "A" ? "Stage A · 탐색" : c.brainStage === "B" ? "Stage B · 계획" : "완료"}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 메시지 목록 */}

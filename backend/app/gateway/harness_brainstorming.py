@@ -281,7 +281,8 @@ class BrainstormingHarness(Harness):
                            constraints=[STAGE_A_INSTR],
                            output_schema=_PROTOCOL,
                            references=[f"\n\n[현재 spec.md]\n{cur}"],
-                           studio="brainstorming", step="stage_a")
+                           studio="brainstorming", step="stage_a",
+                           medium=(req.medium or _medium_of(cur)))
         # 웹서치 ON(Stage A): 모델 자율 검색(WEB_SEARCH_TOOL). citations는 _save_research로 영속.
         resp = provider.complete(self._window_for_provider(msgs, state, provider),
                                  system=pspec.assemble(), tools=WEB_SEARCH_TOOL, meta=pspec.meta)
@@ -376,7 +377,8 @@ class BrainstormingHarness(Harness):
             output_schema=_PROTOCOL,
             references=[f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}",
                         f"\n\n[현재 plan.md]\n{cur_plan}"],
-            studio="brainstorming", step="stage_b")
+            studio="brainstorming", step="stage_b",
+            medium=(_medium_of(spec.content_text if spec else "") or req.medium))
         resp = provider.complete(self._window_for_provider(msgs, state, provider),
                                  system=pspec.assemble(), meta=pspec.meta)
         state["last_input_tokens"] = (resp.usage or {}).get("input_tokens", 0)

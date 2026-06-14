@@ -28,6 +28,10 @@ class ModelBoundProvider:
     def generate_image(self, prompt, *, aspect="1:1", image=None):
         return self._p.generate_image(prompt, aspect=aspect, image=image)
 
+    def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+        return self._p.generate_video(prompt, aspect=aspect,
+                                      duration_sec=duration_sec, fps=fps)
+
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
         return self._p.review_image(image_bytes, prompt, mime=mime)
 
@@ -91,6 +95,29 @@ class TrackedProvider:
             output_text=f"<image {len(out)} bytes>",
             meta={"cost_usd": entry["cost_usd"]},
         )
+        return out
+
+    def generate_video(self, prompt, *, aspect="9:16", duration_sec=15, fps=30):
+        out = self._inner.generate_video(prompt, aspect=aspect,
+                                         duration_sec=duration_sec, fps=fps)
+        # usage/tracing 기록은 부가기능 — 실패해도 영상 생성을 막지 않는다.
+        try:
+            used_model = (getattr(self._settings, "google_video_model", None)
+                          or "veo-3.0-generate-001") if self.name == "google" else self._model_for()
+            entry = usage_log.record_usage(
+                self._store, run_id=self._run_id, step=self._step,
+                model=used_model, kind="video",
+                meta={"aspect": aspect, "duration_sec": duration_sec},
+            )
+            tracing.record_generation(
+                self._settings, run_id=self._run_id, step=self._step,
+                model=used_model, kind="video",
+                input_payload={"prompt": prompt, "aspect": aspect, "duration_sec": duration_sec},
+                output_text=f"<video {len(out)} bytes>",
+                meta={"cost_usd": entry.get("cost_usd") if isinstance(entry, dict) else None},
+            )
+        except Exception:
+            pass
         return out
 
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
