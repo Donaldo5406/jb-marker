@@ -486,6 +486,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         const res = await api.gatewayRun({
           run_id: id, studio: activeStudio, prompt: p.prompt,
           provider: p.provider, is_marker: p.isMarker,
+          medium: videoMedium,
           mock: mockModeRef.current,
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
@@ -499,7 +500,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         throw e;
       }
     },
-    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest],
+    [activeStudio, applyGate, refreshTree, loadBrainState, loadManifest, videoMedium],
   );
 
   /** design 파이프라인 1턴 — gateway(studio="design", is_marker, action) 호출 후
