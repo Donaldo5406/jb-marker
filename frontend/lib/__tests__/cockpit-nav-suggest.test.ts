@@ -42,4 +42,20 @@ describe("deriveNavSuggestion", () => {
   it("다른 스튜디오 활성 중엔 권유하지 않음(맥락 한정)", () => {
     expect(deriveNavSuggestion({ ...base, brainDone: true }, "design")).toBeNull();
   });
+  it("medium=video + brain done + brainstorming 활성 → video 권유", () => {
+    const s = deriveNavSuggestion({ ...base, brainDone: true, medium: "video" }, "brainstorming");
+    expect(s).toEqual({ target: "video", direction: "forward", label: "Video 스튜디오로 이동" });
+  });
+  it("medium=video + video done + video 활성 → review 권유", () => {
+    const s = deriveNavSuggestion({ ...base, videoDone: true, medium: "video" }, "video");
+    expect(s?.target).toBe("review");
+  });
+  it("medium=video + review BLOCKED → video 복귀(back)", () => {
+    const s = deriveNavSuggestion({ ...base, reviewStatus: "BLOCKED", medium: "video" }, "review");
+    expect(s).toEqual({ target: "video", direction: "back", label: "critical 위반 — Video에서 수정 후 재검토" });
+  });
+  it("medium 미지정(기본 image)은 기존 design 동선 유지", () => {
+    const s = deriveNavSuggestion({ ...base, brainDone: true }, "brainstorming");
+    expect(s).toEqual({ target: "design", direction: "forward", label: "Design 스튜디오로 이동" });
+  });
 });

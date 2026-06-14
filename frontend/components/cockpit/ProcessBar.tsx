@@ -4,7 +4,10 @@ import { Check, ChevronRight, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STUDIOS, studioNavState, type NavStatus, type Studio } from "@/lib/cockpit-nav";
 
-const LABELS: Record<Studio, string> = {
+// STUDIOS 배열(4종 고정)만 셀로 렌더된다 — video는 Studio 타입에만 더해진 제작 슬롯
+// 치환값이라 ProcessBar 셀이 아니다. 따라서 LABELS는 전체 Studio 유니온이 아닌
+// STUDIOS 원소 타입으로 키잉한다(video 키 불필요).
+const LABELS: Record<(typeof STUDIOS)[number], string> = {
   brainstorming: "brainstorming",
   design: "design",
   review: "review",

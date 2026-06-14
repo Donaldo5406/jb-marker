@@ -24,3 +24,12 @@ describe("LIFECYCLE_STUDIOS (세션 수명주기 5종)", () => {
     ]);
   });
 });
+
+import { productionStudio } from "../cockpit-nav";
+
+describe("productionStudio (제작 슬롯 스왑)", () => {
+  it("medium=video면 video, 그 외(image)면 design", () => {
+    expect(productionStudio("video")).toBe("video");
+    expect(productionStudio("image")).toBe("design");
+  });
+});
