@@ -47,6 +47,15 @@ class VideoHarness(Harness):
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)
+        if getattr(req, "action", None) == "render":
+            from .video.render import render_video
+            lang = (state.get("languages") or ["ko"])[0]
+            path = render_video(store, req.run_id, lang=lang)
+            return HarnessResult(
+                text="영상을 렌더했습니다. review/_render/final.mp4에서 확인하세요.",
+                output_path=path,
+                meta={"source": "marker", "step": "render", "lang": lang},
+                events=[{"type": "artifact", "path": path}])
         ctx = StepContext(req=req, provider=provider, store=store, state=state,
                           base=self._base(req.run_id))
         return self._orch.handle_turn(ctx)
