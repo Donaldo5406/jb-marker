@@ -91,3 +91,52 @@ def test_build_drawtext_filters_skips_missing_copy_and_omits_fontfile_when_none(
     fs = build_drawtext_filters(story, "ko", font_path=None)
     assert len(fs) == 1
     assert "fontfile=" not in fs[0]             # 폰트 없으면 fontfile 생략(기본 폰트)
+
+
+def _segs():
+    from app.gateway.video.render import Segment
+    return [Segment(kind="image", path="/t/s1.png", dur=6.0),
+            Segment(kind="video", path="/t/s2.mp4", dur=6.0)]
+
+
+def test_build_filter_complex_concat_and_drawtext_chain():
+    from app.gateway.video.render import build_filter_complex
+    fc = build_filter_complex(_segs(), ["drawtext=text='a'[x]REPLACED"], w=1080, h=1920, fps=30)
+    # 세그먼트별 라벨 + concat + vout 산출
+    assert "[0:v]scale=1080:1920" in fc and "crop=1080:1920" in fc
+    assert "trim=duration=6.0" in fc               # video 세그먼트만 trim
+    assert "concat=n=2:v=1:a=0[base]" in fc
+    assert fc.strip().endswith("[vout]")
+
+
+def test_build_filter_complex_no_drawtext_uses_null_passthrough():
+    from app.gateway.video.render import build_filter_complex
+    fc = build_filter_complex(_segs(), [], w=1080, h=1920, fps=30)
+    assert "[base]null[vout]" in fc
+
+
+def test_build_ffmpeg_command_inputs_map_and_music():
+    from app.gateway.video.render import build_ffmpeg_command, build_drawtext_filters, Segment
+    segs = [Segment(kind="image", path="/t/s1.png", dur=6.0),
+            Segment(kind="color", path=None, dur=6.0, color="#0B2B5B")]
+    dt = build_drawtext_filters(STORY_OK, "ko", font_path=None)
+    argv = build_ffmpeg_command(segs, dt, out_path="/o/final.mp4",
+                                w=1080, h=1920, fps=30, music_path="/m/bed.m4a")
+    assert argv[0].endswith("ffmpeg") and "-y" in argv
+    # image 세그먼트 → loop 입력
+    assert "-loop" in argv and "/t/s1.png" in argv
+    # color 세그먼트 → lavfi color 입력
+    j = " ".join(argv)
+    assert "lavfi" in j and "color=c=0x0B2B5B" in j
+    # 음악 입력 + 맵 + shortest
+    assert "-stream_loop" in argv and "/m/bed.m4a" in argv
+    assert "-shortest" in argv and "[vout]" in argv
+    assert argv[-1] == "/o/final.mp4"
+
+
+def test_build_ffmpeg_command_without_music_has_no_audio_map():
+    from app.gateway.video.render import build_ffmpeg_command, Segment
+    argv = build_ffmpeg_command([Segment(kind="image", path="/t/s1.png", dur=6.0)],
+                                [], out_path="/o/final.mp4", w=1080, h=1920, fps=30,
+                                music_path=None)
+    assert "-stream_loop" not in argv and "-shortest" not in argv

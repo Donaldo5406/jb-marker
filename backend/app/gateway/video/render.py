@@ -7,6 +7,7 @@ ffmpeg 바이너리 없이 결정론적으로 테스트된다. 렌더 전 고지
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 from .scoring import evaluate_timing
 
@@ -67,3 +68,63 @@ def build_drawtext_filters(storyboard: dict, lang: str, *, font_path: str | None
                 + f":enable='between(t,{float(layer.get('in', 0))},{float(layer.get('out', 0))})'"
             )
     return out
+
+
+@dataclass
+class Segment:
+    """샷 1개의 렌더 소스. kind: 'video'|'image'|'color'. color는 kind=='color'일 때만."""
+    kind: str
+    path: str | None
+    dur: float
+    color: str | None = None
+
+
+def build_filter_complex(segments: list["Segment"], drawtext: list[str], *,
+                         w: int, h: int, fps: int) -> str:
+    """세그먼트 정규화(scale/crop/setsar/trim) → concat[base] → drawtext 체인 → [vout]."""
+    parts: list[str] = []
+    labels: list[str] = []
+    for i, seg in enumerate(segments):
+        f = f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1"
+        if seg.kind == "video":
+            f += f",trim=duration={seg.dur},setpts=PTS-STARTPTS"
+        else:
+            f += ",setpts=PTS-STARTPTS"
+        f += f"[v{i}]"
+        parts.append(f)
+        labels.append(f"[v{i}]")
+    parts.append("".join(labels) + f"concat=n={len(segments)}:v=1:a=0[base]")
+    if drawtext:
+        cur = "base"
+        for j, d in enumerate(drawtext):
+            nxt = "vout" if j == len(drawtext) - 1 else f"t{j}"
+            parts.append(f"[{cur}]{d}[{nxt}]")
+            cur = nxt
+    else:
+        parts.append("[base]null[vout]")
+    return ";".join(parts)
+
+
+def build_ffmpeg_command(segments: list["Segment"], drawtext: list[str], *,
+                         out_path: str, w: int, h: int, fps: int,
+                         music_path: str | None) -> list[str]:
+    """단일 ffmpeg argv(셸 없음). image=loop, color=lavfi, video=직접 입력. 음악=stream_loop+map."""
+    argv: list[str] = ["ffmpeg", "-y"]
+    for seg in segments:
+        if seg.kind == "image":
+            argv += ["-loop", "1", "-t", str(seg.dur), "-i", seg.path]
+        elif seg.kind == "color":
+            argv += ["-f", "lavfi", "-t", str(seg.dur),
+                     "-i", f"color=c={_ff_color(seg.color or '#000000')}:s={w}x{h}:r={fps}"]
+        else:  # video
+            argv += ["-i", seg.path]
+    music_idx = None
+    if music_path:
+        music_idx = len(segments)
+        argv += ["-stream_loop", "-1", "-i", music_path]
+    argv += ["-filter_complex", build_filter_complex(segments, drawtext, w=w, h=h, fps=fps)]
+    argv += ["-map", "[vout]"]
+    if music_idx is not None:
+        argv += ["-map", f"{music_idx}:a", "-c:a", "aac", "-shortest"]
+    argv += ["-r", str(fps), "-c:v", "libx264", "-pix_fmt", "yuv420p", out_path]
+    return argv
