@@ -20,9 +20,17 @@ def test_fake_generate_video_returns_bytes():
     assert isinstance(out, bytes) and len(out) > 0
 
 
-def test_demo_generate_video_returns_bytes():
+def test_demo_generate_video_returns_real_mp4():
+    """demo footage = 실 Veo 광고영상(mp4) — Veo 크레딧 없이도 진짜 광고물 렌더."""
     out = DemoProvider().generate_video("추상 금융 배경", aspect="9:16")
-    assert isinstance(out, bytes) and len(out) > 0
+    assert isinstance(out, bytes) and len(out) > 100_000   # 실 영상(>100KB)
+    assert b"ftyp" in out[:32]                             # mp4 시그니처
+
+
+def test_load_demo_video_is_mp4():
+    from app.providers import demo_fixtures as F
+    out = F.load_demo_video()
+    assert isinstance(out, bytes) and b"ftyp" in out[:32]
 
 
 def _fake_genai_video(captured: dict):
