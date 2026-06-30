@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { AlertTriangle, Check, Pause, Play } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useAuthedBlob } from "@/lib/useAuthedBlob";
 import { useVideoTimeline } from "./useVideoTimeline";
@@ -71,7 +72,7 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
           className="min-h-0 overflow-hidden">
           <div className="flex h-full items-center justify-center bg-surface-container-lowest p-4">
             <div data-testid="video-preview"
-              className="relative h-full max-h-full overflow-hidden rounded-lg shadow-ambient"
+              className="relative h-full max-h-full overflow-hidden rounded-lg shadow-elev-2"
               style={{ aspectRatio: "9 / 16", containerType: "size",
                 background: sb.bg_color ?? "#0B2B5B" }}>
               {footage.url && !videoBroke && (
@@ -149,8 +150,9 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
       <div className="border-t border-outline-variant bg-surface-container-low px-3 py-2">
         <div className="mb-1 flex items-center gap-2">
           <button type="button" data-testid="play-toggle" onClick={() => t.setPlaying(!t.playing)}
-            className="rounded-md bg-surface-container-high px-2 py-1 text-caption text-on-surface">
-            {t.playing ? "❚❚" : "▶"}
+            aria-label={t.playing ? "일시정지" : "재생"}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-surface-container-high text-on-surface transition-colors hover:bg-surface-container-highest">
+            {t.playing ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
           </button>
           <span className="text-caption tabular-nums text-on-surface-variant">
             {t.time.toFixed(1)} / {duration.toFixed(1)}s
@@ -165,7 +167,7 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
         <div className="relative mb-1 flex h-6 w-full gap-px">
           {(sb.shots ?? []).map((s) => (
             <div key={s.id} data-testid={`video-shot-${s.id}`}
-              className="flex items-center justify-center overflow-hidden rounded bg-[#3a4a6b] text-caption text-white/80"
+              className="flex items-center justify-center overflow-hidden rounded bg-surface-container-highest text-caption text-on-surface-variant"
               style={{ width: `${((s.end - s.start) / duration) * 100}%` }}>
               {s.id}
             </div>
@@ -181,7 +183,8 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
                       data-testid={`video-layer-${s.id}-${idx}`}
                       onClick={() => t.selectLayer(s.id, idx)}
                       className={cn("absolute top-0 h-full rounded px-1 text-[10px] text-white",
-                        role === "disclosure" ? "bg-[#7a5cff]" : "bg-primary",
+                        // 고지 레인은 컴플라이언스 식별을 위해 info 토큰으로 구분(이질적 보라 제거).
+                        role === "disclosure" ? "bg-severity-info" : "bg-primary",
                         t.sel?.shotId === s.id && t.sel?.layerIdx === idx && "ring-2 ring-on-surface")}
                       style={{ left: `${((l.in ?? 0) / duration) * 100}%`,
                         width: `${(((l.out ?? 0) - (l.in ?? 0)) / duration) * 100}%` }}>
@@ -197,8 +200,9 @@ export function VideoEditor({ content, runId, lang, rendering, onRender, onSave 
 
       <div className="flex items-center gap-3 border-t border-outline-variant bg-surface-container-low px-3 py-2">
         <div data-testid="disclosure-meter"
-          className={cn("text-caption", discOk ? "text-on-surface-variant" : "text-error font-medium")}>
-          고지 노출 {exposure}s / {DISCLOSURE_MIN_SEC}s {discOk ? "✓" : "⚠ 미달"}
+          className={cn("flex items-center gap-1.5 text-caption", discOk ? "text-on-surface-variant" : "text-error font-medium")}>
+          {discOk ? <Check className="h-3.5 w-3.5" aria-hidden /> : <AlertTriangle className="h-3.5 w-3.5" aria-hidden />}
+          고지 노출 {exposure}s / {DISCLOSURE_MIN_SEC}s{discOk ? "" : " 미달"}
         </div>
         <div className="ml-auto flex items-center gap-2">
           <button type="button" data-testid="save-storyboard" disabled={!t.dirty}
