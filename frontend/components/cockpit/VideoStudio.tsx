@@ -36,7 +36,7 @@ export function VideoStudio() {
   }, [c.runId, c.videoStep, c.videoRendering]);
 
   return (
-    <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
       <PipelineRail step={c.videoStep} steps={VIDEO_STEPS} gate={c.videoGate} busy={busy}
         onAdvance={() => act("advance")} onRegenerate={() => act("regenerate")}
         settingsOpen={showSettings} onToggleSettings={() => setShowSettings((v) => !v)} />

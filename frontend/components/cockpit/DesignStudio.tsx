@@ -94,7 +94,7 @@ export function DesignStudio() {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "cockpit-cols-design", storage: layoutStorage });
 
   return (
-    <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
       <PipelineRail step={c.designStep} gate={c.designGate} busy={busy}
         onAdvance={() => act("advance")} onRegenerate={() => act("regenerate")}
         settingsOpen={showSettings} onToggleSettings={() => setShowSettings((v) => !v)} />
