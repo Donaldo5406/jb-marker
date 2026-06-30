@@ -120,23 +120,29 @@ def _caption_deco(role: str | None) -> str:
     return "shadowcolor=black@0.6:shadowx=0:shadowy=3:borderw=2:bordercolor=black@0.85:"
 
 
-def build_drawtext_filters(storyboard: dict, lang: str, *, font_path: str | None) -> list[str]:
+def build_drawtext_filters(storyboard: dict, lang: str, *, font_path: str | None,
+                           shot_offsets: list[float] | None = None) -> list[str]:
     """각 레이어 → drawtext 필터 문자열. 문구 없는 레이어는 스킵. in/out=절대시간.
 
     각 캡션은 역할별 스크림/그림자(_caption_deco) + alpha 페이드(_alpha_expr) +
     anim rise 이징(_y_part)으로 시네마틱하게 등장한다.
+
+    shot_offsets[k]가 주어지면 샷 k의 모든 레이어 in/out을 그만큼 당긴다(크로스페이드로
+    압축된 출력 타임라인에 정렬). 레이어는 샷 내부라 in/out을 동일 오프셋만큼 빼므로
+    노출 길이(out-in)는 보존된다 → 고지 ≥3초 컴플라이언스 무결성 유지.
     """
     copy = (storyboard.get("copy") or {}).get(lang, {}) or {}
     out: list[str] = []
-    for shot in storyboard.get("shots", []) or []:
+    for k, shot in enumerate(storyboard.get("shots", []) or []):
+        off = shot_offsets[k] if (shot_offsets and k < len(shot_offsets)) else 0.0
         for layer in shot.get("layers", []) or []:
             key = layer.get("copy_key") or layer.get("role")
             text = copy.get(key, "")
             if not text:
                 continue
             bbox = layer.get("bbox", {}) or {}
-            t_in = float(layer.get("in", 0))
-            t_out = float(layer.get("out", 0))
+            t_in = round(max(0.0, float(layer.get("in", 0)) - off), 3)
+            t_out = round(max(t_in, float(layer.get("out", 0)) - off), 3)
             anim = str(layer.get("anim") or "")
             out.append(
                 # expansion=none: '%'·'{'·'}'를 리터럴로(금리 "3.5%" 등 깨짐·치환 주입 방지)
@@ -192,15 +198,96 @@ def _segment_chain(i: int, seg: "Segment", *, w: int, h: int, fps: int) -> str:
     return f"[{i}:v]" + ",".join(chain) + f"[v{i}]"
 
 
+# ── 샷 전환(크로스페이드) ──────────────────────────────────────────────
+# 하드컷(슬라이드쇼)을 시네마틱 크로스페이드로. 콘티의 샷별 transition_in/out을 존중하되
+# 'cut'만 하드컷, 그 외(또는 미지정)는 xfade(기본 dissolve='fade'). 안전 화이트리스트 외
+# 이름은 'fade'로 정규화(필터 파싱 에러 방지).
+_XFADE_DUR = 0.6                     # 크로스페이드 길이(초)
+_XFADE_SAFE = {"fade", "fadeblack", "fadewhite", "dissolve",
+               "smoothleft", "smoothright", "smoothup", "smoothdown",
+               "wipeleft", "wiperight", "wipeup", "wipedown",
+               "slideleft", "slideright", "circleopen", "radial"}
+_CUT_ALIASES = {"cut", "none", "hard", "hardcut", "", "0"}
+
+
+def _xfade_name(raw: str) -> str:
+    """xfade transition 이름 정규화 — 'crossfade'/'dissolve'류는 'fade', 미지원은 'fade'."""
+    raw = (raw or "").strip().lower()
+    if raw in ("crossfade", "crossdissolve", "cross"):
+        return "fade"
+    return raw if raw in _XFADE_SAFE else "fade"
+
+
+def _joint_transition(left: dict, right: dict) -> str:
+    """조인트 전환 — right.transition_in 우선, 없으면 left.transition_out, 기본 'fade'.
+
+    'cut' 류면 'cut'(하드컷), 그 외엔 정규화된 xfade 이름.
+    """
+    raw = (right.get("transition_in") or left.get("transition_out") or "fade")
+    raw = str(raw).strip().lower()
+    return "cut" if raw in _CUT_ALIASES else _xfade_name(raw)
+
+
+def plan_transitions(storyboard: dict, segments: list["Segment"],
+                     *, dur: float = _XFADE_DUR) -> dict:
+    """샷 전환 계획 — 조인트 전환 종류·클램프된 D·샷별 시간오프셋·압축 총길이.
+
+    D는 가장 짧은 세그먼트의 절반 이하로 클램프(xfade offset 음수 방지).
+    shot_offset[k] = D * (k 이전 페이드 조인트 수) → drawtext 재매핑·xfade offset 공통 기준.
+    """
+    shots = storyboard.get("shots", []) or []
+    n = len(segments)
+    joints = [
+        _joint_transition(shots[k] if k < len(shots) else {},
+                          shots[k + 1] if k + 1 < len(shots) else {})
+        for k in range(max(0, n - 1))
+    ]
+    min_dur = min((s.dur for s in segments), default=dur * 2)
+    D = round(max(0.1, min(dur, min_dur * 0.5)), 3)
+    shot_offset = [0.0] * n
+    cum = 0.0
+    for k in range(1, n):
+        if joints[k - 1] != "cut":
+            cum += D
+        shot_offset[k] = round(cum, 3)
+    total = round(sum(s.dur for s in segments) - cum, 3)
+    return {"joints": joints, "dur": D, "shot_offset": shot_offset, "total": total}
+
+
 def build_filter_complex(segments: list["Segment"], drawtext: list[str], *,
-                         w: int, h: int, fps: int) -> str:
-    """세그먼트 정규화/켄번스/그레이드 → concat[base] → drawtext 체인 → [vout]."""
+                         w: int, h: int, fps: int,
+                         joints: list[str] | None = None,
+                         xfade_dur: float = _XFADE_DUR) -> str:
+    """세그먼트 정규화/켄번스/그레이드 → 전환(xfade/cut) pairwise 합성[base] → drawtext → [vout].
+
+    joints[k]='cut'이면 하드컷(concat n=2), 그 외엔 xfade(누적 길이 기준 offset). joints=None은
+    전부 'fade'로 간주. xfade_dur은 plan_transitions가 클램프한 D를 그대로 받는다(재클램프 안 함).
+    """
     parts: list[str] = []
-    labels: list[str] = []
     for i, seg in enumerate(segments):
         parts.append(_segment_chain(i, seg, w=w, h=h, fps=fps))
-        labels.append(f"[v{i}]")
-    parts.append("".join(labels) + f"concat=n={len(segments)}:v=1:a=0[base]")
+    n = len(segments)
+    if joints is None:
+        joints = ["fade"] * max(0, n - 1)
+    D = xfade_dur
+    if n == 0:
+        return ""
+    if n == 1:
+        parts.append("[v0]null[base]")
+    else:
+        acc, acc_len = "v0", segments[0].dur
+        for k in range(1, n):
+            nxt = "base" if k == n - 1 else f"x{k}"
+            jt = joints[k - 1] if k - 1 < len(joints) else "fade"
+            if jt == "cut":
+                parts.append(f"[{acc}][v{k}]concat=n=2:v=1:a=0[{nxt}]")
+                acc_len += segments[k].dur
+            else:
+                off = max(0.0, acc_len - D)
+                parts.append(f"[{acc}][v{k}]xfade=transition={jt}:"
+                             f"duration={D}:offset={off:.3f}[{nxt}]")
+                acc_len += segments[k].dur - D
+            acc = nxt
     if drawtext:
         cur = "base"
         for j, d in enumerate(drawtext):
@@ -226,9 +313,14 @@ def _music_filter(music_idx: int, total_dur: float) -> str:
 
 def build_ffmpeg_command(segments: list["Segment"], drawtext: list[str], *,
                          out_path: str, w: int, h: int, fps: int,
-                         music_path: str | None) -> list[str]:
+                         music_path: str | None,
+                         joints: list[str] | None = None,
+                         xfade_dur: float = _XFADE_DUR,
+                         total: float | None = None) -> list[str]:
     """단일 ffmpeg argv(셸 없음). image=loop, color=lavfi, video=직접 입력. 음악=stream_loop+map.
 
+    joints/xfade_dur은 전환 합성에, total(크로스페이드로 압축된 총길이)은 음악 페이드아웃
+    타이밍에 쓰인다. total 미지정 시 concat 가정(=세그먼트 길이 합).
     인코딩은 광고 배포 품질로 튜닝: x264 crf18·preset slow·high profile +
     faststart(웹 스트리밍 시 moov atom 선두 배치로 즉시 재생).
     """
@@ -245,10 +337,11 @@ def build_ffmpeg_command(segments: list["Segment"], drawtext: list[str], *,
     if music_path:
         music_idx = len(segments)
         argv += ["-stream_loop", "-1", "-i", music_path]
-    fc = build_filter_complex(segments, drawtext, w=w, h=h, fps=fps)
+    fc = build_filter_complex(segments, drawtext, w=w, h=h, fps=fps,
+                              joints=joints, xfade_dur=xfade_dur)
     if music_idx is not None:
-        total = sum(max(0.0, seg.dur) for seg in segments)
-        fc += ";" + _music_filter(music_idx, total)
+        tot = total if total is not None else sum(max(0.0, seg.dur) for seg in segments)
+        fc += ";" + _music_filter(music_idx, tot)
     argv += ["-filter_complex", fc]
     argv += ["-map", "[vout]"]
     if music_idx is not None:
@@ -402,10 +495,14 @@ def render_video(store, run_id: str, *, lang: str = "ko", ffmpeg=_AUTO) -> str:
         with tempfile.TemporaryDirectory() as td:
             segs = _build_segments(store, run_id, storyboard, td, w=w, h=h)
             if segs:
-                dt = build_drawtext_filters(storyboard, lang, font_path=_resolve_font())
+                plan = plan_transitions(storyboard, segs)
+                dt = build_drawtext_filters(storyboard, lang, font_path=_resolve_font(),
+                                            shot_offsets=plan["shot_offset"])
                 local_out = str(Path(td) / "final.mp4")
-                argv = build_ffmpeg_command(segs, dt, out_path=local_out,
-                                            w=w, h=h, fps=fps, music_path=_resolve_music())
+                argv = build_ffmpeg_command(
+                    segs, dt, out_path=local_out, w=w, h=h, fps=fps,
+                    music_path=_resolve_music(), joints=plan["joints"],
+                    xfade_dur=plan["dur"], total=plan["total"])
                 argv[0] = ffmpeg_bin
                 try:
                     subprocess.run(argv, check=True, capture_output=True, timeout=600)

@@ -99,21 +99,32 @@ def _segs():
             Segment(kind="video", path="/t/s2.mp4", dur=6.0)]
 
 
-def test_build_filter_complex_concat_and_drawtext_chain():
+def test_build_filter_complex_xfade_default_and_drawtext_chain():
     from app.gateway.video.render import build_filter_complex
     fc = build_filter_complex(_segs(), ["drawtext=text='a'[x]REPLACED"], w=1080, h=1920, fps=30)
-    # 세그먼트별 라벨 + concat + vout 산출
+    # 세그먼트별 정규화 + 기본 크로스페이드(joints=None→fade) + vout
     assert "[0:v]scale=1080:1920" in fc and "crop=1080:1920" in fc
-    assert "trim=duration=6.0" in fc               # 모든 세그먼트 trim+fps 정규화
-    assert "fps=30" in fc                          # concat 전 fps 통일(image2 25fps 혼입 방지)
-    assert "concat=n=2:v=1:a=0[base]" in fc
+    assert "trim=duration=6.0" in fc and "fps=30" in fc
+    # seg0 길이 6, D=0.6 → offset=6-0.6=5.400, 마지막 조인트 출력=base
+    assert "xfade=transition=fade:duration=0.6:offset=5.400[base]" in fc
+    assert "concat=" not in fc                     # 기본은 크로스페이드(하드컷 아님)
     assert fc.strip().endswith("[vout]")
 
 
-def test_build_filter_complex_no_drawtext_uses_null_passthrough():
+def test_build_filter_complex_cut_joint_uses_concat():
     from app.gateway.video.render import build_filter_complex
-    fc = build_filter_complex(_segs(), [], w=1080, h=1920, fps=30)
+    fc = build_filter_complex(_segs(), [], w=1080, h=1920, fps=30, joints=["cut"])
+    assert "concat=n=2:v=1:a=0[base]" in fc        # 'cut'=하드컷(concat)
+    assert "xfade=" not in fc
     assert "[base]null[vout]" in fc
+
+
+def test_build_filter_complex_single_segment_passthrough():
+    from app.gateway.video.render import build_filter_complex, Segment
+    fc = build_filter_complex([Segment("video", "/v.mp4", 6.0)], [],
+                              w=1080, h=1920, fps=30)
+    assert "[v0]null[base]" in fc and "[base]null[vout]" in fc  # 단일 샷=합성 없음
+    assert "xfade=" not in fc and "concat=" not in fc
 
 
 def test_build_ffmpeg_command_inputs_map_and_music():
@@ -322,3 +333,65 @@ def test_x264_quality_tuning_flags():
                                 out_path="/o.mp4", w=1080, h=1920, fps=30, music_path=None)
     for flag in ("-crf", "18", "-preset", "slow", "-profile:v", "high", "+faststart"):
         assert flag in argv
+
+
+# ── 크로스페이드 전환(정밀) ────────────────────────────────────────────────
+def _segs3():
+    from app.gateway.video.render import Segment
+    return [Segment("video", "/a.mp4", 6.0), Segment("video", "/b.mp4", 6.0),
+            Segment("video", "/c.mp4", 6.0)]
+
+
+def test_joint_transition_resolution():
+    from app.gateway.video.render import _joint_transition
+    # right.transition_in 우선
+    assert _joint_transition({"transition_out": "cut"}, {"transition_in": "fade"}) == "fade"
+    # right 없으면 left.transition_out
+    assert _joint_transition({"transition_out": "cut"}, {}) == "cut"
+    # 미지정 기본 fade
+    assert _joint_transition({}, {}) == "fade"
+    # crossfade/dissolve 별칭 → fade, 미지원 → fade
+    assert _joint_transition({}, {"transition_in": "crossfade"}) == "fade"
+    assert _joint_transition({}, {"transition_in": "zoomwarp"}) == "fade"
+    # 안전 화이트리스트는 유지
+    assert _joint_transition({}, {"transition_in": "wipeleft"}) == "wipeleft"
+
+
+def test_plan_transitions_offsets_and_total_all_fade():
+    from app.gateway.video.render import plan_transitions
+    story = {"shots": [{"transition_in": "fade"}, {"transition_in": "fade"},
+                       {"transition_in": "fade"}]}
+    plan = plan_transitions(story, _segs3())          # D=min(0.6, 6*0.5)=0.6
+    assert plan["dur"] == 0.6
+    assert plan["joints"] == ["fade", "fade"]
+    # 샷별 누적 페이드 오프셋: 0, 0.6, 1.2
+    assert plan["shot_offset"] == [0.0, 0.6, 1.2]
+    # 총길이 = 18 - (2 페이드 * 0.6) = 16.8
+    assert plan["total"] == 16.8
+
+
+def test_plan_transitions_cut_joint_no_compression():
+    from app.gateway.video.render import plan_transitions
+    story = {"shots": [{}, {"transition_in": "cut"}, {"transition_in": "fade"}]}
+    plan = plan_transitions(story, _segs3())
+    assert plan["joints"] == ["cut", "fade"]
+    # 첫 조인트 cut → 오프셋 누적 안 됨, 둘째 fade → +0.6
+    assert plan["shot_offset"] == [0.0, 0.0, 0.6]
+    assert plan["total"] == 18.0 - 0.6
+
+
+def test_plan_transitions_clamps_dur_to_short_segment():
+    from app.gateway.video.render import plan_transitions, Segment
+    segs = [Segment("video", "/a.mp4", 0.8), Segment("video", "/b.mp4", 6.0)]
+    plan = plan_transitions({"shots": [{}, {}]}, segs)   # D=min(0.6, 0.8*0.5=0.4)=0.4
+    assert plan["dur"] == 0.4
+
+
+def test_drawtext_shot_offsets_remap_preserve_duration():
+    from app.gateway.video.render import build_drawtext_filters
+    # 샷1(disclosure 8~12=4s)을 0.6 당겨도 노출 길이는 4s 보존 → 7.4~11.4
+    fs = build_drawtext_filters(STORY_OK, "ko", font_path=None, shot_offsets=[0.0, 0.6])
+    disc = fs[1]
+    assert "between(t,7.4,11.4)" in disc
+    # 길이 보존: 11.4-7.4 = 4.0 == 원본 12-8
+    assert (11.4 - 7.4) == (12.0 - 8.0)
