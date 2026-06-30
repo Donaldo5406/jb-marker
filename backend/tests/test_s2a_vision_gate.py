@@ -12,6 +12,16 @@ from app.providers.fake import FakeProvider
 from app.vfs.local import LocalVfsStore
 
 
+def test_bake_prompt_forbids_incidental_text():
+    # footgun 회귀 방지(실측 2026-06-30): 모델이 폰 화면·간판·빈 영역에 깨진 잔글씨나
+    # 'LOGO' placeholder를 굽는다. _bake_prompt가 명시 카피 외 텍스트를 금지하는지 고정.
+    from app.gateway.design.steps import S2aVisual
+    p = S2aVisual(None)._bake_prompt("카페 장면", {"headline": "안녕", "cta": "지금"})
+    assert "안녕" in p and "지금" in p          # 명시 카피는 렌더
+    assert "화면" in p                          # 기기 화면 블랭크 지시
+    assert "가짜 잔글씨" in p                    # 부수 텍스트 금지
+
+
 def _store(tmp_path):
     s = LocalVfsStore(storage_dir=str(tmp_path))
     s.create_run("r1", languages=["ko"])

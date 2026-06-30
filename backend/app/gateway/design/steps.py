@@ -250,6 +250,12 @@ class S2aVisual(PipelineStep):
                 lines.append(f"- {k}: {copy[k]}")
         lines.append("좌상단 모서리와 하단 스트립은 텍스트·로고 없이 비워 두세요"
                      "(공식 로고·법령 고지 오버레이 영역).")
+        # 부수 텍스트 footgun 차단: 모델이 폰 화면·간판·빈 영역에 깨진 잔글씨나
+        # 'LOGO' 같은 placeholder를 멋대로 굽는다(실측 2026-06-30). 명시 카피만 허용.
+        lines.append(
+            "위에 명시한 문구만 텍스트로 렌더하세요. 그 외 어떤 텍스트·숫자·앱/UI 화면·"
+            "간판·라벨·문서·워터마크·임의의 로고도 만들지 마세요. 인물이 든 기기(폰·노트북·"
+            "태블릿) 화면과 배경 소품은 글자 없이(블랭크) 두세요 — 가짜 잔글씨 절대 금지.")
         return "\n".join(lines)
 
     def _edit_prompt(self, copy: dict) -> str:
@@ -257,6 +263,8 @@ class S2aVisual(PipelineStep):
         for k in ("headline", "body", "cta"):
             if copy.get(k):
                 lines.append(f"- {k}: {copy[k]}")
+        lines.append("교체 문구 외 다른 텍스트·앱/UI 화면·간판·워터마크는 만들지 말고, "
+                     "기기 화면·배경 소품은 글자 없이 유지하세요(가짜 잔글씨 금지).")
         return "\n".join(lines)
 
     def _bake_with_retry(self, base_prompt, aspect, copy):

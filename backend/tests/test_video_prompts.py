@@ -28,6 +28,13 @@ def test_v1_example_footage_is_concrete_scene():
     assert "카페" in vp.V1_INSTR
 
 
+def test_v1_instr_steers_away_from_device_screens():
+    # footgun 회귀 방지(실측 2026-06-30): 카메라 향한 기기 화면 → 깨진 가짜 UI 글씨.
+    # V1_INSTR이 화면 회피/블랭크를 지시하는지 고정.
+    s = vp.V1_INSTR
+    assert "화면" in s
+
+
 def test_demo_storyboard_footage_is_real_scene_and_text_free():
     shots = STORYBOARD_SPEC["shots"]
     assert len(shots) == 4
