@@ -21,6 +21,8 @@ V1_INSTR = (
     "화면이 보이지 않는 연출(표정·라이프스타일·공간)을 우선하세요. "
     "layers의 각 항목은 role·copy_key·in·out(초)·anim·font_px·color(#RRGGBB)·"
     "bbox{x,y,w,h}를 갖습니다. "
+    "color는 **위계 있게** — 헤드라인은 밝고 강한 대비, CTA는 브랜드 포인트/액션 컬러로 "
+    "눈에 띄게(흰색 한 색만 쓰지 말 것). font_px도 헤드라인>CTA>바디 순으로 대비를 주세요. "
     "반드시 headline·body·cta·disclosure 역할을 영상 전체에 걸쳐 포함하고, "
     "disclosure 레이어는 마지막 비트에서 충분히 길게(>=3초) 노출하세요. "
     "최상위에 aspect·duration_sec·fps·bg_color(#RRGGBB)를 포함하세요. "
@@ -38,7 +40,10 @@ V1_INSTR = (
 # [V2b] 카피 지시 — design S2B_INSTR 미러
 V2B_INSTR = (
     "\n\n[V2b 카피] 헤드라인/바디/CTA를 언어별로 확정하세요. "
-    'factsheet 외 수치 금지. JSON: {"copy":{lang:{headline,body,cta}}}'
+    "**무엇을 광고하는지 한눈에** 드러나게 — 헤드라인은 핵심 혜택(상품명+가치)을 짧고 굵게, "
+    "바디는 그 혜택을 뒷받침하는 구체적 한 줄, CTA는 명확한 행동 유도(예: '지금 가입'). "
+    "막연한 표현 대신 구체적 이점으로. factsheet 외 수치 금지. "
+    'JSON: {"copy":{lang:{headline,body,cta}}}'
 )
 
 # [자기-크리틱] 지시 — design CRITIC_INSTR 미러(7항목)

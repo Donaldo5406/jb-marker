@@ -70,6 +70,7 @@ class GoogleProvider(Provider):
     def generate_video(self, prompt: str, *, aspect: str = "9:16",
                        duration_sec: int = 15, fps: int = 30,
                        video_model: str = "veo-3.0-generate-001") -> bytes:
+        import hashlib
         import time
         from google import genai
         from google.genai import types
@@ -85,10 +86,35 @@ class GoogleProvider(Provider):
             "(가짜 잔글씨가 광고 품질을 망칩니다). 가능하면 화면이 보이지 않는 연출을 택하세요. "
             "텍스트·로고는 후속 레이어로 합성됩니다. 장면 자체를 광고 품질로 생성하세요."
         )
-        # Veo는 generate_videos(long-running operation). 미지원 aspect는 config 생략.
-        cfg = (types.GenerateVideosConfig(aspect_ratio=aspect)
-               if aspect in _SUPPORTED_VIDEO_ASPECTS else None)
-        op = client.models.generate_videos(model=video_model, prompt=full, config=cfg)
+        # negative_prompt: 프롬프트 지시만으로는 Veo가 화면 속 가짜 UI·외국어 잔글씨를
+        # 만들곤 한다(실측). config에 강한 억제어를 명시. seed는 결정론(프롬프트 해시)으로
+        # 샷 일관성·재현성 확보.
+        neg = ("글자, 문자, 텍스트, 자막, 숫자, 캡션, 워터마크, 로고, UI, 앱 화면, "
+               "스크린, 간판, 외국어, 알파벳, 깨진 글자, 저품질, 왜곡된 손, 왜곡된 얼굴")
+        seed = int(hashlib.md5(prompt.encode("utf-8")).hexdigest()[:8], 16) % (2**31)
+
+        def _cfg(rich: bool):
+            # 미지원 aspect는 config 생략(모델 에러 회피 — generate_image 전례). 지원 시에만
+            # 구성하고, rich면 negative_prompt·seed를 얹는다(SDK 미지원 필드는 TypeError).
+            if aspect not in _SUPPORTED_VIDEO_ASPECTS:
+                return None
+            kw: dict = {"aspect_ratio": aspect}
+            if rich:
+                kw["negative_prompt"] = neg
+                kw["seed"] = seed
+            return types.GenerateVideosConfig(**kw)
+
+        try:
+            cfg = _cfg(rich=True)
+        except (TypeError, ValueError):
+            cfg = _cfg(rich=False)          # SDK가 필드 미지원 → 최소 config
+        # Veo는 generate_videos(long-running operation). 리치 config를 모델이 런타임
+        # 거부하면 최소 config로 1회 재시도(스틸 폴백으로 실 footage를 잃기 전 마지막 방어).
+        try:
+            op = client.models.generate_videos(model=video_model, prompt=full, config=cfg)
+        except Exception:
+            op = client.models.generate_videos(
+                model=video_model, prompt=full, config=_cfg(rich=False))
         while not getattr(op, "done", False):
             time.sleep(5)
             op = client.operations.get(op)

@@ -14,6 +14,8 @@ S1_INSTR = (
     "slots에는 반드시 headline·body·cta·disclosure 4개 역할을 모두 포함하고, "
     "각 슬롯은 role·bbox{x,y,w,h}·z·copy_key를 갖습니다. 텍스트는 copy[lang][key]에 둡니다. "
     "headline·cta·body의 font_px(정수)·color(#RRGGBB)는 비주얼에 구울 타이포 가이드입니다. "
+    "색은 **위계 있게** 배정하세요 — 헤드라인·CTA는 tokens.palette의 브랜드 포인트 컬러로 "
+    "강한 대비, 바디는 가독 중립색. 전부 한 가지 어두운 색으로 두면 단조로우니 피하세요. "
     "최상위에 bg_color(#RRGGBB)와 visual_concept(문자열)을 **반드시** 포함하세요. "
     "visual_concept은 **헤드라인·CTA 텍스트까지 통합된 풀 포스터**의 상세 아트디렉션입니다: "
     "피사체(인물 포함 시 포즈·표정·시선·연령대·복장)·배경·구도·조명·색감·분위기와 "
