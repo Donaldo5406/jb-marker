@@ -20,6 +20,13 @@ def test_bake_prompt_forbids_incidental_text():
     assert "안녕" in p and "지금" in p          # 명시 카피는 렌더
     assert "화면" in p                          # 기기 화면 블랭크 지시
     assert "가짜 잔글씨" in p                    # 부수 텍스트 금지
+    assert "광고 수준" in p and "스톡" in p       # C2 아트디렉션 플로어(광고급 마감 하한)
+
+
+def test_vision_gate_flags_prop_garbled_text():
+    # C4: 소품·기기 화면의 깨진 잔글씨/임의 LOGO를 critical로 잡는지(베이크 footgun 이중방어)
+    assert "잔글씨" in S2A_VISION_INSTR and "LOGO" in S2A_VISION_INSTR
+    assert "critical" in S2A_VISION_INSTR
 
 
 def _store(tmp_path):
