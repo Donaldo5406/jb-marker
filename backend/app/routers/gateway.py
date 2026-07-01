@@ -11,6 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from ..auth import AuthError, resolve_user_id
 from ..gateway.harness import HarnessRequest
@@ -85,7 +86,10 @@ async def gateway_run(body: GatewayRun, request: Request,
     harness = select_harness(body.studio, marker,
                              media_provider_factory=_media_provider)
     try:
-        result = state.gateway.run(req, harness)
+        # gateway.run은 동기 블로킹(provider 호출·ffmpeg 렌더가 분 단위일 수 있음).
+        # async 핸들러에서 직접 호출하면 이벤트루프를 점유해 WS 하트비트·동시 요청이
+        # 전부 정지한다(라이브 데모 치명). 스레드풀로 오프로딩해 루프를 비운다.
+        result = await run_in_threadpool(state.gateway.run, req, harness)
     except PermissionError as e:
         raise HTTPException(402, str(e))
     except ComplianceError as e:

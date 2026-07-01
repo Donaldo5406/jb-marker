@@ -51,10 +51,24 @@ class VideoHarness(Harness):
             from .video.render import render_video
             lang = (state.get("languages") or ["ko"])[0]
             path = render_video(store, req.run_id, lang=lang)
+            # 폴백 가시화(A2): render_video는 ffmpeg 부재/실패 시 28바이트 stub로 조용히
+            # 폴백한다. 그 상태를 노드 meta에서 되읽어 라이브에서 정직하게 보고한다
+            # — 그러지 않으면 깨진 mp4를 "렌더 성공"으로 알려 시연이 조용히 망가진다.
+            # Mock(데모)의 stub은 의도된 결정론 산출이라 경고하지 않는다.
+            rmeta = (getattr(store.get(path), "meta", None) or {})
+            stub = rmeta.get("render") == "stub"
+            if stub and not getattr(req, "mock", False):
+                err = rmeta.get("render_error")
+                text = ("영상 렌더가 정상 완료되지 않아 임시 파일로 대체됐습니다"
+                        + (f" (원인: {err})" if err else " (ffmpeg 미탐지)")
+                        + ". 렌더 환경(ffmpeg·CJK 폰트)을 확인한 뒤 다시 시도하세요.")
+            else:
+                text = "영상을 렌더했습니다. review/_render/final.mp4에서 확인하세요."
             return HarnessResult(
-                text="영상을 렌더했습니다. review/_render/final.mp4에서 확인하세요.",
-                output_path=path,
-                meta={"source": "marker", "step": "render", "lang": lang},
+                text=text, output_path=path,
+                meta={"source": "marker", "step": "render", "lang": lang,
+                      "render": rmeta.get("render"),
+                      "render_error": rmeta.get("render_error")},
                 events=[{"type": "artifact", "path": path}])
         ctx = StepContext(req=req, provider=provider, store=store, state=state,
                           base=self._base(req.run_id))
