@@ -24,7 +24,9 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
-from .prompts import PERSONA, S1_INSTR, S2B_INSTR, build_vision_instr
+from .layout_engine import DEFAULT_SEMANTIC, build_layout
+from .prompts import (PERSONA, S1_INSTR, S2B_INSTR, SEMANTIC_LAYOUT_INSTR,
+                      TEXTFREE_VISION_INSTR, build_hero_prompt, build_vision_instr)
 from .scoring import RUBRIC, run_critic
 
 # S3 채점 raw의 턴 캐시 키 — S3Final.run이 기록, critic_gate가 재사용(백로그 ②).
@@ -74,6 +76,12 @@ def _benefit_chips(facts: dict) -> list:
         amt = facts["최소가입금액"]
         chips.append(amt if amt.rstrip().endswith("부터") else f"{amt}부터")
     return chips
+
+
+def _rich_enabled() -> bool:
+    """RICH_VECTOR_CHROME flag — on이면 S2a가 텍스트프리 히어로+벡터 크롬 spec을 생성.
+    off(기본)면 검증된 베이크 경로 그대로(spec §8 폴백). 매 호출 env 조회(테스트 monkeypatch)."""
+    return (os.getenv("RICH_VECTOR_CHROME") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
@@ -264,6 +272,11 @@ class S2aVisual(PipelineStep):
             ctx.store.put(f"{base}/design-system/components/rate_card/{lang}.json",
                           json.dumps(facts, ensure_ascii=False), source="marker",
                           mime="application/json", meta={"lang": lang, "grounds": "factsheet"})
+        # rich 분기(spec 2026-07-02 §3.1): flag on이면 텍스트프리 히어로+벡터 크롬 spec으로.
+        # off(기본)면 아래 검증된 베이크 경로 그대로. rate_card 정적 저장은 위에서 이미 실행돼
+        # 두 경로 공통 그라운딩 진실 원천으로 남는다(rich에서도 유지).
+        if _rich_enabled():
+            return self._run_rich(ctx, spec, copy, facts, aspect, lang)
         base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line,
                                         _benefit_chips(facts))
         png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy, facts_line)
@@ -294,6 +307,74 @@ class S2aVisual(PipelineStep):
             meta={"source": "gemini", "step": self.name,
                   "image_fallback": fallback, "vision_failed": vision_failed},
             events=[{"type": "artifact", "path": path}])
+
+    def _run_rich(self, ctx, spec, copy, facts, aspect, lang):
+        """rich 경로(spec 2026-07-02 §3.1): 텍스트프리 히어로 → vision 의미 레이아웃 →
+        layout_engine 결정론 bbox → spec을 vector_chrome으로 갱신. 베이크 경로와 병렬."""
+        base = ctx.base
+        mood_hint = ""
+        tokens = read_json_node(ctx.store, f"{base}/design-system/tokens.json")
+        if tokens.get("visual_mood"):
+            mood_hint = str(tokens["visual_mood"])
+        hero_prompt = build_hero_prompt(spec.get("visual_concept", "금융 브랜드 배경"), mood_hint)
+        png, findings, vision_failed, fallback = self._hero_with_retry(hero_prompt, aspect)
+        path = f"{base}/design-system/components/visual/v1.png"
+        ctx.store.put(path, png, source="gemini", mime="image/png",
+                      meta={"render_mode": "vector_chrome", "image_fallback": fallback})
+        semantic = self._semantic_layout(png)
+        layout = build_layout(semantic, aspect, copy, facts)
+        # spec 갱신: slots 교체 + render_mode. aspect/visual_concept/copy 등 나머지 보존.
+        spec["slots"] = layout["slots"]
+        spec["render_mode"] = layout["render_mode"]
+        # 텍스트 프리 히어로 = 언어 무관 → 전 언어가 같은 비주얼(변형 생성 불필요·비용 0).
+        vb = spec.setdefault("visual_by_lang", {})
+        for vlang in (ctx.state.get("languages") or [lang]):
+            vb[vlang] = "design-system/components/visual/v1.png"
+        ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
+                      source="marker", mime="application/json")
+        ctx.cache[S2A_VISION_CACHE] = findings
+        text = ("히어로와 벡터 레이아웃을 생성했습니다." if not fallback else
+                "실 이미지 생성에 실패해 대체 비주얼을 사용했습니다.")
+        return HarnessResult(text=text, output_path=path,
+            meta={"source": "gemini", "step": self.name, "render_mode": "vector_chrome",
+                  "image_fallback": fallback, "vision_failed": vision_failed},
+            events=[{"type": "artifact", "path": path}])
+
+    def _hero_with_retry(self, hero_prompt, aspect):
+        """텍스트프리 히어로 생성 + 텍스트누출 게이트(critical→재생성, MAX_BAKE_ATTEMPTS)."""
+        feedback = ""
+        png, findings, vision_failed, fallback = None, [], False, False
+        for _ in range(MAX_BAKE_ATTEMPTS):
+            prompt = hero_prompt + (f"\n[교정] {feedback}" if feedback else "")
+            try:
+                png = self._image_provider.generate_image(prompt, aspect=aspect)
+            except Exception:
+                from ...core.placeholder_image import placeholder_png
+                return placeholder_png(aspect), [], False, True
+            try:
+                resp = self._image_provider.review_image(png, TEXTFREE_VISION_INSTR, mime="image/png")
+                findings = parse_json_block(resp.text).get("findings") or []
+            except Exception:
+                vision_failed = True   # fail-open(기존 게이트 정책과 동일)
+                return png, [], vision_failed, fallback
+            crit = [f for f in findings if f.get("severity") == "critical"]
+            if not crit:
+                return png, findings, vision_failed, fallback
+            feedback = "; ".join(f.get("evidence", "") for f in crit)
+        return png, findings, vision_failed, fallback
+
+    def _semantic_layout(self, png):
+        """vision 의미 레이아웃(스키마 검증→1회 재시도→DEFAULT_SEMANTIC 폴백)."""
+        for _ in range(2):
+            try:
+                resp = self._image_provider.review_image(png, SEMANTIC_LAYOUT_INSTR, mime="image/png")
+                sem = parse_json_block(resp.text)
+            except Exception:
+                sem = None
+            if isinstance(sem, dict) and isinstance(sem.get("clear_zones"), list) \
+                    and sem.get("mood") in ("youth", "premium", "campaign"):
+                return sem
+        return DEFAULT_SEMANTIC
 
     def _bake_prompt(self, concept: str, copy: dict, slots: list | None = None,
                      facts: str = "", chips: list | None = None) -> str:

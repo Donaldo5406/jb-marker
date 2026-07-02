@@ -1,6 +1,15 @@
+import json
+
+import pytest
+
 from app.gateway.design.prompts import (
     SEMANTIC_LAYOUT_INSTR, TEXTFREE_VISION_INSTR, build_hero_prompt,
 )
+from app.gateway.design.steps import S2aVisual
+from app.gateway.harness import HarnessRequest
+from app.gateway.pipeline import StepContext
+from app.providers.base import ProviderResponse
+from app.vfs.local import LocalVfsStore
 
 
 def test_hero_prompt_forbids_all_text_and_keeps_art_floor():
@@ -24,3 +33,79 @@ def test_textfree_vision_gate_flags_any_text():
     assert "critical" in TEXTFREE_VISION_INSTR
     assert "글자" in TEXTFREE_VISION_INSTR or "텍스트" in TEXTFREE_VISION_INSTR
     assert "findings" in TEXTFREE_VISION_INSTR
+
+
+# ── rich 분기 배선 테스트(Task 3) ──────────────────────────────────────────
+
+SEM_JSON = ('{"clear_zones":["top-left"],"busy_zones":[],'
+            '"palette":["#0B1F3A","#0066FF"],"mood":"youth"}')
+
+
+class _RichStub:
+    """generate_image 프롬프트 기록 + review_image가 텍스트프리 게이트→의미 레이아웃 순으로 응답."""
+    def __init__(self, layout_json=SEM_JSON):
+        self.gen_prompts, self.review_instrs = [], []
+        self._layout_json = layout_json
+    def generate_image(self, prompt, *, aspect="1:1", image=None):
+        self.gen_prompts.append({"prompt": prompt, "image": image}); return b"PNG"
+    def review_image(self, png, instr, *, mime="image/png"):
+        self.review_instrs.append(instr)
+        if "의미 레이아웃" in instr or "clear_zones" in instr:
+            return ProviderResponse(text=self._layout_json, model="m")
+        return ProviderResponse(text='{"findings":[]}', model="m")
+
+
+def _ctx(tmp_path, langs=("ko",)):
+    store = LocalVfsStore(storage_dir=str(tmp_path)); store.create_run("r1", languages=list(langs))
+    store.put("/r1/brainstorming/plan.md",
+              "---\nfactsheet:\n  interest_rate: \"연 2.80%\"\n  max_rate: \"최고 연 3.30%\"\n"
+              "  term: \"6~36개월\"\n  min_amount: \"100만원\"\nlanguages: [" + ", ".join(langs) + "]\n---\n",
+              source="marker", mime="text/markdown")
+    store.put("/r1/design/rough/layout.spec.json", json.dumps({
+        "visual_concept": "도심 카페의 청년", "aspect": "4:5",
+        "copy": {l: {"headline": f"H-{l}", "body": "B", "cta": f"C-{l}"} for l in langs}}),
+        source="marker", mime="application/json")
+    return store, StepContext(req=HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                              provider="fake", is_marker=True), provider=None, store=store,
+                              state={"languages": list(langs)}, base="/r1/design")
+
+
+def test_flag_off_keeps_baked_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("RICH_VECTOR_CHROME", raising=False)
+    stub = _RichStub(); store, ctx = _ctx(tmp_path)
+    S2aVisual(stub).run(ctx)
+    assert "정확히" in stub.gen_prompts[0]["prompt"]       # 베이크 지시 유지
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    assert "render_mode" not in spec                        # 현행 그대로
+
+
+def test_flag_on_generates_textfree_hero_and_vector_spec(tmp_path, monkeypatch):
+    monkeypatch.setenv("RICH_VECTOR_CHROME", "1")
+    stub = _RichStub(); store, ctx = _ctx(tmp_path)
+    S2aVisual(stub).run(ctx)
+    p = stub.gen_prompts[0]["prompt"]
+    assert "금지" in p and "H-ko" not in p                  # 텍스트 프리(카피 미주입)
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["render_mode"] == "vector_chrome"
+    roles = {s["role"] for s in spec["slots"]}
+    assert {"headline", "rate_card", "benefit_row", "cta_button", "disclosure"} <= roles
+    assert spec["copy"]["ko"]["headline"] == "H-ko"         # copy 보존
+    assert spec["aspect"] == "4:5"                          # 나머지 보존
+
+
+def test_flag_on_multilang_no_edit_variants(tmp_path, monkeypatch):
+    monkeypatch.setenv("RICH_VECTOR_CHROME", "1")
+    stub = _RichStub(); store, ctx = _ctx(tmp_path, langs=("ko", "en"))
+    S2aVisual(stub).run(ctx)
+    assert all(g["image"] is None for g in stub.gen_prompts)   # image-edit 0회
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["visual_by_lang"]["ko"] == spec["visual_by_lang"]["en"]  # 같은 히어로
+
+
+def test_flag_on_vision_junk_falls_back_to_default_semantic(tmp_path, monkeypatch):
+    monkeypatch.setenv("RICH_VECTOR_CHROME", "1")
+    stub = _RichStub(layout_json="NOT-JSON")   # 의미 레이아웃 파싱 불가 → 폴백
+    store, ctx = _ctx(tmp_path)
+    S2aVisual(stub).run(ctx)                    # 죽지 않고
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["render_mode"] == "vector_chrome"   # 폴백 레이아웃으로 완주
