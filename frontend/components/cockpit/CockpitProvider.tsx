@@ -77,6 +77,7 @@ export type CockpitContextValue = {
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
   designGate: DesignGate | null;          // confirm 봉투 매핑 — 현재 confirm 게이트 상태(critic/auto_advanced)
+  designRev: number;                  // 디자인 턴(runDesign·design 챗) 완료 카운터 — 시안 프리뷰 재fetch nonce
   // ---- video state (P3 §9) — design 표면 미러 ----
   videoStep: string;                  // "V0".."done"
   videoLang: string;
@@ -197,6 +198,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [designLang, setDesignLang] = useState("ko");
   const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
   const [designGate, setDesignGate] = useState<DesignGate | null>(null);
+  // 디자인 턴 완료 nonce — 게이트 정지 중 regenerate/챗 교정은 백엔드가 preview.html을
+  // 재생성해도 designStep·designGate가 불변이라, 이 카운터가 시안 프리뷰 재fetch를 보증한다.
+  const [designRev, setDesignRev] = useState(0);
   // P3: video 표면 상태(design 미러). run 전환 시 리셋(openRun/startRun).
   const [videoStep, setVideoStep] = useState("V0");
   const [videoLang, setVideoLang] = useState("ko");
@@ -518,6 +522,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
         applyGate(res.gate);
+        // 디자인 챗 턴(게이트 내 카피 교정 등)은 preview.html을 재생성할 수 있다 —
+        // 시안 프리뷰 재fetch nonce. design 한정: 타 스튜디오 챗의 불필요 재fetch 방지.
+        if (activeStudio === "design") setDesignRev((v) => v + 1);
         // 디자인 챗 교정(remediated): 백엔드가 layout.spec copy를 정제 갱신 → main.scene 재조립
         // (리뷰 지적 반영 → 재검토 통과). design 스튜디오 done 상태에서만 발생.
         if (activeStudio === "design" && (res.meta as { remediated?: boolean } | undefined)?.remediated) {
@@ -589,6 +596,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     // default 분기(setPendingGate(null))가 무관한 brainstorming ask 토스트를 닫는 교차 오염 차단.
     // done 시 designGate 클리어는 아래 `if (st === "done")`이 담당.
     if (res.gate) applyGate(res.gate);
+    // 이 턴에서 백엔드가 preview.html을 재생성했을 수 있다(게이트 내 regenerate 포함 —
+    // 이때 meta.step·gate는 불변) → nonce 증가로 시안 프리뷰 재fetch를 강제.
+    setDesignRev((v) => v + 1);
     // S3→done: 백엔드 layout.spec 완성 → plan 전체 언어 scene 일괄 조립(R2 4언어 비교) +
     // 현재 언어 자동 open(C1). 언어는 design/_state.json(=plan frontmatter languages)이 정본.
     if (st === "done") {
@@ -1073,6 +1083,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     designBypass,
     setDesignBypass,
     designGate,
+    designRev,
     videoStep,
     videoLang,
     switchVideoLang,

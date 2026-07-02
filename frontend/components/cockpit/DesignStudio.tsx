@@ -131,7 +131,7 @@ export function DesignStudio() {
           ) : c.runId ? (
             <LayoutPreview
               runId={c.runId}
-              refreshKey={`${c.designStep}:${c.designGate?.step ?? ""}`}
+              refreshKey={`${c.designStep}:${c.designGate?.step ?? ""}:${c.designRev}`}
               fallback={<DesignCanvasPlaceholder />}
             />
           ) : (
