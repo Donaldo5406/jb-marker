@@ -139,3 +139,34 @@ describe("vector_chrome: cta_button", () => {
     expect(txt.textAlign).toBe("center");
   });
 });
+
+describe("vector_chrome: 통합 포스터", () => {
+  it("배경+헤드라인+금리카드+혜택행+CTA버튼+고지+로고 전부 방출", () => {
+    const spec = {
+      aspect: "4:5", render_mode: "vector_chrome",
+      slots: [
+        { role: "background", bbox: { x: 0, y: 0, w: 1080, h: 1350 }, z: 0, asset_ref: "v1.png" },
+        { role: "headline", bbox: { x: 80, y: 120, w: 920, h: 180 }, z: 3, copy_key: "headline",
+          font_family: "GmarketSansBold", weight: 800 },
+        { role: "rate_card", bbox: { x: 80, y: 360, w: 920, h: 240 }, z: 2,
+          container: { fill: "#FFFFFF", radius: 16 },
+          lines: [{ text: "최고 연", style: "label" }, { text: "3.30%", style: "figure" }] },
+        { role: "benefit_row", bbox: { x: 80, y: 640, w: 900, h: 140 }, z: 2,
+          items: [{ icon_key: "trending-up", title: "우대금리", desc: "최대 0.50%p" }] },
+        { role: "cta_button", bbox: { x: 80, y: 900, w: 520, h: 96 }, z: 3,
+          fill: "#0066FF", text_color: "#FFFFFF", copy_key: "cta" },
+        { role: "disclosure", bbox: { x: 80, y: 1180, w: 920, h: 120 }, z: 1, copy_key: "disclosure", color: "#3A3A3A" },
+        { role: "logo", bbox: { x: 48, y: 48, w: 300, h: 96 }, z: 9, asset_ref: "logo/v1.png" },
+      ],
+      copy: { ko: { headline: "청춘의 저축", cta: "지금 가입하기", disclosure: "예금자보호 5천만원" } },
+    };
+    const s = assembleScene(spec as any, "ko", (r) => `/vfs/${r}`);
+    expect(s.objects.find((o: any) => o.role === "background").type).toBe("image");
+    expect(s.objects.find((o: any) => o.role === "logo").type).toBe("image");
+    expect(s.objects.find((o: any) => o.role === "headline").type).toBe("textbox");
+    expect(s.objects.some((o: any) => o.role === "rate_card" && o.type === "rect")).toBe(true);
+    expect(s.objects.some((o: any) => o.role === "benefit_row" && o.type === "image")).toBe(true);
+    expect(s.objects.some((o: any) => o.role === "cta_button" && o.type === "rect")).toBe(true);
+    expect(s.objects.find((o: any) => o.role === "disclosure").type).toBe("textbox");
+  });
+});
