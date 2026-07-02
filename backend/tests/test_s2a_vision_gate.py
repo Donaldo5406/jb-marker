@@ -23,6 +23,32 @@ def test_bake_prompt_forbids_incidental_text():
     assert "광고 수준" in p and "스톡" in p       # C2 아트디렉션 플로어(광고급 마감 하한)
 
 
+def test_benefit_chips_grounded_only():
+    # 혜택 칩 라벨은 factsheet 값에서만 파생(창작 금지) — 밀도 격차 해소 + 환각 차단.
+    from app.gateway.design.steps import _benefit_chips
+    facts = {"기본금리": "연 2.80%", "최고금리": "연 3.30%", "우대금리": "0.50%p",
+             "가입기간": "6~36개월", "최소가입금액": "100만원"}
+    chips = _benefit_chips(facts)
+    assert chips == ["우대금리 0.50%p", "가입기간 6~36개월", "100만원부터"]
+    assert _benefit_chips({}) == []          # facts 없으면 칩 없음(중복·환각 회피)
+    # 값이 이미 '우대'/'부터'를 포함하면 접두·접미 중복 생략(실측 교정: '우대금리 우대…').
+    dup = _benefit_chips({"우대금리": "우대 최대 연 0.50%p", "최소가입금액": "100만원부터"})
+    assert dup == ["우대 최대 연 0.50%p", "100만원부터"]
+
+
+def test_bake_prompt_includes_grounded_chip_row():
+    # 칩이 있으면 베이크 프롬프트에 아이콘 칩 행 지시 + 그라운딩 라벨을 정확히 주입,
+    # 없으면(기본) 칩 행 지시 없음(단일 언어·factsheet 결여 회귀 방지).
+    from app.gateway.design.steps import S2aVisual
+    v = S2aVisual(None)
+    p = v._bake_prompt("카페 장면", {"headline": "안녕"},
+                       chips=["우대금리 0.50%p", "가입기간 6~36개월"])
+    assert "혜택 아이콘 칩 행" in p and "픽토그램" in p
+    assert "우대금리 0.50%p" in p and "가입기간 6~36개월" in p
+    assert "정확히 그대로만" in p              # 창작 금지(그라운딩 고정)
+    assert "혜택 아이콘 칩 행" not in v._bake_prompt("카페 장면", {"headline": "안녕"})
+
+
 def test_vision_gate_flags_prop_garbled_text():
     # C4: 소품·기기 화면의 깨진 잔글씨/임의 LOGO를 critical로 잡는지(베이크 footgun 이중방어)
     assert "잔글씨" in S2A_VISION_INSTR and "LOGO" in S2A_VISION_INSTR

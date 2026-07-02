@@ -56,6 +56,25 @@ def _facts_from_factsheet(fs: dict) -> dict:
 def _facts_line(facts: dict) -> str:
     return " · ".join(f"{label} {val}" for label, val in facts.items())
 
+
+def _benefit_chips(facts: dict) -> list:
+    """혜택 아이콘 칩 라벨(그라운딩) — factsheet 값에서만 파생, 창작 금지.
+    밀도 격차(image copy 6의 아이콘 칩 행) 해소용. 역할 분리로 중복 회피:
+    금리 카드=헤드라인 금리(기본·최고)를 크게, 칩 행=가입 조건(우대·기간·금액)을
+    아이콘과 함께 요약. 라벨은 여기서 결정론적으로 고정해 베이크 환각을 차단한다."""
+    chips = []
+    up = facts.get("우대금리")
+    if up:
+        # 값이 이미 '우대'로 시작하면 접두 생략(중복 '우대금리 우대' 방지 — 실측 교정).
+        chips.append(up if up.lstrip().startswith("우대") else f"우대금리 {up}")
+    if facts.get("가입기간"):
+        chips.append(f"가입기간 {facts['가입기간']}")
+    if facts.get("최소가입금액"):
+        # 값에 이미 '부터'가 있으면 중복 접미 생략.
+        amt = facts["최소가입금액"]
+        chips.append(amt if amt.rstrip().endswith("부터") else f"{amt}부터")
+    return chips
+
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
                 (4, 3, "4:3"), (9, 16, "9:16"), (16, 9, "16:9"),
@@ -245,7 +264,8 @@ class S2aVisual(PipelineStep):
             ctx.store.put(f"{base}/design-system/components/rate_card/{lang}.json",
                           json.dumps(facts, ensure_ascii=False), source="marker",
                           mime="application/json", meta={"lang": lang, "grounds": "factsheet"})
-        base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line)
+        base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line,
+                                        _benefit_chips(facts))
         png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy, facts_line)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
@@ -276,7 +296,7 @@ class S2aVisual(PipelineStep):
             events=[{"type": "artifact", "path": path}])
 
     def _bake_prompt(self, concept: str, copy: dict, slots: list | None = None,
-                     facts: str = "") -> str:
+                     facts: str = "", chips: list | None = None) -> str:
         lines = [concept,
                  "다음 문구를 디자인 요소로 **정확히** 렌더하세요(오타·누락 금지):"]
         # 슬롯별 색·크기를 그대로 넘긴다 — 안 넘기면 모델이 임의로 한 가지 어두운 색만
@@ -331,10 +351,21 @@ class S2aVisual(PipelineStep):
             "굵게 강조하고, 그 위/아래에 라벨과 부가 조건을 작은 글자로 위계 있게 정렬하세요. "
             "여백·얇은 구분선·악센트 바·포인트 도형·아이콘 형태의 그래픽으로 편집 디자인다운 "
             "리듬과 밀도를 주고, 헤드라인·카드·CTA를 명확한 그리드로 구조화하세요. "
-            "**금리 카드에는 금리뿐 아니라 body에 명시된 기간·최소금액 등 가입 조건도 "
-            "빠짐없이 포함**하세요(정보 누락 금지 — 카드 안에 조건을 작은 라벨로 정렬). "
-            "**단 밀도는 오직 레이아웃·도형·컨테이너·색으로만 내고, 위에 명시한 문구 외의 새로운 "
+            "**금리 카드는 핵심 금리(기본·최고 %)를 가장 크고 굵게 강조**하고, 가입 기간·최소금액 "
+            "등 조건은 아래 혜택 칩 행으로 분리해 정렬하세요(카드와 칩의 역할을 나눠 밀도를 냄). "
+            "**단 밀도는 오직 레이아웃·도형·컨테이너·색으로만 내고, 위·아래에 명시한 문구 외의 새로운 "
             "텍스트·숫자·라벨·문장은 절대 만들지 마세요**(빈 카드·의미 없는 잔글씨 금지).")
+        # 혜택 아이콘 칩 행(밀도 격차 해소 — image copy 6 수준의 아이콘 조밀도). 라벨은
+        # _benefit_chips로 그라운딩(창작 금지)하고, 아이콘은 단순 픽토그램(정확성 불요)만 허용.
+        # footgun 가드보다 뒤에 두어 '아래에 명시한 문구'로 허용 범위에 포함시킨다.
+        if chips:
+            lines.append(
+                "금리 카드 아래에 **혜택 아이콘 칩 행**을 배치해 밀도를 높이세요: 아래 각 항목을 "
+                "하나의 칩(둥근 컨테이너 또는 구분된 셀)으로 만들고, 각 칩에 항목에 어울리는 "
+                "**단순한 라인 픽토그램 아이콘**(우대금리=상승 화살표/플러스, 가입기간=달력, "
+                "최소금액=동전/지갑 등)을 단색 선화로 얹어 가로로 균등 정렬하세요. 칩 라벨 텍스트는 "
+                "아래 문구를 **한 글자도 바꾸지 말고 정확히 그대로만** 쓰세요(창작·변경·추가 금지): "
+                + "  |  ".join(chips))
         # 금융수치 그라운딩(진실 원천 주입): factsheet 값만 정확히 렌더, 창작 금지. S2b 카피가
         # 숫자를 누락해도 gemini가 카드에 넣을 정답을 여기서 못박아 환각(3.5%→5.0%)을 차단.
         if facts:
