@@ -25,6 +25,7 @@ from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
 from .layout_engine import DEFAULT_SEMANTIC, _dims, build_layout
+from .layout_preview import build_layout_mock_html
 from .prompts import (PERSONA, S1_INSTR, S2B_INSTR, SEMANTIC_LAYOUT_INSTR,
                       TEXTFREE_VISION_INSTR, build_hero_prompt, build_vision_instr)
 from .scoring import RUBRIC, run_critic
@@ -76,6 +77,29 @@ def _benefit_chips(facts: dict) -> list:
         amt = facts["최소가입금액"]
         chips.append(amt if amt.rstrip().endswith("부터") else f"{amt}부터")
     return chips
+
+
+def _write_preview(ctx, spec, visual_png: bytes | None = None) -> None:
+    """현재 시안을 self-contained HTML로 렌더해 ``{base}/rough/preview.html``에 기록.
+
+    파이프라인 진행 중 콕핏 중앙 프리뷰(spec §2)용 순수 가산 노드 — 결정론·비용 0
+    (LLM/이미지 호출 없음). tokens.json·plan.md factsheet를 읽어 layout_preview
+    렌더러에 넘긴다. 프리뷰는 부가 기능이라 렌더/저장 실패가 스텝을 죽여선 안 되므로
+    **전체를 try/except로 감싸 비차단**한다(생성 실패가 런을 죽이면 안 됨 — spec §2).
+    """
+    try:
+        base = ctx.base
+        tokens = read_json_node(ctx.store, f"{base}/design-system/tokens.json")
+        plan = ctx.store.get(f"/{ctx.req.run_id}/brainstorming/plan.md")
+        facts = _facts_from_factsheet(
+            _frontmatter(plan.content_text if plan else "").get("factsheet") or {})
+        html = build_layout_mock_html(
+            spec if isinstance(spec, dict) else {}, tokens, facts, visual_png)
+        ctx.store.put(f"{base}/rough/preview.html", html,
+                      source="marker", mime="text/html")
+    except Exception:
+        # 프리뷰는 비차단 — 렌더/저장 실패가 파이프라인을 죽이지 않게(spec §2).
+        pass
 
 
 def _rich_enabled() -> bool:
@@ -230,6 +254,7 @@ class S1Rough(PipelineStep):
         ctx.store.put(f"{base}/rough/layout.spec.json",
                       json.dumps(spec, ensure_ascii=False), source="marker",
                       mime="application/json")
+        _write_preview(ctx, spec)   # 시안 프리뷰(존 박스만, visual 없음) — 비차단
         return HarnessResult(text=data.get("reply", "러프 완성"),
             output_path=f"{base}/rough/layout.spec.json",
             meta={"source": "marker", "step": self.name},
@@ -299,6 +324,7 @@ class S2aVisual(PipelineStep):
             spec["visual_by_lang"][vlang] = f"design-system/components/visual/v1.{vlang}.png"
         ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
                       source="marker", mime="application/json")
+        _write_preview(ctx, spec, png)   # 시안 프리뷰(visual 인라인) — 비차단
         ctx.cache[S2A_VISION_CACHE] = findings
         text = ("비주얼을 생성했습니다." if not fallback else
                 "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
@@ -344,6 +370,7 @@ class S2aVisual(PipelineStep):
             vb[vlang] = "design-system/components/visual/v1.png"
         ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
                       source="marker", mime="application/json")
+        _write_preview(ctx, spec, png)   # 시안 프리뷰(히어로 인라인) — 비차단
         ctx.cache[S2A_VISION_CACHE] = findings
         text = ("히어로와 벡터 레이아웃을 생성했습니다." if not fallback else
                 "실 이미지 생성에 실패해 대체 비주얼을 사용했습니다.")
@@ -563,6 +590,7 @@ class S2bCopy(PipelineStep):
                       mime="application/json",
                       meta={"grounds": {"corpus": "factsheet",
                                         "ungrounded": sorted(set(ungrounded))}})
+        _write_preview(ctx, spec)   # 시안 프리뷰(확정 카피 반영) — 비차단
         return HarnessResult(text="카피를 확정했습니다.",
             output_path=f"{base}/design-system/components/headline",
             meta={"source": "marker", "step": self.name, "ungrounded": sorted(set(ungrounded))},

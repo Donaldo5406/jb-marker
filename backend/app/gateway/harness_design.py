@@ -35,6 +35,7 @@ from .design.steps import (  # noqa: F401
     S3Final,
     _aspect_from_matrix,
     _rich_enabled,
+    _write_preview,
     load_references,
 )
 from .harness import Harness, HarnessRequest, HarnessResult
@@ -137,6 +138,11 @@ class DesignHarness(Harness):
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
+        # 시안 프리뷰를 교정된 카피·고지로 갱신(비차단). 기존 v1.png가 있으면 배경으로 인라인해
+        # rich 모드(아래 재베이크 생략)에서도 프리뷰가 비주얼을 유지한다. 베이크 모드는 아래
+        # S2aVisual 재실행이 새 v1.png로 프리뷰를 다시 덮어써 최종 교정본을 반영한다.
+        _vnode = store.get(f"{base}/design-system/components/visual/v1.png")
+        _write_preview(ctx, spec, _vnode.blob if _vnode else None)
         # 비주얼도 교정 — clean 카피로 v1.png(및 추가언어 변형)를 재베이크한다. sceneAssembler가
         # visual_by_lang→background로 v1.png를 그대로 쓰므로(헤드라인 배경 베이크), 카피만 고치면
         # 캔버스 배경엔 과장표현('업계 최고'/4.0%)이 그대로 남는다. layout.spec.copy는 위에서
