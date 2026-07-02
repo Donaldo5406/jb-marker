@@ -184,7 +184,9 @@ def build_layout_mock_html(
     if visual_png:
         raw, mime = _downscale_inline(visual_png, "image/png")
         b64 = base64.b64encode(raw).decode("ascii")
-        canvas_style += f";background-image:url('data:{mime};base64,{b64}')"
+        # CSS url은 큰따옴표 — 바깥 style 속성이 작은따옴표라 작은따옴표를 쓰면 속성값이
+        # url( 에서 조기 종료돼 배경이 조용히 미렌더된다(리뷰 실측 버그).
+        canvas_style += f';background-image:url("data:{mime};base64,{b64}")'
 
     # 상단: 팔레트 칩(tokens.palette + color_palette의 hex만).
     chip_colors = _hex_colors(tokens.get("palette")) + _hex_colors(tokens.get("color_palette"))

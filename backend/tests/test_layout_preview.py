@@ -1,10 +1,32 @@
 """design/layout_preview.py — 결정론 self-contained HTML 시안 렌더러 (spec 2026-07-03 §1·§5)."""
 import random
+from html.parser import HTMLParser
 from io import BytesIO
 
 from PIL import Image
 
 from app.gateway.design.layout_preview import build_layout_mock_html
+
+
+class _AttrCollector(HTMLParser):
+    """브라우저 동일 알고리즘(html.parser)으로 태그 속성을 실제 파싱해 수집."""
+
+    def __init__(self):
+        super().__init__()
+        self.divs: list[dict] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "div":
+            self.divs.append(dict(attrs))
+
+
+def _canvas_style(out: str) -> str:
+    """파싱된 canvas div의 style 속성값(따옴표 충돌 시 조기 종료된 값이 그대로 드러남)."""
+    p = _AttrCollector()
+    p.feed(out)
+    canvases = [d for d in p.divs if d.get("class") == "canvas"]
+    assert len(canvases) == 1
+    return canvases[0].get("style") or ""
 
 
 def _png_bytes(w: int = 720, h: int = 540) -> bytes:
@@ -80,8 +102,14 @@ def test_visual_none_has_no_data_uri():
 def test_visual_png_inlined_via_downscale():
     out = build_layout_mock_html(_spec(), _tokens(), _facts(), visual_png=_png_bytes())
     assert "data:image" in out
-    # _downscale_inline이 그라데이션 PNG를 더 작은 JPEG로 변환 → 경유 확인.
+    # _downscale_inline이 노이즈 PNG를 더 작은 JPEG로 변환 → 경유 확인.
     assert "data:image/jpeg;base64," in out
+    # 문자열 존재만으로는 부족(과거 버그: url('data:...')의 작은따옴표가 바깥 style='...'
+    # 속성을 조기 종료 → 브라우저에서 배경 미렌더). html.parser로 실제 파싱해 style
+    # 속성값 **안에** background-image url이 온전히 남아 있는지 단언한다.
+    style = _canvas_style(out)
+    assert 'background-image:url("data:image/jpeg;base64,' in style
+    assert style.rstrip().endswith('")')
 
 
 def test_self_contained_no_external_urls():
