@@ -110,10 +110,13 @@ export function assembleScene(
       if (s.role === "disclosure") {
         const key = s.copy_key ?? s.role;
         const color = s.color ?? "#0b1324";
-        const textbox = { ...common, type: "textbox", lang,
+        const textbox: any = { ...common, type: "textbox", lang,
           text: (key && copy[key]) || "",
-          fontSize: s.font_px ?? 30, fill: color,
-          fontFamily: s.font_family ?? DEFAULT_FONT };
+          fontSize: s.font_px ?? 30, fill: color };
+        // vector_chrome 모드에서만 서체 통일(baked는 현행 바이트 동등 유지 — spec §8 안전).
+        if ((spec.render_mode ?? "baked") === "vector_chrome") {
+          textbox.fontFamily = s.font_family ?? DEFAULT_FONT;
+        }
         return [scrimFor(bb, color, s.role), textbox];
       }
       if ((spec.render_mode ?? "baked") !== "vector_chrome") return [];  // baked: 텍스트 미방출(하위호환)

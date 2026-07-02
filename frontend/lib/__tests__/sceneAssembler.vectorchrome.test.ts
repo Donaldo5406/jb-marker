@@ -43,3 +43,21 @@ describe("vector_chrome: 텍스트 role 벡터 방출", () => {
     expect(s.objects.some((o: any) => o.role === "headline")).toBe(false);
   });
 });
+
+describe("vector_chrome: disclosure fontFamily 게이트(byte-equivalence)", () => {
+  const discSpec = (renderMode?: string) => ({
+    aspect: "1:1", ...(renderMode ? { render_mode: renderMode } : {}),
+    slots: [{ role: "disclosure", bbox: { x: 80, y: 980, w: 920, h: 60 }, z: 3, copy_key: "disclosure" }],
+    copy: { ko: { disclosure: "예금자보호 5천만원" } },
+  });
+  it("baked 모드(render_mode 부재)는 disclosure textbox에 fontFamily가 없다(현행 불변)", () => {
+    const s = assembleScene(discSpec() as any, "ko", (r) => r);
+    const disc = s.objects.find((o: any) => o.role === "disclosure" && o.type === "textbox");
+    expect("fontFamily" in disc).toBe(false);
+  });
+  it("vector_chrome 모드는 disclosure textbox에 fontFamily(Pretendard 폴백)를 적용", () => {
+    const s = assembleScene(discSpec("vector_chrome") as any, "ko", (r) => r);
+    const disc = s.objects.find((o: any) => o.role === "disclosure" && o.type === "textbox");
+    expect(disc.fontFamily).toBe("Pretendard");
+  });
+});

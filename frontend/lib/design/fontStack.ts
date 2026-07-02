@@ -1,5 +1,5 @@
 /** 번들 self-host 서체 — 어셈블러 fontFamily·편집기 드롭다운 공유 단일 출처.
- *  라이선스: 전부 OFL(재배포 가능). 백엔드 무드→폰트 매핑이 이 이름을 지정한다. */
+ *  라이선스: 전부 재배포 허용 라이선스(OFL/자유배포). 백엔드 무드→폰트 매핑이 이 이름을 지정한다. */
 export const DEFAULT_FONT = "Pretendard";
 export const BUNDLED_FONTS = [
   "Pretendard",          // 본문
