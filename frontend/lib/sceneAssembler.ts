@@ -179,6 +179,16 @@ function renderVectorRole(
     });
     return out;
   }
+  if (s.role === "cta_button") {
+    const rect = { ...common, type: "rect", fill: s.fill ?? "#0066FF",
+      rx: s.radius ?? 999, ry: s.radius ?? 999 };
+    const key = s.copy_key ?? "cta";
+    const txt = { type: "textbox", role: "cta_button", slotId: "cta_button", lang,
+      left: bb.x, top: bb.y + Math.max(0, (bb.h - (s.font_px ?? 40)) / 2), width: bb.w,
+      text: (key && copy[key]) || "", fontSize: s.font_px ?? 40, fontWeight: s.weight ?? 700,
+      fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.text_color ?? "#FFFFFF", textAlign: "center" };
+    return [rect, txt];
+  }
   const key = s.copy_key ?? s.role;
   const textbox = {
     ...common, type: "textbox", lang,

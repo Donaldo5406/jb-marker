@@ -118,3 +118,24 @@ describe("vector_chrome: benefit_row", () => {
     expect(icons[0].left).toBeLessThan(80 + 300);
   });
 });
+
+describe("vector_chrome: cta_button", () => {
+  it("둥근 rect + 중앙 텍스트(text_color)", () => {
+    const spec = {
+      aspect: "4:5", render_mode: "vector_chrome",
+      slots: [
+        { role: "cta_button", bbox: { x: 80, y: 1180, w: 520, h: 96 }, z: 3,
+          fill: "#0066FF", text_color: "#FFFFFF", radius: 999, copy_key: "cta" },
+      ],
+      copy: { ko: { cta: "지금 가입하기" } },
+    };
+    const s = assembleScene(spec as any, "ko", (r) => r);
+    const rect = s.objects.find((o: any) => o.role === "cta_button" && o.type === "rect");
+    expect(rect.fill).toBe("#0066FF");
+    expect(rect.rx).toBe(999);
+    const txt = s.objects.find((o: any) => o.role === "cta_button" && o.type === "textbox");
+    expect(txt.text).toBe("지금 가입하기");
+    expect(txt.fill).toBe("#FFFFFF");
+    expect(txt.textAlign).toBe("center");
+  });
+});
