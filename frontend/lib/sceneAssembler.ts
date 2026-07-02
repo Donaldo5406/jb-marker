@@ -133,6 +133,29 @@ function renderVectorRole(
   s: Slot, bb: BBox, common: Record<string, any>, lang: string,
   copy: Record<string, string>,
 ): any[] {
+  const RATE_STYLE: Record<string, { size: number; weight: number }> = {
+    figure: { size: 72, weight: 800 }, label: { size: 28, weight: 600 }, caption: { size: 24, weight: 400 },
+  };
+  if (s.role === "rate_card" && Array.isArray(s.lines)) {
+    const c = s.container ?? {};
+    const rect = {
+      ...common, type: "rect", fill: c.fill ?? "#FFFFFF",
+      rx: c.radius ?? 16, ry: c.radius ?? 16, opacity: c.opacity ?? 0.94,
+      shadow: c.shadow ? "rgba(0,0,0,0.18) 0px 8px 24px" : null,
+    };
+    const pad = 24;
+    let y = bb.y + pad;
+    const lines = s.lines.map((ln) => {
+      const st = RATE_STYLE[ln.style] ?? RATE_STYLE.caption;
+      const t = { type: "textbox", role: "rate_card", slotId: "rate_card", lang,
+        left: bb.x + pad, top: y, width: bb.w - pad * 2,
+        text: ln.text, fontSize: st.size, fontWeight: st.weight,
+        fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.color ?? "#0B1324", textAlign: "left" };
+      y += st.size + 10;
+      return t;
+    });
+    return [rect, ...lines];
+  }
   const key = s.copy_key ?? s.role;
   const textbox = {
     ...common, type: "textbox", lang,

@@ -61,3 +61,32 @@ describe("vector_chrome: disclosure fontFamily 게이트(byte-equivalence)", () 
     expect(disc.fontFamily).toBe("Pretendard");
   });
 });
+
+describe("vector_chrome: rate_card", () => {
+  it("컨테이너 rect + line별 textbox(style→크기/굵기)", () => {
+    const spec = {
+      aspect: "4:5", render_mode: "vector_chrome",
+      slots: [
+        { role: "rate_card", bbox: { x: 80, y: 700, w: 920, h: 260 }, z: 2,
+          container: { fill: "#FFFFFF", radius: 16, opacity: 0.94, shadow: true },
+          lines: [
+            { text: "최고 연", style: "label" },
+            { text: "3.30%", style: "figure" },
+            { text: "기본 2.80% · 우대 0.50%p", style: "caption" },
+          ] },
+      ],
+      copy: { ko: {} },
+    };
+    const s = assembleScene(spec as any, "ko", (r) => r);
+    const rect = s.objects.find((o: any) => o.role === "rate_card" && o.type === "rect");
+    expect(rect.fill).toBe("#FFFFFF");
+    expect(rect.rx).toBe(16);
+    const figure = s.objects.find((o: any) => o.type === "textbox" && o.text === "3.30%");
+    expect(figure.fontSize).toBe(72);
+    expect(figure.fontWeight).toBe(800);
+    const label = s.objects.find((o: any) => o.type === "textbox" && o.text === "최고 연");
+    expect(label.fontSize).toBe(28);
+    // 라인은 위→아래로 top 증가
+    expect(label.top).toBeLessThan(figure.top);
+  });
+});
