@@ -1,0 +1,1 @@
+{"step": "done", "gate": null, "confirmed": {"S0": true, "S1": true, "S2b": true, "S2a": true, "S2c": true, "S3": true}, "bypass": {"S1": true, "S2b": true, "S2a": true, "S2c": true, "S3": true}, "languages": ["ko"], "version": 1}
