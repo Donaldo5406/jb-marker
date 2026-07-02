@@ -87,3 +87,53 @@ def build_vision_instr(copy: dict, facts: str | None = None) -> str:
 
 # Task 4에서 정리 예정: steps.py·기존 테스트 import 보존을 위한 별칭.
 S2A_VISION_INSTR = _S2A_VISION_BASE
+
+
+# ── RICH_VECTOR_CHROME (히어로 우선 벡터 크롬, spec 2026-07-02) ──────────────
+
+def build_hero_prompt(concept: str, mood_hint: str = "") -> str:
+    """텍스트 프리 디자인 히어로 — 모든 마케팅 텍스트는 프론트 벡터 레이어가 얹는다."""
+    lines = [concept]
+    if mood_hint:
+        lines.append(f"무드: {mood_hint}")
+    lines.append(
+        "이 이미지에는 **어떤 텍스트·글자·숫자·로고·워터마크도 절대 넣지 마세요**(전면 금지). "
+        "간판·라벨·문서·기기 화면도 글자 없이(블랭크) 두세요. 텍스트는 이후 별도 레이어로 얹습니다.")
+    lines.append(
+        "텍스트 레이어를 얹을 **넓은 네거티브 스페이스(여백)**를 구도에 확보하세요: "
+        "화면의 40~55%는 단순하고 차분한 영역(하늘·벽·보케·그라데이션)으로 비워 두고, "
+        "피사체는 한쪽에 배치하세요.")
+    lines.append(
+        "오버레이 세이프존: **좌상단 모서리는 밝은 오프화이트로 깨끗이**, **최하단 가로 영역은 "
+        "브랜드 색 솔리드 푸터 밴드**로 마감하되 그 안은 비워 두세요(로고·법령 고지 자리).")
+    lines.append(
+        "전체를 실제 금융 브랜드 광고 수준으로 마감하세요: 전문 광고 사진 품질의 자연광·"
+        "시네마틱 라이팅과 얕은 심도, 고급스럽고 신뢰감 있는 색보정. "
+        "저해상·클립아트·스톡 느낌은 피하세요.")
+    return "\n".join(lines)
+
+
+# vision 의미 레이아웃 — 픽셀 좌표를 시키면 부정확(실측)하므로 의미만 받고
+# bbox는 layout_engine이 결정론으로 계산한다(spec §3.2).
+SEMANTIC_LAYOUT_INSTR = (
+    "이 이미지는 마케팅 포스터의 배경 히어로입니다. 텍스트 레이어를 얹기 위한 "
+    "**의미 레이아웃**만 분석하세요. **픽셀 좌표는 절대 내지 마세요.**\n"
+    "JSON 한 개만 출력(코드펜스·주석 금지):\n"
+    '{"clear_zones": ["top-left"|"top-right"|"center-left"|"center-right"|"lower-third" 중 '
+    "비어 있어 텍스트를 얹기 좋은 영역들], "
+    '"busy_zones": [피사체·디테일로 복잡한 영역들(같은 어휘)], '
+    '"palette": ["#RRGGBB" 히어로에서 뽑은 대표색 2~4개 — 첫째=텍스트 잉크로 쓸 진한 색, '
+    '둘째=CTA 버튼용 포인트 색], '
+    '"mood": "youth"|"premium"|"campaign" 중 히어로 무드에 맞는 것}'
+)
+
+# 텍스트 프리 히어로 게이트 — 베이크 모드의 카피 정확성 검증 대신 '글자 0'을 검증.
+TEXTFREE_VISION_INSTR = (
+    "이 이미지는 텍스트가 전혀 없어야 하는 포스터 배경 히어로입니다. 다음을 점검해 "
+    "결함만 보고하세요: ① 어떤 글자·숫자·로고·워터마크·깨진 잔글씨라도 보이면 "
+    "severity=critical(텍스트는 별도 레이어로 얹으므로 배경에 있으면 안 됨). "
+    "② 인물이 있다면 손가락·손·얼굴 등 해부학적 왜곡(critical). "
+    "③ 좌상단(로고)·하단(고지) 세이프존이 비어 있고 단순한가(침범=critical). "
+    'JSON 한 개만: {"findings":[{"severity":"critical|warning","slot":"visual",'
+    '"evidence":"..."}]}. 결함 없으면 빈 배열 [].'
+)
