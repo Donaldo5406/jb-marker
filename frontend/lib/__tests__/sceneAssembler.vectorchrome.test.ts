@@ -90,3 +90,31 @@ describe("vector_chrome: rate_card", () => {
     expect(label.top).toBeLessThan(figure.top);
   });
 });
+
+describe("vector_chrome: benefit_row", () => {
+  it("item당 아이콘 image + title/desc textbox, 가로 균등 분배", () => {
+    const spec = {
+      aspect: "4:5", render_mode: "vector_chrome",
+      slots: [
+        { role: "benefit_row", bbox: { x: 80, y: 1000, w: 900, h: 140 }, z: 2,
+          items: [
+            { icon_key: "trending-up", title: "우대금리", desc: "최대 0.50%p" },
+            { icon_key: "calendar", title: "가입기간", desc: "6~36개월" },
+            { icon_key: "coins", title: "최소금액", desc: "100만원부터" },
+          ] },
+      ],
+      copy: { ko: {} },
+    };
+    const s = assembleScene(spec as any, "ko", (r) => r);
+    const icons = s.objects.filter((o: any) => o.role === "benefit_row" && o.type === "image");
+    expect(icons.length).toBe(3);
+    expect(icons[0].src).toBe("/icons/trending-up.svg");
+    const titles = s.objects.filter((o: any) => o.type === "textbox" && ["우대금리", "가입기간", "최소금액"].includes(o.text));
+    expect(titles.length).toBe(3);
+    // 칼럼 균등: 두 번째 아이콘 left > 첫 번째
+    expect(icons[1].left).toBeGreaterThan(icons[0].left);
+    // 칼럼폭 = 900/3 = 300, 첫 칼럼 아이콘은 첫 칼럼 범위 내
+    expect(icons[0].left).toBeGreaterThanOrEqual(80);
+    expect(icons[0].left).toBeLessThan(80 + 300);
+  });
+});

@@ -1,4 +1,5 @@
 import { DEFAULT_FONT } from "./design/fontStack";
+import { iconSrc } from "./editor/iconRegistry";
 
 export type BBox = { x: number; y: number; w: number; h: number };
 export type Slot = {
@@ -155,6 +156,28 @@ function renderVectorRole(
       return t;
     });
     return [rect, ...lines];
+  }
+  if (s.role === "benefit_row" && Array.isArray(s.items)) {
+    const n = Math.max(1, s.items.length);
+    const colW = bb.w / n;
+    const iconSize = 44;
+    const out: any[] = [];
+    s.items.forEach((it, i) => {
+      const cx = bb.x + colW * i;                 // 칼럼 좌측
+      const iconLeft = cx + (colW - iconSize) / 2; // 칼럼 내 중앙
+      out.push({ type: "image", role: "benefit_row", slotId: "benefit_row",
+        left: iconLeft, top: bb.y, width: iconSize, height: iconSize,
+        src: iconSrc(it.icon_key) });
+      out.push({ type: "textbox", role: "benefit_row", slotId: "benefit_row", lang,
+        left: cx, top: bb.y + iconSize + 8, width: colW,
+        text: it.title, fontSize: 26, fontWeight: 700,
+        fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.color ?? "#0B1324", textAlign: "center" });
+      out.push({ type: "textbox", role: "benefit_row", slotId: "benefit_row", lang,
+        left: cx, top: bb.y + iconSize + 40, width: colW,
+        text: it.desc, fontSize: 22, fontWeight: 400,
+        fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.color ?? "#3A3A3A", textAlign: "center" });
+    });
+    return out;
   }
   const key = s.copy_key ?? s.role;
   const textbox = {
