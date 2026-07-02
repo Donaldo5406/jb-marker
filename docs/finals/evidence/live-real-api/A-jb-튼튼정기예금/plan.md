@@ -1,0 +1,1 @@
+(plan: JB 튼튼 정기예금 4:5, 그린/골드 — drive_local.py PLAN 참조)
