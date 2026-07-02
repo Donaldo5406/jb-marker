@@ -1,3 +1,5 @@
+import { DEFAULT_FONT } from "./design/fontStack";
+
 export type BBox = { x: number; y: number; w: number; h: number };
 export type Slot = {
   role: string;
@@ -9,11 +11,23 @@ export type Slot = {
   style_token?: string;
   font_px?: number;   // layout.spec의 글자크기(없으면 48 폴백)
   color?: string;     // #RRGGBB 텍스트 색(없으면 #0b1324 폴백)
+  // vector_chrome 확장
+  font_family?: string;
+  weight?: number;
+  align?: "left" | "center" | "right";
+  scrim?: boolean;
+  container?: { fill?: string; radius?: number; opacity?: number; shadow?: boolean };
+  lines?: { text: string; style: "label" | "figure" | "caption" }[];
+  items?: { icon_key: string; title: string; desc: string }[];
+  fill?: string;
+  text_color?: string;
+  radius?: number;
 };
 export type LayoutSpec = {
   aspect?: string;
   // 언어별 베이크 배경(풀 포스터) asset_ref 맵. 예: { ko: "...v1.png", en: "...v1.en.png" }.
   visual_by_lang?: Record<string, string>;
+  render_mode?: "baked" | "vector_chrome";
   slots: Slot[];
   copy?: Record<string, Record<string, string>>;
 };
@@ -92,18 +106,41 @@ export function assembleScene(
           : s.asset_ref;
         return [{ ...common, type: "image", src: ref ? assetUrl(ref) : "" }];
       }
-      // 헤드라인/바디/CTA는 배경에 베이크됨 → 어떤 객체도 방출하지 않음. disclosure만 오버레이.
-      if (s.role !== "disclosure") return [];
-      const key = s.copy_key ?? s.role;
-      const color = s.color ?? "#0b1324";
-      const textbox = { ...common, type: "textbox", lang,
-        text: (key && copy[key]) || "",
-        fontSize: s.font_px ?? 30, fill: color };
-      // 스크림을 먼저(낮은 z), 텍스트를 그 위로
-      return [scrimFor(bb, color, s.role), textbox];
+      // 헤드라인/바디/CTA는 baked 모드에서 배경에 구워짐 → 미방출. disclosure만 오버레이.
+      if (s.role === "disclosure") {
+        const key = s.copy_key ?? s.role;
+        const color = s.color ?? "#0b1324";
+        const textbox = { ...common, type: "textbox", lang,
+          text: (key && copy[key]) || "",
+          fontSize: s.font_px ?? 30, fill: color,
+          fontFamily: s.font_family ?? DEFAULT_FONT };
+        return [scrimFor(bb, color, s.role), textbox];
+      }
+      if ((spec.render_mode ?? "baked") !== "vector_chrome") return [];  // baked: 텍스트 미방출(하위호환)
+      // vector_chrome: 텍스트/위젯 role을 편집 벡터로 방출
+      const emitted = renderVectorRole(s, bb, common, lang, copy);
+      return s.scrim ? [scrimFor(bb, s.color ?? "#0b1324", s.role), ...emitted] : emitted;
     });
   const { width, height } = aspectToDims(spec.aspect);
   return { version: "6.0.0", objects, width, height };
+}
+
+/** vector_chrome 모드: role별 편집 Fabric 객체 방출. Task2~5에서 rate_card/benefit_row/cta_button 확장. */
+function renderVectorRole(
+  s: Slot, bb: BBox, common: Record<string, any>, lang: string,
+  copy: Record<string, string>,
+): any[] {
+  const key = s.copy_key ?? s.role;
+  const textbox = {
+    ...common, type: "textbox", lang,
+    text: (key && copy[key]) || "",
+    fontSize: s.font_px ?? 40,
+    fontFamily: s.font_family ?? DEFAULT_FONT,
+    fontWeight: s.weight ?? 400,
+    textAlign: s.align ?? "left",
+    fill: s.color ?? "#0b1324",
+  };
+  return [textbox];
 }
 
 /** 원-레이어 언어 교체: 베이크 배경(visual_by_lang) + disclosure 텍스트를 언어별 교체.
