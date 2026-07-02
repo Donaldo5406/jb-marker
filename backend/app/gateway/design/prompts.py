@@ -70,11 +70,19 @@ _S2A_VISION_BASE = (
 )
 
 
-def build_vision_instr(copy: dict) -> str:
-    """기대 카피를 주입한 비전 검증 지시문. copy={headline,body,cta,...}."""
+def build_vision_instr(copy: dict, facts: str | None = None) -> str:
+    """기대 카피(+금융 수치 정답)를 주입한 비전 검증 지시문. copy={headline,body,cta,...}."""
     expect = " / ".join(f'{k}="{v}"' for k, v in (copy or {}).items()
                         if k in ("headline", "body", "cta") and v)
-    return f"{_S2A_VISION_BASE}\n[기대 카피] {expect or '(없음)'}"
+    base = f"{_S2A_VISION_BASE}\n[기대 카피] {expect or '(없음)'}"
+    if facts:
+        # 금융 수치 환각 차단(실측: 베이크 금리카드가 5.0%/10만원 등 창작). factsheet 정답과
+        # 대조해 불일치·창작 수치는 critical로 → _bake_with_retry가 재생성한다.
+        base += (f"\n[반드시 정확해야 할 금융 수치(정답)] {facts}\n"
+                 "이미지(특히 금리 카드)에 렌더된 금리·우대금리·가입기간·최소금액 등 숫자가 "
+                 "위 정답과 다르거나(오독·창작·과장), 위 목록에 없는 금리·금액·기간 숫자가 새로 "
+                 "그려져 있으면 severity=critical로 반드시 보고하세요(금융 표시광고 위반).")
+    return base
 
 
 # Task 4에서 정리 예정: steps.py·기존 테스트 import 보존을 위한 별칭.

@@ -35,6 +35,27 @@ S2A_VISION_CACHE = "s2a_vision"
 
 MAX_BAKE_ATTEMPTS = 2   # 베이크 텍스트 정확성 재생성 상한(내부 루프). 외부 게이트 재생성과 합성.
 
+# 금리 카드 그라운딩: factsheet에서 카드에 넣을 금융 수치를 결정론적으로 뽑는다. S2b 카피가
+# 런별로 숫자를 누락해도(실측 변동성) 여기서 진실 원천을 고정 — 베이크 지시·비전 검증·정적
+# 저장(rate_card 노드)에 공통 사용해 금융수치 환각(예: 3.5%→5.0%)을 입력 그라운딩+검증으로 차단.
+_FACT_FIELDS = [("product_name", "상품명"), ("interest_rate", "기본금리"),
+                ("max_rate", "최고금리"), ("prime_rate", "우대금리"),
+                ("term", "가입기간"), ("min_amount", "최소가입금액")]
+
+
+def _facts_from_factsheet(fs: dict) -> dict:
+    """factsheet → 카드용 수치 dict(존재하는 키만, 문자열화). 진실 원천."""
+    out = {}
+    for key, label in _FACT_FIELDS:
+        v = (fs or {}).get(key)
+        if v:
+            out[label] = str(v)
+    return out
+
+
+def _facts_line(facts: dict) -> str:
+    return " · ".join(f"{label} {val}" for label, val in facts.items())
+
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
                 (4, 3, "4:3"), (9, 16, "9:16"), (16, 9, "16:9"),
@@ -214,8 +235,18 @@ class S2aVisual(PipelineStep):
         aspect = spec.get("aspect", "1:1")
         lang = (ctx.state.get("languages") or ["ko"])[0]
         copy = (spec.get("copy") or {}).get(lang, {})
-        base_prompt = self._bake_prompt(concept, copy, spec.get("slots"))
-        png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy)
+        # 금리 카드 그라운딩(진실 원천): factsheet 수치를 S2b 카피 변동성과 무관하게 고정한다.
+        # 정적 노드(rate_card)로 저장(사용자 제안 — copy/리뷰가 정적 정답 참조) + 베이크 지시 +
+        # 비전 검증에 공통 주입해 금융수치 환각을 이중 방어(입력 그라운딩 + 출력 검증).
+        plan = ctx.store.get(f"/{ctx.req.run_id}/brainstorming/plan.md")
+        facts = _facts_from_factsheet(_frontmatter(plan.content_text if plan else "").get("factsheet") or {})
+        facts_line = _facts_line(facts)
+        if facts:
+            ctx.store.put(f"{base}/design-system/components/rate_card/{lang}.json",
+                          json.dumps(facts, ensure_ascii=False), source="marker",
+                          mime="application/json", meta={"lang": lang, "grounds": "factsheet"})
+        base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line)
+        png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy, facts_line)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
@@ -244,7 +275,8 @@ class S2aVisual(PipelineStep):
                   "image_fallback": fallback, "vision_failed": vision_failed},
             events=[{"type": "artifact", "path": path}])
 
-    def _bake_prompt(self, concept: str, copy: dict, slots: list | None = None) -> str:
+    def _bake_prompt(self, concept: str, copy: dict, slots: list | None = None,
+                     facts: str = "") -> str:
         lines = [concept,
                  "다음 문구를 디자인 요소로 **정확히** 렌더하세요(오타·누락 금지):"]
         # 슬롯별 색·크기를 그대로 넘긴다 — 안 넘기면 모델이 임의로 한 가지 어두운 색만
@@ -286,8 +318,17 @@ class S2aVisual(PipelineStep):
             "굵게 강조하고, 그 위/아래에 라벨과 부가 조건을 작은 글자로 위계 있게 정렬하세요. "
             "여백·얇은 구분선·악센트 바·포인트 도형·아이콘 형태의 그래픽으로 편집 디자인다운 "
             "리듬과 밀도를 주고, 헤드라인·카드·CTA를 명확한 그리드로 구조화하세요. "
+            "**금리 카드에는 금리뿐 아니라 body에 명시된 기간·최소금액 등 가입 조건도 "
+            "빠짐없이 포함**하세요(정보 누락 금지 — 카드 안에 조건을 작은 라벨로 정렬). "
             "**단 밀도는 오직 레이아웃·도형·컨테이너·색으로만 내고, 위에 명시한 문구 외의 새로운 "
             "텍스트·숫자·라벨·문장은 절대 만들지 마세요**(빈 카드·의미 없는 잔글씨 금지).")
+        # 금융수치 그라운딩(진실 원천 주입): factsheet 값만 정확히 렌더, 창작 금지. S2b 카피가
+        # 숫자를 누락해도 gemini가 카드에 넣을 정답을 여기서 못박아 환각(3.5%→5.0%)을 차단.
+        if facts:
+            lines.append(
+                "금리 카드와 모든 수치 표기에는 아래 factsheet 값만 **정확히** 렌더하세요 "
+                "(창작·변경·과장 절대 금지, 목록에 없는 금리·금액·기간 숫자는 만들지 말 것): "
+                + facts)
         return "\n".join(lines)
 
     def _edit_prompt(self, copy: dict) -> str:
@@ -299,7 +340,7 @@ class S2aVisual(PipelineStep):
                      "기기 화면·배경 소품은 글자 없이 유지하세요(가짜 잔글씨 금지).")
         return "\n".join(lines)
 
-    def _bake_with_retry(self, base_prompt, aspect, copy):
+    def _bake_with_retry(self, base_prompt, aspect, copy, facts=""):
         feedback = ""
         png, findings, vision_failed, fallback = None, [], False, False
         for attempt in range(MAX_BAKE_ATTEMPTS):
@@ -312,17 +353,21 @@ class S2aVisual(PipelineStep):
                 png = placeholder_png(aspect); fallback = True
                 findings, vision_failed = [], True
                 break
-            findings, vision_failed = self._vision_check(png, copy)
+            findings, vision_failed = self._vision_check(png, copy, facts)
             criticals = [f for f in findings if f.get("severity") == "critical"]
             if not criticals:
                 break
             feedback = "; ".join(f.get("evidence", "") for f in criticals)
         return png, findings, vision_failed, fallback
 
-    def _vision_check(self, png: bytes, copy: dict) -> tuple[list, bool]:
-        """review_image로 비전 점검 → (findings, vision_failed). 미지원/실패는 ([], True)."""
+    def _vision_check(self, png: bytes, copy: dict, facts: str = "") -> tuple[list, bool]:
+        """review_image로 비전 점검 → (findings, vision_failed). 미지원/실패는 ([], True).
+
+        facts(factsheet 금융수치 정답)를 주면 베이크된 카드 숫자를 대조해 불일치를 critical로
+        보고 → _bake_with_retry가 재생성(금융수치 환각 차단의 이빨).
+        """
         try:
-            resp = self._image_provider.review_image(png, build_vision_instr(copy), mime="image/png")
+            resp = self._image_provider.review_image(png, build_vision_instr(copy, facts), mime="image/png")
             return ((parse_json_block(resp.text).get("findings") or []), False)
         except Exception:
             return ([], True)   # 비전 미지원/실패 → fail-open(빈 findings로 통과)
