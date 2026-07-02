@@ -134,11 +134,24 @@ PROMPT_D2 = PROMPT_C.replace(
 ) + "\n- 두 번째 첨부 이미지는 확정된 아이콘 시트입니다. 아이콘은 시트의 형태를 그대로 따라 그리세요(재해석 금지). 시트 자체를 포스터에 넣지는 마세요."
 
 
+# E = 잔글씨 스트레스 테스트: 레퍼런스급 4줄 고지 블록+계열사 행이 2K에서 깨지는지 실측.
+PROMPT_E = PROMPT_A.replace(
+    '9. 푸터 밴드 안 맨 아래 아주 작은 연회색 고지 한 줄: "예금자보호법에 따라 5천만원까지 보호됩니다 · 기본금리 연 2.80% 세전, 12개월 기준"',
+    """9. 푸터 밴드 좌측 캘리그래피 오른쪽에 흰색 계열사 워드마크 행: "전북은행 · 광주은행 · JB우리캐피탈 · JB자산운용 · JB인베스트먼트"
+10. 푸터 밴드 아래 흰 배경에 아주 작은 진회색 고지 4줄(작지만 반드시 읽을 수 있게):
+   "· 가입대상: 만 19세 이상 ~ 만 29세 이하 개인 (1인 1계좌) · 가입기간: 6개월, 12개월, 24개월, 36개월 · 가입금액: 100만원 이상 · 이자지급방식: 만기일시지급식"
+   "· 기본금리 연 2.80%(세전, 12개월 기준) · 우대금리 최대 연 0.50%p(세전): 20대 우대 0.30%p, 신규고객 우대 0.20%p (조건 충족 시)"
+   "· 상기 금리는 2026.07.01 기준이며, 시장금리 변동에 따라 변경될 수 있습니다. 자세한 내용은 JB금융그룹 홈페이지를 참고하시기 바랍니다."
+   "· 예금자보호법에 따라 원금과 소정의 이자를 합하여 1인당 5천만원까지 보호됩니다.\"""")
+
+
 def main() -> None:
     variant = (sys.argv[1] if len(sys.argv) > 1 else "A").upper()
     client = genai.Client(api_key=api_key())
     logo = (SP / "vc_logo.png").read_bytes()
-    if variant == "A":
+    if variant == "E":
+        contents = [types.Part.from_bytes(data=logo, mime_type="image/png"), PROMPT_E]
+    elif variant == "A":
         contents = [types.Part.from_bytes(data=logo, mime_type="image/png"), PROMPT_A]
     elif variant == "C":
         contents = [types.Part.from_bytes(data=logo, mime_type="image/png"), PROMPT_C]
