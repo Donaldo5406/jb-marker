@@ -54,7 +54,8 @@
    Fabric fontFamily 매칭이 된다. CDN 미도달 시 font-display:swap으로 시스템 폰트 폴백. */
 @font-face {
   font-family: "Pretendard";
-  src: url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
+  /* gh 미러는 jsdelivr 50MB 제한으로 404(실측) — 공식 npm 배포 경로 사용(실측 200). */
+  src: url("https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
   font-weight: 45 920; font-display: swap;
 }
 @font-face {
