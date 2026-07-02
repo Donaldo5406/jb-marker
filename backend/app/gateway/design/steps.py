@@ -530,9 +530,13 @@ class S2bCopy(PipelineStep):
         fm = _frontmatter(plan.content_text if plan else "")
         corpus = build_corpus(fm.get("factsheet") or {})
         # 조립 순서(D6): persona → [S2b] 지시 → [factsheet] — 인라인 시절과 동일.
+        # rich 모드: 바디는 벡터 1~2줄 레이어라 길면 레이아웃을 침범(실측) — 간결 제약을
+        # rich에서만 추가해 flag off 프롬프트 바이트 동등을 유지한다.
+        s2b_instr = (S2B_INSTR + " 바디는 한 문장(공백 포함 40자 이내)으로 간결하게."
+                     if _rich_enabled() else S2B_INSTR)
         pspec = PromptSpec(
             persona=PERSONA,
-            constraints=[S2B_INSTR],
+            constraints=[s2b_instr],
             references=[f"\n[factsheet]\n{json.dumps(fm.get('factsheet') or {}, ensure_ascii=False)}"],
             studio="design", step=self.name)
         resp = ctx.provider.complete([Message("user", ctx.req.user_prompt or "카피 확정")],

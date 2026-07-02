@@ -86,25 +86,25 @@ def build_layout(semantic: dict, aspect: str, copy: dict, facts: dict) -> dict:
         "role": "headline", "z": 3, "copy_key": "headline", "color": ink,
         "font_family": display, "weight": 800, "align": "left",
         "font_px": 84, "scrim": busy,
-        "bbox": {"x": M, "y": round(0.09 * H), "w": w, "h": round(0.13 * H)},
+        "bbox": {"x": M, "y": round(0.14 * H), "w": w, "h": round(0.13 * H)},
     }]
     if copy.get("body"):
         slots.append({
             "role": "body", "z": 2, "copy_key": "body", "color": ink,
             "font_family": body_font, "weight": 400, "align": "left", "font_px": 36,
-            "bbox": {"x": M, "y": round(0.24 * H), "w": w, "h": round(0.08 * H)},
+            "bbox": {"x": M, "y": round(0.29 * H), "w": w, "h": round(0.07 * H)},
         })
     slots.append({
         "role": "rate_card", "z": 2,
         "container": {"fill": "#FFFFFF", "radius": 16, "opacity": 0.94, "shadow": True},
         "font_family": body_font, "color": ink,
         "lines": _rate_lines(facts),
-        "bbox": {"x": M, "y": round(0.34 * H), "w": w, "h": round(0.18 * H)},
+        "bbox": {"x": M, "y": round(0.38 * H), "w": w, "h": round(0.16 * H)},
     })
     slots.append({
-        "role": "benefit_row", "z": 2, "font_family": body_font, "color": ink,
+        "role": "benefit_row", "z": 2, "font_family": body_font, "color": ink, "scrim": busy,
         "items": _benefit_items(facts),
-        "bbox": {"x": M, "y": round(0.55 * H), "w": w, "h": round(0.11 * H)},
+        "bbox": {"x": M, "y": round(0.57 * H), "w": w, "h": round(0.11 * H)},
     })
     slots.append({
         "role": "cta_button", "z": 3, "copy_key": "cta",
