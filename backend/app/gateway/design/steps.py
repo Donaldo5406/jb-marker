@@ -24,6 +24,7 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
+from .directing import build_director_prompt
 from .layout_engine import DEFAULT_SEMANTIC, _dims, build_layout
 from .layout_preview import build_layout_mock_html
 from .prompts import (PERSONA, S1_INSTR, S2B_INSTR, SEMANTIC_LAYOUT_INSTR,
@@ -106,6 +107,13 @@ def _rich_enabled() -> bool:
     """RICH_VECTOR_CHROME flag — on이면 S2a가 텍스트프리 히어로+벡터 크롬 spec을 생성.
     off(기본)면 검증된 베이크 경로 그대로(spec §8 폴백). 매 호출 env 조회(테스트 monkeypatch)."""
     return (os.getenv("RICH_VECTOR_CHROME") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _directed_enabled() -> bool:
+    """DIRECTED_FULLBAKE flag — on이면 S2a 베이크 프롬프트를 아트디렉터 풀디렉팅 프롬프트로
+    교체(build_director_prompt). off(기본)면 현행 `_bake_prompt` 경로 **바이트 동등**.
+    rich(_rich_enabled)가 우선(분기 순서). 매 호출 env 조회(테스트 monkeypatch)."""
+    return (os.getenv("DIRECTED_FULLBAKE") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 # 표준 종횡비 후보 — material_matrix의 size에서 근접 매핑.
 _STD_ASPECTS = [(1, 1, "1:1"), (4, 5, "4:5"), (5, 4, "5:4"), (3, 4, "3:4"),
@@ -302,8 +310,17 @@ class S2aVisual(PipelineStep):
         # 두 경로 공통 그라운딩 진실 원천으로 남는다(rich에서도 유지).
         if _rich_enabled():
             return self._run_rich(ctx, spec, copy, facts, aspect, lang)
-        base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line,
-                                        _benefit_chips(facts))
+        # directed 분기(spec 2026-07-03 §4): 확정 시안을 아트디렉터 프롬프트로 조립해 원샷
+        # 베이크. rich 다음 우선순위 — 프롬프트(base_prompt)만 교체하고 이후 로직
+        # (_bake_with_retry·저장·다국어 변형·vision cache)은 baked와 완전 공유. off(기본)면
+        # 아래 현행 _bake_prompt 경로 그대로(바이트 동등, 자체 수정 없음).
+        if _directed_enabled():
+            tokens = read_json_node(ctx.store, f"{base}/design-system/tokens.json")
+            base_prompt = build_director_prompt(spec, tokens, facts,
+                                                _benefit_chips(facts), lang)
+        else:
+            base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line,
+                                            _benefit_chips(facts))
         png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy, facts_line)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
