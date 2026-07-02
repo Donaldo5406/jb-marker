@@ -24,7 +24,7 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
-from .layout_engine import DEFAULT_SEMANTIC, build_layout
+from .layout_engine import DEFAULT_SEMANTIC, _dims, build_layout
 from .prompts import (PERSONA, S1_INSTR, S2B_INSTR, SEMANTIC_LAYOUT_INSTR,
                       TEXTFREE_VISION_INSTR, build_hero_prompt, build_vision_instr)
 from .scoring import RUBRIC, run_critic
@@ -324,7 +324,19 @@ class S2aVisual(PipelineStep):
         semantic = self._semantic_layout(png)
         layout = build_layout(semantic, aspect, copy, facts)
         # spec 갱신: slots 교체 + render_mode. aspect/visual_concept/copy 등 나머지 보존.
-        spec["slots"] = layout["slots"]
+        # 히어로는 프론트가 background 슬롯으로만 그린다(assembleScenes는 없으면 안 만든다) —
+        # engine slots가 background를 방출하지 않으므로 기존 슬롯에서 찾아 보존, 없으면 생성해
+        # 앞에 붙인다. logo 슬롯(S2c 핀)도 같은 패턴으로 보존해 다른 재실행 경로(게이트 regenerate 등)를
+        # 방어한다. bbox 높이는 aspect에서 계산(_dims 재사용). asset_ref는 visual_by_lang 우선의 폴백.
+        W, H = _dims(aspect)
+        prev = spec.get("slots") or []
+        bg = next((s for s in prev if s.get("role") == "background"), None)
+        if bg is None:
+            bg = {"role": "background", "z": 0,
+                  "bbox": {"x": 0, "y": 0, "w": W, "h": H},
+                  "asset_ref": "design-system/components/visual/v1.png"}
+        logo = next((s for s in prev if s.get("role") == "logo"), None)
+        spec["slots"] = [bg] + layout["slots"] + ([logo] if logo else [])
         spec["render_mode"] = layout["render_mode"]
         # 텍스트 프리 히어로 = 언어 무관 → 전 언어가 같은 비주얼(변형 생성 불필요·비용 0).
         vb = spec.setdefault("visual_by_lang", {})

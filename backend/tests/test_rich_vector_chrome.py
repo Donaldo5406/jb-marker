@@ -111,6 +111,71 @@ def test_flag_on_vision_junk_falls_back_to_default_semantic(tmp_path, monkeypatc
     assert spec["render_mode"] == "vector_chrome"   # 폴백 레이아웃으로 완주
 
 
+# ── C1 회귀: rich slots 교체가 히어로 background 슬롯을 방출(생성/보존)해야 한다 ──
+
+
+def test_flag_on_creates_background_slot_for_hero(tmp_path, monkeypatch):
+    """C1: engine slots가 background를 방출하지 않으므로 rich가 생성해 앞에 붙여야 한다.
+    프론트(assembleScenes)는 role==background 슬롯으로만 히어로를 그린다(없으면 흰 캔버스)."""
+    monkeypatch.setenv("RICH_VECTOR_CHROME", "1")
+    stub = _RichStub(); store, ctx = _ctx(tmp_path)   # 기본 spec엔 background 없음
+    S2aVisual(stub).run(ctx)
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    assert spec["slots"][0]["role"] == "background"           # 맨 앞에 히어로 슬롯
+    bg = spec["slots"][0]
+    assert bg["asset_ref"] == "design-system/components/visual/v1.png"   # 폴백 asset_ref
+    assert bg["bbox"]["w"] == 1080 and bg["bbox"]["h"] == 1350           # 4:5 → 1080×1350
+
+
+def test_flag_on_preserves_existing_background_and_logo_slots(tmp_path, monkeypatch):
+    """C1 + belt-and-suspenders: 기존 background(커스텀 asset_ref)와 logo 슬롯은
+    slots 교체(prepend/append) 시 보존된다 — engine 벡터 슬롯과 공존."""
+    monkeypatch.setenv("RICH_VECTOR_CHROME", "1")
+    stub = _RichStub(); store, ctx = _ctx(tmp_path)
+    spec0 = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    spec0["slots"] = [
+        {"role": "background", "z": 0, "asset_ref": "custom/hero.png",
+         "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1350}},
+        {"role": "logo", "z": 9, "asset_ref": "design-system/components/logo/v1.png",
+         "bbox": {"x": 48, "y": 48, "w": 300, "h": 96}},
+    ]
+    store.put("/r1/design/rough/layout.spec.json", json.dumps(spec0),
+              source="marker", mime="application/json")
+    S2aVisual(stub).run(ctx)
+    spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+    bg = next(s for s in spec["slots"] if s["role"] == "background")
+    assert bg["asset_ref"] == "custom/hero.png"               # 기존 히어로 보존(폴백 아님)
+    logo = next(s for s in spec["slots"] if s["role"] == "logo")
+    assert logo["asset_ref"] == "design-system/components/logo/v1.png"   # logo 보존
+    roles = {s["role"] for s in spec["slots"]}
+    assert {"headline", "rate_card", "benefit_row"} <= roles  # engine 슬롯과 공존
+
+
+# ── I1 회귀: rich 리뷰 교정은 S2a 재베이크를 건너뛴다(gemini 재호출 0·히어로/logo 보존) ──
+
+
+def test_flag_on_remediation_skips_visual_rebake(tmp_path, monkeypatch):
+    """I1: rich 모드 done-상태 카피 교정은 S2a 재베이크를 건너뛴다.
+    카피는 벡터 레이어라 재생성이 불필요(유료 gemini 호출 0)하고, _run_rich의 slots 교체가
+    S2c logo 슬롯을 지우는 것도 방지한다. flag off 경로(재베이크)는 test_demo_pipeline이 잠근다."""
+    monkeypatch.setenv("RICH_VECTOR_CHROME", "1")
+    from app.gateway.harness_design import DesignHarness
+    from app.gateway.state import save_state
+    from app.providers.fake import FakeProvider
+
+    store, _ = _ctx(tmp_path)                       # plan.md + layout.spec.json 시드
+    save_state(store, "r1", "design", {"step": "done", "gate": None,
+               "confirmed": {}, "bypass": {}, "languages": ["ko"]})
+    stub = _RichStub()
+    h = DesignHarness(image_provider=stub)
+    req = HarnessRequest(run_id="r1", studio="design",
+                         user_prompt="리뷰 결과대로 카피 수정해줘",   # '수정' = 교정 토큰
+                         provider="fake", is_marker=True)
+    res = h.handle_turn(req, provider=FakeProvider(), store=store)
+    assert res.meta.get("remediated") is True       # 교정 경로 진입
+    assert stub.gen_prompts == []                    # S2a generate_image 재호출 0회
+
+
 # ── E2E: flag-on 전체 파이프라인 완주 + S2c 호환(Task 4) ────────────────────
 
 
@@ -154,8 +219,8 @@ def test_e2e_pipeline_flag_on_produces_vector_spec_with_logo(tmp_path, monkeypat
     spec = json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
     assert spec["render_mode"] == "vector_chrome"            # rich 벡터 크롬 spec
     roles = {s["role"] for s in spec["slots"]}
-    assert {"headline", "rate_card", "benefit_row", "cta_button",
-            "disclosure", "logo"} <= roles                   # engine 슬롯 + S2c logo 공존
+    assert {"background", "headline", "rate_card", "benefit_row", "cta_button",
+            "disclosure", "logo"} <= roles                   # 히어로 background + engine 슬롯 + S2c logo 공존
     logo = next(s for s in spec["slots"] if s["role"] == "logo")
     assert logo["asset_ref"] == "design-system/components/logo/v1.png"   # S2c 핀 보존
     assert spec["copy"]["ko"]["disclosure"]                              # S2c 고지 주입
