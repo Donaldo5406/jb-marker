@@ -13,7 +13,7 @@ vi.mock("fabric", () => ({
     toObject: vi.fn(() => ({ version: "6.0.0", objects: [] })),
     on: vi.fn(), off: vi.fn(),
   })),
-  Textbox: vi.fn().mockImplementation((t: string) => ({ kind: "textbox", text: t })),
+  Textbox: vi.fn().mockImplementation((t: string, opts: any) => ({ kind: "textbox", text: t, ...opts })),
   Rect: vi.fn().mockImplementation((o: any) => ({ kind: "rect", ...o })),
   FabricImage: {
     fromURL: vi.fn(async () => ({ kind: "image", set: vi.fn(), scaleToWidth: vi.fn() })),
@@ -25,11 +25,11 @@ vi.mock("@/lib/fabricDefaults", () => ({}));
 vi.mock("@/lib/api", () => ({ authedFetch: vi.fn(async () => ({ ok: false })) }));
 
 import { useFabricCanvas } from "../useFabricCanvas";
-import { FabricImage } from "fabric";
+import { FabricImage, Textbox } from "fabric";
 import { authedFetch } from "@/lib/api";
 import { waitFor } from "@testing-library/react";
 
-beforeEach(() => { add.mockClear(); clear.mockClear(); });
+beforeEach(() => { add.mockClear(); clear.mockClear(); vi.mocked(Textbox).mockClear(); });
 
 describe("useFabricCanvas", () => {
   it("scene의 textbox를 동기 add 한다", () => {
@@ -126,5 +126,47 @@ describe("useFabricCanvas", () => {
     } finally {
       (URL as any).createObjectURL = origCreate;
     }
+  });
+
+  it("vector_chrome textbox의 fontFamily/fontWeight/textAlign를 있을 때만 전달한다", () => {
+    const elRef = { current: document.createElement("canvas") } as React.RefObject<HTMLCanvasElement>;
+    // vector_chrome 씬: rich 필드 있음(rate_card 라인) + 없음(baked disclosure 스타일) 한 씬에 공존.
+    const scene = { version: "6.0.0", width: 1080, height: 1080, objects: [
+      { type: "textbox", text: "연 3.5%", left: 40, top: 40, width: 400, fontSize: 72,
+        fontFamily: "GmarketSansBold", fontWeight: 800, textAlign: "left", role: "rate_card", slotId: "rate_card" },
+      { type: "textbox", text: "예금자보호 고지", left: 20, top: 990, width: 1040, role: "disclosure", slotId: "disclosure" },
+    ] };
+    renderHook(() => useFabricCanvas(elRef, scene));
+    // 생성자 두 번째 인자(옵션)를 직접 검사 — 존재/부재를 정확히 판별.
+    const richOpts = vi.mocked(Textbox).mock.calls[0][1] as any;
+    expect(richOpts.fontFamily).toBe("GmarketSansBold");
+    expect(richOpts.fontWeight).toBe(800);
+    expect(richOpts.textAlign).toBe("left");
+    // baked disclosure(리치 필드 없음)는 해당 키 자체가 옵션에 없어야 한다(하위호환 — 구성 옵션 종전과 동일).
+    const bakedOpts = vi.mocked(Textbox).mock.calls[1][1] as any;
+    expect("fontFamily" in bakedOpts).toBe(false);
+    expect("fontWeight" in bakedOpts).toBe(false);
+    expect("textAlign" in bakedOpts).toBe(false);
+  });
+
+  it("스크림 rect는 비선택 유지, rate_card rect는 선택 가능 + opacity/shadow 전달", () => {
+    const elRef = { current: document.createElement("canvas") } as React.RefObject<HTMLCanvasElement>;
+    const scene = { version: "6.0.0", width: 1080, height: 1080, objects: [
+      { type: "rect", left: 8, top: 8, width: 120, height: 60, fill: "rgba(0,0,0,0.38)", rx: 8, ry: 8, role: "scrim", slotId: "headline" },
+      { type: "rect", left: 40, top: 40, width: 400, height: 220, fill: "#FFFFFF", rx: 16, ry: 16,
+        opacity: 0.94, shadow: "rgba(0,0,0,0.18) 0px 8px 24px", role: "rate_card", slotId: "rate_card" },
+    ] };
+    renderHook(() => useFabricCanvas(elRef, scene));
+    const added = add.mock.calls.map((c) => c[0]);
+    const scrim = added.find((o: any) => o.kind === "rect" && o.role === "scrim");
+    const rateCard = added.find((o: any) => o.kind === "rect" && o.role === "rate_card");
+    expect(scrim).toBeTruthy();
+    expect((scrim as any).selectable).toBe(false);   // 스크림: 종전대로 비선택
+    expect((scrim as any).evented).toBe(false);
+    expect(rateCard).toBeTruthy();
+    expect((rateCard as any).selectable).not.toBe(false);  // rate_card: 편집 가능(강제 false 아님)
+    expect((rateCard as any).evented).not.toBe(false);
+    expect((rateCard as any).opacity).toBe(0.94);          // opacity 전달
+    expect((rateCard as any).shadow).toBe("rgba(0,0,0,0.18) 0px 8px 24px");  // shadow 문자열 전달
   });
 });

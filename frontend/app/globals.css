@@ -64,16 +64,16 @@
 }
 @font-face {
   font-family: "NanumMyeongjo";
-  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@latest/korean-400-normal.woff2") format("woff2");
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@5.2.11/korean-400-normal.woff2") format("woff2");
   font-weight: 400; font-display: swap;
 }
 @font-face {
   font-family: "NanumMyeongjo";
-  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@latest/korean-800-normal.woff2") format("woff2");
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@5.2.11/korean-800-normal.woff2") format("woff2");
   font-weight: 800; font-display: swap;
 }
 @font-face {
   font-family: "NanumPenScript";
-  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-pen-script@latest/korean-400-normal.woff2") format("woff2");
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-pen-script@5.2.7/korean-400-normal.woff2") format("woff2");
   font-weight: 400; font-display: swap;
 }
