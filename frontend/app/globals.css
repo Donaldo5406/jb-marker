@@ -49,3 +49,31 @@
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
 .hljs-deletion { color: #ba1a1a; }
+
+/* 번들 서체(재배포 허용) — CDN 로드. family 이름은 lib/design/fontStack.ts와 일치해야
+   Fabric fontFamily 매칭이 된다. CDN 미도달 시 font-display:swap으로 시스템 폰트 폴백. */
+@font-face {
+  font-family: "Pretendard";
+  src: url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
+  font-weight: 45 920; font-display: swap;
+}
+@font-face {
+  font-family: "GmarketSansBold";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/GmarketSansBold.woff") format("woff");
+  font-weight: 700; font-display: swap;
+}
+@font-face {
+  font-family: "NanumMyeongjo";
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@latest/korean-400-normal.woff2") format("woff2");
+  font-weight: 400; font-display: swap;
+}
+@font-face {
+  font-family: "NanumMyeongjo";
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@latest/korean-800-normal.woff2") format("woff2");
+  font-weight: 800; font-display: swap;
+}
+@font-face {
+  font-family: "NanumPenScript";
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-pen-script@latest/korean-400-normal.woff2") format("woff2");
+  font-weight: 400; font-display: swap;
+}

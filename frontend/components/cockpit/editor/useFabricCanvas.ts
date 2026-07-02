@@ -24,6 +24,12 @@ export function useFabricCanvas(
     if (!elRef.current) return;
     const c = new Canvas(elRef.current, { width, height, backgroundColor: "#fff" });
     setCanvas(c);
+    // 웹폰트(CDN)가 늦게 로드되면 텍스트가 폴백 폰트로 굳는다 → 로드 완료 시 1회 재렌더(비차단).
+    if (typeof document !== "undefined" && (document as any).fonts?.ready) {
+      (document as any).fonts.ready.then(() => {
+        try { c.requestRenderAll(); } catch { /* 캔버스 dispose 후면 무시 */ }
+      });
+    }
     return () => { void c.dispose(); setCanvas(null); };
   }, [elRef, width, height]);
 
