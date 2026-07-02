@@ -69,6 +69,19 @@ function scrimFor(bb: BBox, color: string, role: string): any {
   };
 }
 
+/** 로고 뒤 밝은 라운드 플레이트(대비 보장). 배경이 어두우면 네이비 로고가 묻히므로(실측)
+ *  로고 bbox보다 살짝 크게 반투명 화이트 판을 깔아 배경과 무관한 가독성을 확보한다
+ *  (실제 은행 포스터의 로고 락업 방식). role="logo_plate"라 scrim 카운트에 영향 없음. */
+function logoPlate(bb: BBox): any {
+  const pad = 14;
+  return {
+    type: "rect", left: bb.x - pad, top: bb.y - pad,
+    width: bb.w + pad * 2, height: bb.h + pad * 2,
+    fill: "rgba(255,255,255,0.92)", rx: 12, ry: 12,
+    role: "logo_plate", slotId: "logo",
+  };
+}
+
 /** layout.spec + 언어 → Fabric JSON(toJSON 호환). assetUrl로 asset_ref 해석. */
 export function assembleScene(
   spec: LayoutSpec, lang: string, assetUrl: (ref: string) => string,
@@ -88,7 +101,10 @@ export function assembleScene(
         const ref = s.role === "background"
           ? (spec.visual_by_lang?.[lang] ?? s.asset_ref)
           : s.asset_ref;
-        return [{ ...common, type: "image", src: ref ? assetUrl(ref) : "" }];
+        const img = { ...common, type: "image", src: ref ? assetUrl(ref) : "" };
+        // 로고는 대비 보장용 밝은 플레이트를 뒤에 깔고(먼저 방출=낮은 z) 그 위에 로고 이미지.
+        if (s.role === "logo") return [logoPlate(bb), img];
+        return [img];
       }
       // 헤드라인/바디/CTA는 배경에 베이크됨 → 어떤 객체도 방출하지 않음. disclosure만 오버레이.
       if (s.role !== "disclosure") return [];
