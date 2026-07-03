@@ -147,3 +147,31 @@ def test_malformed_slots_are_skipped():
 def test_none_arguments_do_not_crash():
     out = build_layout_mock_html(None, None, None)
     assert out.startswith("<!doctype html>")
+
+
+def test_visual_png_hides_baked_text_slots_keeps_overlays():
+    """베이크 후 프리뷰는 오버레이 슬롯(logo·disclosure)만 — headline/body/cta 박스를
+    다시 얹으면 풀베이크의 실제 배치와 어긋난 이중 텍스트가 된다(실측 2026-07-03)."""
+    spec = dict(_spec())
+    spec["slots"] = list(spec["slots"]) + [
+        {"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3},
+        {"role": "disclosure", "bbox": {"x": 80, "y": 1276, "w": 920, "h": 58},
+         "z": 3, "copy_key": "disclosure", "font_px": 26, "color": "#3A3A3A"},
+    ]
+    out = build_layout_mock_html(spec, _tokens(), _facts(), visual_png=_png_bytes())
+    # 베이크된 텍스트 카피 미방출(포스터에 이미 구워짐 — 이중 텍스트 방지)
+    assert "청년 적금으로 미래를 더 크게" not in out
+    assert "매달 자동이체로 목돈 만들기" not in out
+    # 오버레이 슬롯은 유지(로고·고지 자리 표시)
+    assert "로고" in out and "고지" in out
+    # visual 없으면 현행 그대로(텍스트 박스 렌더)
+    out_pre = build_layout_mock_html(spec, _tokens(), _facts(), visual_png=None)
+    assert "헤드라인" in out_pre
+
+
+def test_vector_chrome_keeps_text_slots_with_visual():
+    """vector_chrome은 텍스트가 벡터 오버레이(미베이크) — visual이 있어도 전 슬롯 유지."""
+    spec = dict(_spec())
+    spec["render_mode"] = "vector_chrome"
+    out = build_layout_mock_html(spec, _tokens(), _facts(), visual_png=_png_bytes())
+    assert "헤드라인" in out

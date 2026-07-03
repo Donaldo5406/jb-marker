@@ -154,9 +154,19 @@ def build_layout_mock_html(
         ref_w *= scale
         ref_h *= scale
 
+    # 베이크 후(visual_png 존재, baked 모드)에는 headline/body/cta가 이미지에 구워져
+    # 있으므로 스키매틱 텍스트 박스를 다시 얹으면 실제 그림 배치와 어긋난 이중 텍스트가
+    # 된다(풀베이크는 존 힌트 안 자유 배치 — 사용자 실측 2026-07-03). 실제 레이어로
+    # 얹히는 오버레이 슬롯(logo·disclosure)만 표시한다. vector_chrome은 텍스트가 벡터
+    # 오버레이(미베이크)라 전 슬롯 유지.
+    overlay_only = bool(visual_png) and (
+        str(spec.get("render_mode") or "baked") != "vector_chrome")
+
     boxes = []
     for (s, x, y, w, h) in valid:
         role = str(s.get("role") or "")
+        if overlay_only and role not in ("logo", "disclosure"):
+            continue
         label = _ROLE_LABELS.get(role, role or "슬롯")
         key = s.get("copy_key") or role
         tv = lang_copy.get(key) if isinstance(key, str) else None
