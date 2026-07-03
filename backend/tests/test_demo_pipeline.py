@@ -34,6 +34,7 @@ def _seed_brainstorming(client, rid):
     turn("정기예금 캠페인 기획하자")
     turn("2030 사회초년생", answer="2030 사회초년생")
     turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
+    turn("A. 신뢰 그린+골드 포인트 (권장)", answer="A. 신뢰 그린+골드 포인트 (권장)")  # 디렉션
     turn("예, plan으로", answer="예, plan으로")     # spec 확정
     turn("보충하기", answer="보충하기")               # plan 누락 보충
     turn("예, 확정", answer="예, 확정")               # plan 확정 → done
@@ -78,25 +79,29 @@ def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
     r2 = turn("2030 사회초년생", answer="2030 사회초년생")
     assert (r2.get("gate") or {}).get("trigger") == "a"
 
-    # 턴3: 전체 spec + spec-lock 질문(b).
+    # 턴3: 디자인 디렉션 제안(a) — AI 권장안 + 옵션.
     r3 = turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
-    assert (r3.get("gate") or {}).get("trigger") == "b"
+    assert (r3.get("gate") or {}).get("trigger") == "a"
+
+    # 턴4: 전체 spec + spec-lock 질문(b).
+    r4 = turn("A. 신뢰 그린+골드 포인트 (권장)", answer="A. 신뢰 그린+골드 포인트 (권장)")
+    assert (r4.get("gate") or {}).get("trigger") == "b"
     spec = client.get(f"/vfs/{rid}/brainstorming/spec.md")
     assert spec.status_code == 200 and "goal:" in spec.json()["content_text"]
 
-    # 턴4: spec 확정 → plan 1차 초안(누락) + 보충 질문(c).
-    r4 = turn("예, plan으로", answer="예, plan으로")
-    assert (r4.get("gate") or {}).get("trigger") == "c"
+    # 턴5: spec 확정 → plan 1차 초안(누락) + 보충 질문(c).
+    r5 = turn("예, plan으로", answer="예, plan으로")
+    assert (r5.get("gate") or {}).get("trigger") == "c"
     plan_partial = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
     assert "disclosures:" not in plan_partial   # 1차 누락
 
-    # 턴5: 보충 → 완성 plan + plan-lock 질문(b).
-    r5 = turn("보충하기", answer="보충하기")
-    assert (r5.get("gate") or {}).get("trigger") == "b"
+    # 턴6: 보충 → 완성 plan + plan-lock 질문(b).
+    r6 = turn("보충하기", answer="보충하기")
+    assert (r6.get("gate") or {}).get("trigger") == "b"
     plan_full = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
     assert "creative_direction:" in plan_full and "disclosures:" in plan_full
 
-    # 턴6: plan 확정 → done.
+    # 턴7: plan 확정 → done.
     turn("예, 확정", answer="예, 확정")
     state = client.get(f"/vfs/{rid}/brainstorming/_state.json").json()["content_text"]
     assert '"stage": "done"' in state

@@ -169,3 +169,45 @@ def test_poster_fixture_files_are_valid():
         assert data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) < 10 * 1024 * 1024, name
         im = Image.open(io.BytesIO(data))
         assert abs(im.width / im.height - 0.8) < 0.03, f"{name} 비율 {im.width}x{im.height} ≠ 4:5"
+
+
+# --- Stage A 디자인 디렉션 제안 턴(spec D4): image 매체 4턴 구조·video 3턴 불변 ---
+
+def _stage_a_msgs(n_user_turns: int):
+    from app.providers.base import Message
+    msgs = []
+    for i in range(n_user_turns):
+        if i:
+            msgs.append(Message("assistant", "질문"))
+        msgs.append(Message("user", f"답변{i}"))
+    return msgs
+
+
+def test_stage_a_turn3_is_design_direction_proposal():
+    """3턴(image) = AI 제안 턴 — 리서치 근거로 권장 디렉션 제시 + 옵션 논의(spec D4)."""
+    from app.providers.demo import DemoProvider
+    r = json.loads(DemoProvider().complete(
+        _stage_a_msgs(3), model="demo",
+        meta={"studio": "brainstorming", "step": "stage_a"}).text)
+    assert r["ready"] is False and r["document"] == ""
+    assert r["ask"]["trigger"] == "a"
+    assert "권장" in "".join(r["ask"]["options"])       # 권장안이 옵션에 명시
+    assert "#00857C" in r["reply"] and "골드" in r["reply"]   # 구체 제안(팔레트·포인트)
+
+
+def test_stage_a_turn4_returns_spec_with_direction_ack():
+    from app.providers.demo import DemoProvider
+    r = json.loads(DemoProvider().complete(
+        _stage_a_msgs(4), model="demo",
+        meta={"studio": "brainstorming", "step": "stage_a"}).text)
+    assert r["ready"] is True and "goal:" in r["document"]
+    assert "디렉션" in r["reply"]                        # 선택 반영 acknowledgment
+
+
+def test_stage_a_video_keeps_3turn_spec():
+    """video 매체는 3턴째 spec 그대로(D4 medium 게이트·D6 영상 무변경)."""
+    from app.providers.demo import DemoProvider
+    r = json.loads(DemoProvider().complete(
+        _stage_a_msgs(3), model="demo",
+        meta={"studio": "brainstorming", "step": "stage_a", "medium": "video"}).text)
+    assert r["ready"] is True and r["document"]

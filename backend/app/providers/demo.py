@@ -128,8 +128,8 @@ def reconcile(verdicts: list[dict]) -> dict:
 
 
 def _spec_json() -> str:
-    return json.dumps({"reply": "스펙 초안을 정리했어요.", "document": F.SPEC_MD,
-                       "ask": None, "ready": True}, ensure_ascii=False)
+    return json.dumps({"reply": "선택하신 디렉션을 디자인 시스템에 반영해 스펙을 확정했어요.",
+                       "document": F.SPEC_MD, "ask": None, "ready": True}, ensure_ascii=False)
 
 
 def _plan_json() -> str:
@@ -180,6 +180,22 @@ def _stage_a_brainstorm(messages, medium="image"):
             "document": "",
             "ask": {"trigger": "a", "question": "다국어 제작 범위는?",
                     "options": ["국문만", "영어 포함", "영어+베트남어+중국어"]},
+            "ready": False,
+        }, ensure_ascii=False), []
+    if turns == 3 and medium != "video":
+        # AI 제안 턴(spec D4) — 리서치 근거로 디렉션을 권장안으로 제시하고 논의 유도.
+        # image 한정: video는 3턴째 spec 불변(D6 영상 무변경)이라 이 블록을 건너뛴다.
+        return json.dumps({
+            "reply": ("좋아요. 이제 디자인 디렉션이에요 — 리서치에서 봤듯 2030은 금리 수치가 "
+                      "또렷하게 보이는 신뢰형 디자인에 반응합니다. 저는 **A안: 신뢰 그린(#00857C) "
+                      "베이스 + 골드 포인트, 굵은 디스플레이 헤드라인의 3단 타이포 위계, 라인 "
+                      "픽토그램 아이콘**을 권합니다 — 금리 카드와 혜택 칩이 살아나는 조합이에요. "
+                      "톤을 더 차분하게 가려면 B안(딥 네이비 미니멀), 더 친근하게는 C안(밝은 "
+                      "일러스트)도 가능해요. 어느 방향으로 갈까요?"),
+            "document": "",
+            "ask": {"trigger": "a", "question": "디자인 디렉션은?",
+                    "options": ["A. 신뢰 그린+골드 포인트 (권장)", "B. 딥 네이비 미니멀",
+                                "C. 밝은 일러스트 친근형"]},
             "ready": False,
         }, ensure_ascii=False), []
     # 정보 충분 → spec 작성(매체별).
