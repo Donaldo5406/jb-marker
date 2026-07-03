@@ -245,14 +245,37 @@ def _empty_findings() -> str:
     return json.dumps({"findings": []}, ensure_ascii=False)
 
 
-# S2a bake/edit 프롬프트의 카피 라인('- headline: ...' / '- body: ...' / '- cta: ...') 파서.
-# steps.py S2aVisual._bake_prompt / _edit_prompt가 이 형식으로 언어별 카피를 실어 보낸다.
+# S2a bake/edit 프롬프트의 카피 라인 파서 — 두 형식 지원(spec 2026-07-03 D2):
+#   baked   : '- headline: 텍스트 (색 #.., 약 NNpx 굵게)'  (steps._bake_prompt / _edit_prompt)
+#   directed: 'N. 초대형 헤드라인 (존, 색 #.., 약 NNpx 굵게): "텍스트" — 이 문구만…'
+#             (directing._layout_section — DIRECTED_FULLBAKE=1에서 mock 폴백 시 이 형식이 온다)
+# 힌트 괄호는 카피가 아니므로 스트립한다(정확 매칭·PIL 베이크 오염 방지).
 _COPY_LINE = re.compile(r"^\s*-\s*(headline|body|cta)\s*:\s*(.+?)\s*$", re.MULTILINE)
+# 라벨은 directing._ROLE_KR의 복제 — 런타임 import는 providers→gateway 순환 위험이 있어
+# 금지하고, 계약 테스트(test_role_label_mapping_matches_directing)로 드리프트를 잠근다.
+_ROLE_KR_TO_SLOT = {"초대형 헤드라인": "headline", "본문 서브카피": "body", "CTA 버튼": "cta"}
+_DIRECTED_COPY_LINE = re.compile(
+    r"^\s*\d+\.\s*(초대형 헤드라인|본문 서브카피|CTA 버튼)(?:\s*\([^)]*\))?\s*:\s*\"(.+?)\"",
+    re.MULTILINE)
+_HINT_SUFFIX = re.compile(r"\s*\((?:[^()]*(?:색\s*#|px)[^()]*)\)\s*$")
+_GOLD_HEX = "#ffd166"   # LAYOUT_SPEC_V2 headline 골드 — 2×2 상태의 골드 축 시그널
 
 
 def _copy_from_prompt(prompt: str) -> dict:
-    """generate_image 프롬프트에서 헤드라인/바디/CTA 카피를 추출(베이크 입력)."""
-    return {m.group(1): m.group(2) for m in _COPY_LINE.finditer(prompt or "")}
+    """generate_image 프롬프트에서 헤드라인/바디/CTA 카피를 추출(베이크 입력, 두 형식)."""
+    out = {m.group(1): _HINT_SUFFIX.sub("", m.group(2)).strip()
+           for m in _COPY_LINE.finditer(prompt or "")}
+    for m in _DIRECTED_COPY_LINE.finditer(prompt or ""):
+        out.setdefault(_ROLE_KR_TO_SLOT[m.group(1)], m.group(2).strip())
+    return out
+
+
+def _headline_gold(prompt: str) -> bool:
+    """헤드라인 라인에 골드 힌트(#FFD166)가 있는가 — 2×2 골드 축(라인 한정: 팔레트 오염 가드)."""
+    for line in (prompt or "").splitlines():
+        if _GOLD_HEX in line.lower() and ("- headline" in line or "초대형 헤드라인" in line):
+            return True
+    return False
 
 
 def _user_text(messages) -> str:
