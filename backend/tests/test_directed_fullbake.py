@@ -72,8 +72,9 @@ class _CaptureProvider:
     def __init__(self):
         self.gen_prompts = []
 
-    def generate_image(self, prompt, *, aspect="1:1", image=None):
+    def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
         self.gen_prompts.append(prompt)
+        self.gen_sizes = getattr(self, "gen_sizes", []) + [image_size]
         return b"\x89PNG\r\n\x1a\n\x00capture"
 
     def review_image(self, png, instr, *, mime="image/png"):
@@ -131,6 +132,18 @@ def test_flag_off_byte_identical_to_bake_prompt(tmp_path, monkeypatch):
         _facts_line(facts), _benefit_chips(facts))
     assert captured == expected                 # 바이트 동등
     assert "아트디렉터" not in captured          # directed 프롬프트로 새지 않음
+    assert stub.gen_sizes[0] is None            # off=image_size 미전달(현행 호출 동일)
+
+
+def test_flag_on_bakes_at_2k(tmp_path, monkeypatch):
+    """directed는 image_size='2K'로 베이크한다 — 잔글씨(칩 라벨) 글리프 정밀도 실측
+    (2026-07-03: 1K=깨짐, 2K=온전)에 근거한 해상도 계약."""
+    monkeypatch.setenv("DIRECTED_FULLBAKE", "1")
+    monkeypatch.delenv("RICH_VECTOR_CHROME", raising=False)
+    stub = _CaptureProvider()
+    store, ctx = _ctx(tmp_path)
+    S2aVisual(stub).run(ctx)
+    assert stub.gen_sizes[0] == "2K"
 
 
 # ── flag on: directed 프롬프트 내용 계약 ────────────────────────────────────

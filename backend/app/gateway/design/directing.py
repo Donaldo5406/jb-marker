@@ -143,6 +143,13 @@ def _hero_section(spec: dict, tokens: dict) -> str:
 def _layout_section(spec: dict, copy: dict, facts: dict, chips: list, aspect: str) -> str:
     """레이아웃·카피 섹션 — 존 언어 번역 + 카피 글자 그대로 인용 + 금리 카드·혜택 행 그라운딩."""
     lines = ["[레이아웃 — 위에서 아래 순서. 텍스트는 아래 지정한 문구를 글자 그대로]"]
+    # safe zone을 부정 지시("비워라")가 아니라 그릴 대상(빈 배경·단색 밴드)으로 편성한다 —
+    # 라이브 실측(2026-07-03 run a97e4965adc1)에서 절대규칙만으로는 모델이 좌상단에 가짜
+    # 로고, 최하단에 깨진 잔글씨 고지를 채웠다. E 스트레스 실측상 "밴드를 그려라"는 지시는
+    # 깨끗하게 따르므로 레이아웃 항목으로 격상해 이중 방어한다.
+    lines.append(
+        "0. 최상단 좌측 모서리: 아무것도 그리지 않은 밝고 단순한 빈 배경 영역 — 공식 로고가 "
+        "별도 레이어로 이 자리에 얹히므로 로고·마크·워드마크·글자를 절대 그리지 마세요.")
 
     # 카피 슬롯의 존·색·크기 힌트 — slots에서 role별로 찾는다(없으면 존 생략).
     slots = spec.get("slots") if isinstance(spec.get("slots"), list) else []
@@ -188,6 +195,12 @@ def _layout_section(spec: dict, copy: dict, facts: dict, chips: list, aspect: st
             f"{n}. 혜택 아이콘 칩 행(각 칩 = 단순 라인 픽토그램 + 라벨, 가로 균등 정렬): 아래 "
             "라벨을 한 글자도 바꾸지 말고 그대로만 — " + "  |  ".join(str(c) for c in chips))
         n += 1
+
+    # 최하단 밴드도 그릴 대상으로 편성(위 0번 항목과 같은 이중 방어 — 주석 참조).
+    lines.append(
+        f"{n}. 최하단 가로 스트립: 글자가 단 하나도 없는 어두운 단색 마감 밴드(디자인 요소로만) "
+        "— 법령 고지가 별도 레이어로 이 밴드 위에 얹히므로 고지·약관·잔글씨·가짜 텍스트를 "
+        "절대 그리지 마세요.")
 
     return "\n".join(lines)
 

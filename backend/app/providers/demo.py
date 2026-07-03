@@ -330,7 +330,8 @@ class DemoProvider(Provider):
                                 model="demo", raw=None)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1",
-                       image: bytes | None = None) -> bytes:
+                       image: bytes | None = None,
+                       image_size: str | None = None) -> bytes:
         """실모드 S2a는 Gemini가 카피를 이미지에 베이크한다 — mock은 동등 결과를 결정적 재현.
 
         bake/edit 프롬프트에서 헤드라인/바디/CTA를 파싱해 배경(텍스트-free)에 PIL로 합성.

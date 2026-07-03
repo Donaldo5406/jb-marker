@@ -46,7 +46,7 @@ class _RichStub:
     def __init__(self, layout_json=SEM_JSON):
         self.gen_prompts, self.review_instrs = [], []
         self._layout_json = layout_json
-    def generate_image(self, prompt, *, aspect="1:1", image=None):
+    def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
         self.gen_prompts.append({"prompt": prompt, "image": image}); return b"PNG"
     def review_image(self, png, instr, *, mime="image/png"):
         self.review_instrs.append(instr)

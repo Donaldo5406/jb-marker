@@ -43,16 +43,29 @@ class GoogleProvider(Provider):
         return ProviderResponse(text=text, model=model, raw=resp, citations=citations, usage=usage)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1",
-                       image: bytes | None = None) -> bytes:
+                       image: bytes | None = None,
+                       image_size: str | None = None) -> bytes:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=self._api_key)
         # 종횡비는 프롬프트 텍스트로는 무시되므로 image_config로 전달해야 실제 적용된다
         # (이전엔 항상 1:1 정사각으로 생성돼 4:5 세로 포스터가 깨졌다).
+        # image_size("1K"/"2K"/"4K")는 잔글씨(혜택 칩 라벨 등) 글리프 정밀도를 좌우한다 —
+        # 2026-07-03 실측: 1K(기본)는 칩 라벨이 깨지고 2K는 온전. SDK/모델이 필드를 모르면
+        # aspect만으로 폴백(기존 동작 보존).
         cfg = None
         if aspect in _SUPPORTED_ASPECTS:
-            cfg = types.GenerateContentConfig(
-                image_config=types.ImageConfig(aspect_ratio=aspect))
+            try:
+                if image_size:
+                    cfg = types.GenerateContentConfig(
+                        image_config=types.ImageConfig(aspect_ratio=aspect,
+                                                       image_size=image_size))
+                else:
+                    cfg = types.GenerateContentConfig(
+                        image_config=types.ImageConfig(aspect_ratio=aspect))
+            except (TypeError, ValueError):
+                cfg = types.GenerateContentConfig(
+                    image_config=types.ImageConfig(aspect_ratio=aspect))
         # image 주어지면 image-to-image 편집(입력 이미지 Part를 prompt 앞에 둔다).
         # 프롬프트는 호출측이 소유 — 여기서 글자금지 등 suffix를 덧붙이지 않는다.
         if image is not None:

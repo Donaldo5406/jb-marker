@@ -86,7 +86,7 @@ class _DirtyVision(FakeProvider):
     """generate_image 호출수를 세고, review_image로 critical finding을 반환."""
     def __init__(self):
         self.gen_calls = 0
-    def generate_image(self, prompt, *, aspect="1:1", image=None):
+    def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
         self.gen_calls += 1
         return super().generate_image(prompt, aspect=aspect, image=image)
     def review_image(self, image_bytes, prompt, *, mime="image/png"):
@@ -181,7 +181,7 @@ def test_s2a_bake_retries_with_corrective_feedback(tmp_path):
                 '{"findings":[{"severity":"critical","slot":"visual","evidence":"헤드라인 깨짐"}]}',
                 '{"findings":[]}',
             ]
-        def generate_image(self, prompt, *, aspect="1:1", image=None):
+        def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
             self.gen_prompts.append(prompt); return b"PNG"
         def review_image(self, png, instr, *, mime="image/png"):
             return ProviderResponse(text=self._reviews[len(self.gen_prompts) - 1], model="m")
@@ -215,7 +215,7 @@ def test_s2a_multilang_image_edit_variants(tmp_path):
 
     class _Stub:
         def __init__(self): self.calls = []
-        def generate_image(self, prompt, *, aspect="1:1", image=None):
+        def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
             self.calls.append({"prompt": prompt, "image": image}); return b"PNG-" + (image or b"NEW")
         def review_image(self, png, instr, *, mime="image/png"):
             return ProviderResponse(text='{"findings":[]}', model="m")

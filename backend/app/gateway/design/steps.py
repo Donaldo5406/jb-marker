@@ -318,10 +318,15 @@ class S2aVisual(PipelineStep):
             tokens = read_json_node(ctx.store, f"{base}/design-system/tokens.json")
             base_prompt = build_director_prompt(spec, tokens, facts,
                                                 _benefit_chips(facts), lang)
+            # 2K: 잔글씨(혜택 칩 라벨) 글리프 정밀도 실측 차이(1K=깨짐, 2K=온전). directed
+            # 한정 — baked(off)는 image_size 미전달로 현행 호출 그대로.
+            bake_size = "2K"
         else:
             base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line,
                                             _benefit_chips(facts))
-        png, findings, vision_failed, fallback = self._bake_with_retry(base_prompt, aspect, copy, facts_line)
+            bake_size = None
+        png, findings, vision_failed, fallback = self._bake_with_retry(
+            base_prompt, aspect, copy, facts_line, image_size=bake_size)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
@@ -521,13 +526,14 @@ class S2aVisual(PipelineStep):
                      "기기 화면·배경 소품은 글자 없이 유지하세요(가짜 잔글씨 금지).")
         return "\n".join(lines)
 
-    def _bake_with_retry(self, base_prompt, aspect, copy, facts=""):
+    def _bake_with_retry(self, base_prompt, aspect, copy, facts="", image_size=None):
         feedback = ""
         png, findings, vision_failed, fallback = None, [], False, False
         for attempt in range(MAX_BAKE_ATTEMPTS):
             prompt = base_prompt if not feedback else f"{base_prompt}\n이전 시도 교정: {feedback}"
             try:
-                png = self._image_provider.generate_image(prompt, aspect=aspect)
+                png = self._image_provider.generate_image(prompt, aspect=aspect,
+                                                          image_size=image_size)
                 fallback = False
             except Exception:
                 from ...core.placeholder_image import placeholder_png

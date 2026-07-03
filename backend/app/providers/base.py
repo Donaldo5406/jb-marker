@@ -39,7 +39,8 @@ class Provider(ABC):
         ...
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1",
-                       image: bytes | None = None) -> bytes:
+                       image: bytes | None = None,
+                       image_size: str | None = None) -> bytes:
         """텍스트 포함 풀 포스터 PNG 생성(이미지 액터). image 주어지면 image-to-image 편집.
         미지원 provider는 NotImplementedError."""
         raise NotImplementedError(f"{self.name} provider는 이미지 생성을 지원하지 않습니다")
