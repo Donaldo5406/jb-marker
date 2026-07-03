@@ -211,3 +211,19 @@ def test_stage_a_video_keeps_3turn_spec():
         _stage_a_msgs(3), model="demo",
         meta={"studio": "brainstorming", "step": "stage_a", "medium": "video"}).text)
     assert r["ready"] is True and r["document"]
+
+
+# --- Stage D 아티팩트급 spec/plan 본문 갱신(spec D5): 디자인 시스템 어휘 ---
+
+def test_spec_and_plan_md_have_design_system_vocab():
+    """D5 — 새 기능 어휘(타이포 위계·safe zone·2K·골드 포인트)가 spec/plan 본문에 존재."""
+    for doc in (F.SPEC_MD, F.PLAN_MD):
+        assert "타이포" in doc and "safe zone" in doc.lower() or "세이프존" in doc
+    assert "2K" in F.PLAN_MD and "골드" in F.PLAN_MD
+
+
+def test_plan_md_frontmatter_palette_has_no_gold():
+    """골드 오염 가드 — frontmatter palette에 #FFD166 금지(Global Constraints).
+    S0 tokens에 스며들면 directed 프롬프트에 골드가 상존해 2×2 골드 축이 오염된다."""
+    fm_block = F.PLAN_MD.split("---")[1]
+    assert "FFD166" not in fm_block
