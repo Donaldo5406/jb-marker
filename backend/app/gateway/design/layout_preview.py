@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import re
 
 from ...history.preview import _downscale_inline, _esc
@@ -58,11 +59,11 @@ _CSS = (
     "border:1px solid rgba(0,0,0,.12);border-radius:12px;overflow:hidden;"
     "background-size:cover;background-position:center}"
     ".slot{position:absolute;display:flex;flex-direction:column;justify-content:flex-start;"
-    "padding:2px 4px;border:1px dashed rgba(37,99,235,.55);background:rgba(255,255,255,.32);"
+    "padding:3px 5px;border:1px dashed rgba(37,99,235,.55);background:rgba(255,255,255,.32);"
     "overflow:hidden}"
-    ".role{font-size:9px;color:#2563eb;background:rgba(255,255,255,.82);align-self:flex-start;"
-    "padding:0 3px;border-radius:3px;margin-bottom:2px}"
-    ".txt{font-weight:600;line-height:1.15;word-break:break-word}"
+    ".role{position:absolute;top:1px;left:1px;font-size:9px;color:#2563eb;"
+    "background:rgba(255,255,255,.82);padding:0 3px;border-radius:3px;pointer-events:none}"
+    ".txt{font-weight:600;line-height:1.15;word-break:break-word;margin-top:12px}"
     ".empty{color:#94a3b8;font-size:13px;margin:0}"
 )
 
@@ -168,6 +169,19 @@ def build_layout_mock_html(
         if fs <= 0:
             fs = h * 0.4   # font_px 누락 시 bbox 높이 기반 근사(결정론).
         disp = max(7.0, min(fs / ref_w * _DISP_W if ref_w else 7.0, 60.0))
+        # 폰트-핏: 글자가 박스를 뚫고 글리프 중간에서 잘리면 "깨진" 프리뷰가 된다(사용자
+        # 실측 피드백 2026-07-03). 한글 전각 근사(글자폭≈0.95em)로 필요 높이를 추정해
+        # 박스 안에 들어가도록 결정론 축소(최대 3회 수렴, 하한 7px).
+        boxpx_w = (w / ref_w * _DISP_W) if ref_w else float(_DISP_W)
+        boxpx_h = (h / ref_w * _DISP_W) if ref_w else 40.0
+        if text:
+            for _ in range(3):
+                per_line = max(1.0, boxpx_w / (disp * 0.95))
+                lines = math.ceil(len(text) / per_line)
+                need = lines * disp * 1.2 + 22   # +22 = role 태그 여백(12px)+패딩
+                if need <= boxpx_h or disp <= 7.0:
+                    break
+                disp = max(7.0, disp * (boxpx_h / need) ** 0.5)
         color = _safe_color(s.get("color"), "#0b1324")
         boxes.append(
             f"<div class='slot' style='left:{left:.2f}%;top:{top:.2f}%;"
