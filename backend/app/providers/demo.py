@@ -289,6 +289,22 @@ def _headline_gold(prompt: str) -> bool:
     return False
 
 
+_VIOLATION_TOKENS = ("업계 최고", "4.0%")   # COPY_VIOLATING.ko와 동기(과장·금리 불일치)
+
+
+def _poster_state(copy: dict, prompt: str) -> str | None:
+    """파싱된 카피(위반 축) × 헤드라인 골드 힌트(골드 축) → 2×2 fixture 상태(spec D1).
+
+    발표자가 티키타카를 어느 시점에 하든/생략하든 두 축이 독립 검출되어 일관된다."""
+    joined = " ".join(str(v) for v in (copy or {}).values())
+    gold = _headline_gold(prompt)
+    if any(t in joined for t in _VIOLATION_TOKENS):
+        return "violating_gold" if gold else "violating"
+    if (copy or {}).get("headline") == F.COPY["ko"]["headline"]:
+        return "v2" if gold else "final"
+    return None
+
+
 def _user_text(messages) -> str:
     """messages에서 마지막 user 콘텐츠 추출(콘텐츠 기반 탐지 입력)."""
     for m in reversed(list(messages or [])):
@@ -366,14 +382,20 @@ class DemoProvider(Provider):
     def generate_image(self, prompt: str, *, aspect: str = "1:1",
                        image: bytes | None = None,
                        image_size: str | None = None) -> bytes:
-        """실모드 S2a는 Gemini가 카피를 이미지에 베이크한다 — mock은 동등 결과를 결정적 재현.
+        """실모드 S2a와 동등한 결과를 결정적으로 재현(spec 2026-07-03 D1).
 
-        bake/edit 프롬프트에서 헤드라인/바디/CTA를 파싱해 배경(텍스트-free)에 PIL로 합성.
-        (이전엔 텍스트-free 배경을 그대로 반환 → 최종 포스터에 카피가 빠져 '맨 배경'으로 보였다.)
-        카피 없음/합성 실패는 배경 원본으로 graceful 폴백.
+        1) 프롬프트에서 카피 파싱(baked/directed 두 형식) → 2×2 상태 매칭 시
+           실 Gemini로 사전 생성한 2K 포스터 fixture 반환(프로급 산출물).
+        2) 미매칭(미지 카피·비ko 언어 변형)·파일 부재는 현행 PIL 베이크 폴백 — 내일
+           라이브 수정으로 카피가 바뀌어도 mock은 반드시 완주한다(회귀 보험).
         """
-        bg = F.load_poster_bg()
         copy = _copy_from_prompt(prompt)
+        state = _poster_state(copy, prompt)
+        if state:
+            fixture = F.load_poster_fixture(state)
+            if fixture:
+                return fixture
+        bg = F.load_poster_bg()
         if copy:
             try:
                 from ..core.poster_bake import bake_copy

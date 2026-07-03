@@ -92,3 +92,61 @@ def test_layout_spec_v2_shares_v1_invariants():
     # V1 원본 불변(깊은 복사 확인 — V2 생성이 V1을 오염시키면 안 된다)
     hl1 = next(s for s in F.LAYOUT_SPEC["slots"] if s["role"] == "headline")
     assert hl1["color"] == "#0B1324" and hl1["font_px"] == 72
+
+
+def test_poster_state_2x2_matrix():
+    from app.providers.demo import _poster_state
+    viol = dict(F.COPY_VIOLATING["ko"])
+    clean = dict(F.COPY["ko"])
+    gold_prompt = '- headline: x (색 #FFD166, 약 88px 굵게)'
+    assert _poster_state(viol, "") == "violating"
+    assert _poster_state(viol, gold_prompt) == "violating_gold"
+    assert _poster_state(clean, "") == "final"
+    assert _poster_state(clean, gold_prompt) == "v2"
+    # 미지 카피(en 등 비ko·임의 편집) → None → PIL 폴백(AC 5)
+    assert _poster_state(dict(F.COPY["en"]), "") is None
+    assert _poster_state({}, "") is None
+
+
+def _seed_fixture_dir(tmp_path, monkeypatch, states=("violating",)):
+    """tmp fixture 디렉토리에 상태별 유효 PNG를 심고 _POSTER_DIR을 돌려놓는다."""
+    for st in states:
+        (tmp_path / f"poster_{st}.png").write_bytes(F.placeholder_png(64, 80))
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))
+
+
+def test_load_poster_fixture_reads_file_or_none(tmp_path, monkeypatch):
+    _seed_fixture_dir(tmp_path, monkeypatch, states=("violating",))
+    png = F.load_poster_fixture("violating")
+    assert png and png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert F.load_poster_fixture("final") is None        # 파일 부재 → None
+    assert F.load_poster_fixture("없는상태") is None      # 미지 상태 → None
+
+
+def test_generate_image_returns_fixture_on_state_match(tmp_path, monkeypatch):
+    """위반 카피 베이크 프롬프트(baked 형식) → poster_violating fixture 바이트 그대로(AC 4)."""
+    from app.providers.demo import DemoProvider
+    _seed_fixture_dir(tmp_path, monkeypatch, states=("violating",))
+    expected = F.load_poster_fixture("violating")
+    prompt = ("컨셉\n- headline: 업계 최고 금리 JB 정기예금\n"
+              "- body: 연 4.0% 12개월 만기, 100만원부터 시작하세요.\n- cta: 지금 가입하기")
+    assert DemoProvider().generate_image(prompt, aspect="4:5") == expected
+
+
+def test_generate_image_directed_prompt_matches_fixture(tmp_path, monkeypatch):
+    """directed 프롬프트에서도 상태 매칭(AC 2+4 결합) — 실 build_director_prompt 산출로 검증."""
+    from app.providers.demo import DemoProvider
+    _seed_fixture_dir(tmp_path, monkeypatch, states=("v2",))
+    expected = F.load_poster_fixture("v2")
+    prompt = _directed_prompt(F.COPY["ko"], headline_color="#FFD166", headline_px=88)
+    assert DemoProvider().generate_image(prompt, aspect="4:5") == expected
+
+
+def test_generate_image_falls_back_to_pil_when_no_fixture(tmp_path, monkeypatch):
+    """fixture 파일 부재 시 현행 PIL 베이크 폴백 — 완주 보장(AC 5). 배경 원본과 달라야 한다."""
+    from app.providers.demo import DemoProvider
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))   # 빈 디렉토리 = fixture 전무
+    prompt = "컨셉\n- headline: 연 3.5% JB 정기예금\n- body: 12개월 만기\n- cta: 가입"
+    png = DemoProvider().generate_image(prompt, aspect="4:5")
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert png != F.load_poster_bg()   # 카피가 합성됨(맨 배경 아님)

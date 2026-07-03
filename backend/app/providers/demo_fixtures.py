@@ -416,6 +416,23 @@ def load_poster_bg() -> bytes:
         return placeholder_png()
 
 
+# 상태별 실생성 2K 포스터 fixture(spec 2026-07-03 D1) — 실 Gemini로 mock 카피 그대로
+# 사전 생성(scripts/gen_demo_posters.py). 실 Veo footage를 mock 영상 fixture로 박은 선례와
+# 동일 패턴. 파일 부재/미지 상태는 None → 호출부(demo.generate_image)가 PIL 폴백(완주 보장).
+_POSTER_DIR = os.path.join(os.path.dirname(__file__), "..", "references", "design")
+POSTER_STATES = ("violating", "violating_gold", "final", "v2")
+
+
+def load_poster_fixture(state: str) -> bytes | None:
+    if state not in POSTER_STATES:
+        return None
+    try:
+        with open(os.path.join(_POSTER_DIR, f"poster_{state}.png"), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 # 실 Veo 생성 광고 footage(텍스트-free 시네마틱) — 시연/Mock용 결정론 영상.
 # Veo 크레딧 없이도 demo가 진짜 광고영상을 렌더하도록 V2aFootage가 이 바이트를 클립으로 사용.
 # ⚠️ base64 텍스트로 보관(.txt) — HF Space는 *.mp4를 LFS로 추적하는데 신규 LFS 객체가
