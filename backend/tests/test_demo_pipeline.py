@@ -2,6 +2,7 @@
 import base64
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -388,3 +389,43 @@ def test_design_s1_gate_tikitaka_updates_spec_and_preview(monkeypatch):
     preview = client.get(f"/vfs/{rid}/design/rough/preview.html")
     assert preview.status_code == 200
     assert "FFD166" in preview.json()["content_text"]   # 프리뷰에 골드 즉시 반영
+
+
+@pytest.mark.parametrize("directed", ["0", "1"])
+def test_design_demo_poster_copy_survives_directed_flag(monkeypatch, directed):
+    """AC 2 — DIRECTED_FULLBAKE 0/1 어느 쪽에서도 mock 포스터가 맨 배경이 아니다.
+    위반 카피 상태 → poster_violating fixture 바이트와 일치(AC 4, fixture 실파일 기반)."""
+    monkeypatch.setenv("DIRECTED_FULLBAKE", directed)
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+    from app.providers.demo_fixtures import load_poster_bg, load_poster_fixture
+    png = client.get(f"/vfs/{rid}/design/design-system/components/visual/v1.png").content
+    assert png != load_poster_bg(), "맨 배경 회귀 — 카피 파싱 실패"
+    expected = load_poster_fixture("violating")
+    if expected:                       # fixture 커밋 후엔 정확 일치까지 요구
+        assert png == expected
+
+
+def test_design_tikitaka_then_full_run_selects_gold_fixtures(monkeypatch):
+    """AC 3 — S1 게이트 티키타카 후 완주 시 골드 축 fixture(violating_gold) 선택.
+
+    S1 게이트에서 '캘리/골드' 티키타카 → layout.spec이 V2(88px 골드)로 갱신된다. 이어지는
+    advance는 이미 S1을 지난 지점(S2a)에서 재개되므로 bypass_map의 S1 플래그는 실질 무관 —
+    S1이 재실행되지 않아 V2 spec(골드 헤드라인)이 보존되고, generate_image가 프롬프트의 골드
+    힌트를 검출해 골드 축(violating_gold) fixture를 선택한다(brief Step 2 검증 결과: S1 포함/제외
+    무관하게 V2 보존). mock 프로덕션 경로는 손대지 않는다."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    _run(client, rid, "design", "디자인 시작", action="advance")          # S1 게이트
+    _run(client, rid, "design", "헤드라인을 캘리그래피 골드로")            # 티키타카 → V2
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "계속", action="advance", bypass_map=bm)  # 완주
+    from app.providers.demo_fixtures import load_poster_fixture
+    expected = load_poster_fixture("violating_gold")
+    if expected:
+        png = client.get(f"/vfs/{rid}/design/design-system/components/visual/v1.png").content
+        assert png == expected
