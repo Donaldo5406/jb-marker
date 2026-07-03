@@ -150,3 +150,22 @@ def test_generate_image_falls_back_to_pil_when_no_fixture(tmp_path, monkeypatch)
     png = DemoProvider().generate_image(prompt, aspect="4:5")
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     assert png != F.load_poster_bg()   # 카피가 합성됨(맨 배경 아님)
+
+
+def test_poster_fixture_files_are_valid():
+    """커밋된 실생성 fixture 5종 — PNG·10MB 미만·4:5(±3%) 검증(AC 4 자산 근거)."""
+    import io
+    import os
+
+    from PIL import Image
+
+    from app.providers.demo_fixtures import _POSTER_DIR, POSTER_STATES
+    names = [f"poster_{s}.png" for s in POSTER_STATES] + ["poster_bg.png"]
+    for name in names:
+        path = os.path.join(_POSTER_DIR, name)
+        assert os.path.exists(path), f"{name} 누락 — scripts/gen_demo_posters.py로 생성"
+        with open(path, "rb") as f:
+            data = f.read()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) < 10 * 1024 * 1024, name
+        im = Image.open(io.BytesIO(data))
+        assert abs(im.width / im.height - 0.8) < 0.03, f"{name} 비율 {im.width}x{im.height} ≠ 4:5"
