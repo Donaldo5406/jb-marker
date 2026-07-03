@@ -363,3 +363,23 @@ def test_design_chat_remediation_then_review_passes(monkeypatch):
     last, gate = _drive_review(client, rid, restart_first=True)
     assert gate.get("status") == "PASS", f"교정 후 PASS 기대, 실제 {gate}"
     assert gate.get("critical_count") == 0
+
+
+def test_design_s1_gate_tikitaka_updates_spec_and_preview(monkeypatch):
+    """S1 게이트에서 챗 '캘리/골드' → layout.spec.json이 V2로, 시안 프리뷰에 골드 반영(AC 3)."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    # bypass 없이 S1까지만 전진 → S1 게이트에 머문다.
+    r = _run(client, rid, "design", "디자인 시작", action="advance")
+    assert r.status_code == 200
+    # 게이트 챗(action 없음) — 티키타카 시그널.
+    r = _run(client, rid, "design", "헤드라인을 붓펜 캘리그래피 골드로 키워줘")
+    assert r.status_code == 200, r.text
+    spec = json.loads(client.get(f"/vfs/{rid}/design/rough/layout.spec.json")
+                      .json()["content_text"])
+    hl = next(s for s in spec["slots"] if s["role"] == "headline")
+    assert hl["color"] == "#FFD166" and hl["font_px"] == 88
+    preview = client.get(f"/vfs/{rid}/design/rough/preview.html")
+    assert preview.status_code == 200
+    assert "FFD166" in preview.json()["content_text"]   # 프리뷰에 골드 즉시 반영

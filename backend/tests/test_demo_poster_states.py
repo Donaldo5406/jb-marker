@@ -57,3 +57,38 @@ def test_headline_gold_detects_only_headline_line():
                           "- headline: 연 3.5% JB 정기예금") is False
     # baked 형식의 헤드라인 힌트 골드도 검출.
     assert _headline_gold("- headline: 연 3.5% JB 정기예금 (색 #FFD166, 약 88px 굵게)") is True
+
+
+def test_s1_tikitaka_signal_returns_v2_spec():
+    """S1 게이트 챗 '캘리/골드' → LAYOUT_SPEC_V2(헤드라인 88px 골드) — 프리뷰 변화의 근원."""
+    from app.providers.base import Message
+    from app.providers.demo import DemoProvider
+    r = json.loads(DemoProvider().complete(
+        [Message("user", "헤드라인을 붓펜 캘리그래피 느낌의 골드로 키워줘")],
+        model="demo", meta={"studio": "design", "step": "S1"}).text)
+    hl = next(s for s in r["layout_spec"]["slots"] if s["role"] == "headline")
+    assert hl["color"] == "#FFD166" and hl["font_px"] == 88
+    assert "캘리그래피" in r["layout_spec"]["visual_concept"]
+
+
+def test_s1_default_returns_v1_spec():
+    """시그널 없는 S1(최초 실행 '디자인 시작' 포함)은 현행 V1 spec — 오발동 가드."""
+    from app.providers.base import Message
+    from app.providers.demo import DemoProvider
+    r = json.loads(DemoProvider().complete(
+        [Message("user", "디자인 시작")],
+        model="demo", meta={"studio": "design", "step": "S1"}).text)
+    hl = next(s for s in r["layout_spec"]["slots"] if s["role"] == "headline")
+    assert hl["color"] == "#0B1324" and hl["font_px"] == 72
+
+
+def test_layout_spec_v2_shares_v1_invariants():
+    """V2는 V1의 계약(슬롯 role·bbox 객체형·logo/disclosure 존재)을 그대로 보존한다."""
+    v1_roles = {s["role"] for s in F.LAYOUT_SPEC["slots"]}
+    v2_roles = {s["role"] for s in F.LAYOUT_SPEC_V2["slots"]}
+    assert v1_roles == v2_roles
+    for s in F.LAYOUT_SPEC_V2["slots"]:
+        assert isinstance(s["bbox"], dict) and {"x", "y", "w", "h"} <= set(s["bbox"])
+    # V1 원본 불변(깊은 복사 확인 — V2 생성이 V1을 오염시키면 안 된다)
+    hl1 = next(s for s in F.LAYOUT_SPEC["slots"] if s["role"] == "headline")
+    assert hl1["color"] == "#0B1324" and hl1["font_px"] == 72

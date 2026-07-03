@@ -216,7 +216,18 @@ def _stage_b_brainstorm(system: str, medium="image") -> str:
     }, ensure_ascii=False)
 
 
-def _layout_json() -> str:
+# S1 티키타카 시그널(spec D3) — 데모 대본의 타이포 디렉션 멘트에 결정론 반응.
+# _REMEDIATION_SIGNAL과 동일한 콘텐츠 기반 분기 패턴. 대본 밖 챗은 V1 고정(오발동 가드).
+_TIKITAKA_SIGNAL = ("캘리", "골드")
+
+
+def _layout_json(messages=None) -> str:
+    user = _user_text(messages)
+    if any(sig in user for sig in _TIKITAKA_SIGNAL):
+        return json.dumps({
+            "reply": "헤드라인을 붓펜 캘리그래피 질감의 골드 포인트로 키웠어요. "
+                     "시안 프리뷰에서 확인해 주세요.",
+            "layout_spec": F.LAYOUT_SPEC_V2, "ready": True}, ensure_ascii=False)
     return json.dumps({"reply": "러프 완성", "layout_spec": F.LAYOUT_SPEC, "ready": True},
                       ensure_ascii=False)
 
@@ -327,8 +338,8 @@ class DemoProvider(Provider):
             return ProviderResponse(text=text, model="demo", citations=citations)
         if key == ("brainstorming", "stage_b"):   # Stage B — 1차 누락→보충 완성
             return ProviderResponse(text=_stage_b_brainstorm(s, medium), model="demo")
-        if key == ("design", "S1"):               # 러프 레이아웃
-            return ProviderResponse(text=_layout_json(), model="demo", raw=None)
+        if key == ("design", "S1"):               # 러프 레이아웃(티키타카 시그널 분기)
+            return ProviderResponse(text=_layout_json(messages), model="demo", raw=None)
         if key == ("design", "S2b"):              # 카피(위반→교정은 콘텐츠 기반)
             return ProviderResponse(text=_copy_json(messages), model="demo", raw=None)
         if key == ("design", "critic"):           # 자기 평가 scores

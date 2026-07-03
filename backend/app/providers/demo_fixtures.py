@@ -133,6 +133,22 @@ LAYOUT_SPEC = {
     "copy": {},
 }
 
+# 티키타카 v2 — S1 게이트 챗 "캘리/골드" 시그널의 결정론 응답(spec 2026-07-03 D3).
+# V1 대비 headline 88px 골드(#FFD166) + 붓펜 캘리그래피 디렉션. 시안 프리뷰
+# (build_layout_mock_html)가 font_px/color를 렌더하므로 게이트 화면에서 변화가 즉시 보이고,
+# 골드 hex는 S2a 프롬프트 힌트로 실려 poster_v2/violating_gold fixture 매칭 시그널이 된다.
+import copy as _copy_mod
+
+LAYOUT_SPEC_V2 = _copy_mod.deepcopy(LAYOUT_SPEC)
+LAYOUT_SPEC_V2["visual_concept"] = (
+    "밝은 톤의 추상적 금융 성장 이미지 — 헤드라인은 붓펜 캘리그래피 질감의 골드(#FFD166) "
+    "포인트, 나머지 텍스트는 단정한 산세리프 투톤 대비. 골드 가독성을 위해 헤드라인 뒤는 "
+    "짙은 톤 처리")
+for _s in LAYOUT_SPEC_V2["slots"]:
+    if _s["role"] == "headline":
+        _s["font_px"], _s["color"] = 88, "#FFD166"
+del _s
+
 # 모든 수치(3.5 / 12 / 100)는 FACTSHEET에 존재 → grounding 통과.
 # en/vi/zh는 한글 0(단위어 현지화: 개월→months/tháng/个月, 만원→vạn won/万韩元). 숫자만 유지.
 COPY = {
