@@ -36,6 +36,7 @@ PR body 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code
 ```bash
 gh pr merge --squash --delete-branch
 ```
+- ⚠️ **문서가 커밋 SHA를 참조하는 대형 브랜치는 `--merge`**(스쿼시 금지): 예) `feat/finals-optimization`은 optimization-report §9가 개별 SHA를 인용 → 스쿼시하면 보고서 SHA가 고아가 됨.
 - squash가 레포 설정에서 막혀 있으면 `--merge`로 폴백.
 - CI가 있으면 통과 확인 후 머지(`gh pr checks`).
 
@@ -43,10 +44,12 @@ gh pr merge --squash --delete-branch
 ```bash
 git checkout main && git pull origin main
 git remote get-url mirror 2>/dev/null || git remote add mirror https://github.com/Dojaegyum/jb-marker.git
+gh auth switch --user Dojaegyum     # 미러는 Dojaegyum 소유 — Donaldo 토큰은 404
 git push mirror main
+gh auth switch --user Donaldo5406   # 반드시 원복 (origin 작업은 Donaldo)
 ```
 - ⚠️ **첫 sync는 non-fast-forward로 거부될 수 있음**: Donaldo5406 히스토리는 git-filter-repo로 재작성되어 미러(6/14 이전 히스토리)와 divergent. 거부되면 **사용자에게 확인 후** `git push mirror main --force` (미러는 사본이므로 force가 의도된 동작).
-- 미러 push는 Dojaegyum 자격증명으로 동작(이 PC에 있음).
+- push 성공/실패와 무관하게 **계정을 Donaldo5406으로 원복**했는지 마지막에 확인.
 
 ### 5. 배포 확인 + 정리
 - `gh run list -L 3` 로 Donaldo Actions CD 트리거 확인 (HF Space·Vercel).
