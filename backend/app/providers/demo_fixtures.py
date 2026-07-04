@@ -436,13 +436,17 @@ def load_poster_bg() -> bytes:
 # 동일 패턴. 파일 부재/미지 상태는 None → 호출부(demo.generate_image)가 PIL 폴백(완주 보장).
 _POSTER_DIR = os.path.join(os.path.dirname(__file__), "..", "references", "design")
 POSTER_STATES = ("violating", "violating_gold", "final", "v2")
+# 언어 변형 fixture(2026-07-04): 비ko는 poster_{state}_{lang}.png. 비ko 카피는 위반·교정
+# 모두 clean(COPY_VIOLATING가 COPY 복제)이라 골드 경로엔 v2 변형 3장이면 데모 전 구간 커버.
+POSTER_LANGS = ("ko", "en", "vi", "zh")
 
 
-def load_poster_fixture(state: str) -> bytes | None:
-    if state not in POSTER_STATES:
+def load_poster_fixture(state: str, lang: str = "ko") -> bytes | None:
+    if state not in POSTER_STATES or lang not in POSTER_LANGS:
         return None
+    name = f"poster_{state}.png" if lang == "ko" else f"poster_{state}_{lang}.png"
     try:
-        with open(os.path.join(_POSTER_DIR, f"poster_{state}.png"), "rb") as f:
+        with open(os.path.join(_POSTER_DIR, name), "rb") as f:
             return f.read()
     except OSError:
         return None

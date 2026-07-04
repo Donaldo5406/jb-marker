@@ -330,15 +330,28 @@ def _headline_gold(prompt: str) -> bool:
 _VIOLATION_TOKENS = ("업계 최고", "4.0%")   # COPY_VIOLATING.ko와 동기(과장·금리 불일치)
 
 
+def _poster_lang(copy: dict) -> str:
+    """카피 언어 감지 — headline이 COPY[lang]과 정확 일치하는 비ko 언어(기본 ko).
+
+    S2a 언어 변형 베이크 프롬프트는 copy[lang]을 글자 그대로 인용(build_director_prompt)
+    → 정확 일치로 안전하게 판별된다. 미지 카피는 ko로 두면 상태 매칭이 None → PIL 폴백."""
+    hl = (copy or {}).get("headline")
+    for lang in ("en", "vi", "zh"):
+        if hl == F.COPY[lang]["headline"]:
+            return lang
+    return "ko"
+
+
 def _poster_state(copy: dict, prompt: str) -> str | None:
     """파싱된 카피(위반 축) × 헤드라인 골드 힌트(골드 축) → 2×2 fixture 상태(spec D1).
 
-    발표자가 티키타카를 어느 시점에 하든/생략하든 두 축이 독립 검출되어 일관된다."""
+    발표자가 티키타카를 어느 시점에 하든/생략하든 두 축이 독립 검출되어 일관된다.
+    비ko 카피는 설계상 clean(COPY_VIOLATING가 COPY 복제) — clean 축으로만 매칭된다."""
     joined = " ".join(str(v) for v in (copy or {}).values())
     gold = _headline_gold(prompt)
     if any(t in joined for t in _VIOLATION_TOKENS):
         return "violating_gold" if gold else "violating"
-    if (copy or {}).get("headline") == F.COPY["ko"]["headline"]:
+    if (copy or {}).get("headline") == F.COPY[_poster_lang(copy)]["headline"]:
         return "v2" if gold else "final"
     return None
 
@@ -438,7 +451,8 @@ class DemoProvider(Provider):
         copy = _copy_from_prompt(prompt)
         state = _poster_state(copy, prompt)
         if state:
-            fixture = F.load_poster_fixture(state)
+            # 언어 변형(en/vi/zh)은 해당 언어 fixture — 없는 조합은 None → PIL 폴백.
+            fixture = F.load_poster_fixture(state, _poster_lang(copy))
             if fixture:
                 return fixture
         bg = F.load_poster_bg()

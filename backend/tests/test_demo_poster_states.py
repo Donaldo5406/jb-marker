@@ -4,8 +4,8 @@ import json
 from app.providers import demo_fixtures as F
 
 
-def _directed_prompt(copy_ko: dict, headline_color: str = "#0B1324",
-                     headline_px: int = 72) -> str:
+def _directed_prompt(copy_map: dict, headline_color: str = "#0B1324",
+                     headline_px: int = 72, lang: str = "ko") -> str:
     """실 directed 경로와 동일한 프롬프트를 build_director_prompt로 조립(형식 드리프트 방지)."""
     import copy as _c
     from app.gateway.design.directing import build_director_prompt
@@ -13,9 +13,9 @@ def _directed_prompt(copy_ko: dict, headline_color: str = "#0B1324",
     for s in spec["slots"]:
         if s["role"] == "headline":
             s["color"], s["font_px"] = headline_color, headline_px
-    spec["copy"] = {"ko": dict(copy_ko)}
+    spec["copy"] = {lang: dict(copy_map)}
     facts = {"금리": "연 3.5%", "만기": "12개월"}
-    return build_director_prompt(spec, {}, facts, ["연 3.5%", "12개월 만기"], "ko")
+    return build_director_prompt(spec, {}, facts, ["연 3.5%", "12개월 만기"], lang)
 
 
 def test_copy_from_prompt_parses_baked_format():
@@ -103,9 +103,23 @@ def test_poster_state_2x2_matrix():
     assert _poster_state(viol, gold_prompt) == "violating_gold"
     assert _poster_state(clean, "") == "final"
     assert _poster_state(clean, gold_prompt) == "v2"
-    # 미지 카피(en 등 비ko·임의 편집) → None → PIL 폴백(AC 5)
-    assert _poster_state(dict(F.COPY["en"]), "") is None
+    # 비ko clean 카피도 상태 매칭(2026-07-04 언어 변형 fixture) — 파일 유무는 로더가 가른다.
+    assert _poster_state(dict(F.COPY["en"]), gold_prompt) == "v2"
+    assert _poster_state(dict(F.COPY["vi"]), "") == "final"
+    # 미지 카피(임의 편집) → None → PIL 폴백(AC 5)
+    assert _poster_state({"headline": "임의로 편집된 헤드라인"}, "") is None
     assert _poster_state({}, "") is None
+
+
+def test_poster_lang_detection():
+    """헤드라인 정확 일치로 언어 판별 — 미지/ko는 ko."""
+    from app.providers.demo import _poster_lang
+    assert _poster_lang(dict(F.COPY["en"])) == "en"
+    assert _poster_lang(dict(F.COPY["vi"])) == "vi"
+    assert _poster_lang(dict(F.COPY["zh"])) == "zh"
+    assert _poster_lang(dict(F.COPY["ko"])) == "ko"
+    assert _poster_lang({"headline": "임의"}) == "ko"
+    assert _poster_lang({}) == "ko"
 
 
 def _seed_fixture_dir(tmp_path, monkeypatch, states=("violating",)):
@@ -121,6 +135,16 @@ def test_load_poster_fixture_reads_file_or_none(tmp_path, monkeypatch):
     assert png and png[:8] == b"\x89PNG\r\n\x1a\n"
     assert F.load_poster_fixture("final") is None        # 파일 부재 → None
     assert F.load_poster_fixture("없는상태") is None      # 미지 상태 → None
+
+
+def test_load_poster_fixture_lang_variants(tmp_path, monkeypatch):
+    """비ko는 poster_{state}_{lang}.png — 없는 조합·미지 언어는 None(PIL 폴백 경로)."""
+    (tmp_path / "poster_v2_en.png").write_bytes(F.placeholder_png(64, 80))
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))
+    png = F.load_poster_fixture("v2", "en")
+    assert png and png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert F.load_poster_fixture("final", "en") is None   # 파일 부재 → None
+    assert F.load_poster_fixture("v2", "jp") is None      # 미지 언어 → None
 
 
 def test_generate_image_returns_fixture_on_state_match(tmp_path, monkeypatch):
@@ -139,6 +163,17 @@ def test_generate_image_directed_prompt_matches_fixture(tmp_path, monkeypatch):
     _seed_fixture_dir(tmp_path, monkeypatch, states=("v2",))
     expected = F.load_poster_fixture("v2")
     prompt = _directed_prompt(F.COPY["ko"], headline_color="#FFD166", headline_px=88)
+    assert DemoProvider().generate_image(prompt, aspect="4:5") == expected
+
+
+def test_generate_image_lang_variant_returns_lang_fixture(tmp_path, monkeypatch):
+    """비ko 골드 베이크 프롬프트(실 directed 산출) → 해당 언어 v2 fixture 바이트 그대로."""
+    from app.providers.demo import DemoProvider
+    (tmp_path / "poster_v2_vi.png").write_bytes(F.placeholder_png(64, 80))
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))
+    expected = F.load_poster_fixture("v2", "vi")
+    prompt = _directed_prompt(F.COPY["vi"], headline_color="#FFD166",
+                              headline_px=88, lang="vi")
     assert DemoProvider().generate_image(prompt, aspect="4:5") == expected
 
 
@@ -161,6 +196,8 @@ def test_poster_fixture_files_are_valid():
 
     from app.providers.demo_fixtures import _POSTER_DIR, POSTER_STATES
     names = [f"poster_{s}.png" for s in POSTER_STATES] + ["poster_bg.png"]
+    # 언어 변형(2026-07-04, 사용자 제작 — v2 베이스 텍스트 교체본)
+    names += [f"poster_v2_{lg}.png" for lg in ("en", "vi", "zh")]
     for name in names:
         path = os.path.join(_POSTER_DIR, name)
         assert os.path.exists(path), f"{name} 누락 — scripts/gen_demo_posters.py로 생성"
