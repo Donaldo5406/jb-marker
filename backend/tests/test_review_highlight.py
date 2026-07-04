@@ -127,6 +127,35 @@ def test_resolve_render_missing_falls_back_to_v1():
     assert out["image"] == "design/design-system/components/visual/v1.png"
 
 
+# --- 2026-07-05 poc_E: 합성 부재 시 비주 언어를 주 언어 히어로에서 분리 ---
+
+def test_reviewed_image_for_non_primary_lang_separated_without_render():
+    """합성 렌더가 하나도 없어도(붕괴) 비주 언어 verdict는 주 언어(ko) 히어로 v1.png에
+    겹치지 않고 자기 합성 경로로 분리된다 — en/vi/zh bbox가 ko 포스터 엉뚱한 곳에
+    그려지던 문제(예: vi 헤드라인이 ko '정기예금'에 얹힘) 차단."""
+    v1 = "design/design-system/components/visual/v1.png"
+    # 주 언어(ko)·언어없음(RC 등)은 v1.png 히어로 유지
+    assert reviewed_image_for("design/final/ko/main.scene", "ko", primary_lang="ko") == v1
+    assert reviewed_image_for(v1, None, primary_lang="ko") == v1
+    # 비주 언어(en)는 자기 합성 경로로 분리(부재 시 히어로 아님 → 미표시)
+    assert reviewed_image_for("design/final/en/main.scene", "en",
+                              primary_lang="ko") == "review/_render/en.png"
+    # render_langs가 있으면 종전대로 합성 우선(주 언어 포함)
+    assert reviewed_image_for("design/final/ko/main.scene", "ko",
+                              render_langs=frozenset({"ko"}), primary_lang="ko") == \
+        "review/_render/ko.png"
+    # primary_lang 미지정(레거시)이면 종전 동작(v1 폴백) — 하위호환
+    assert reviewed_image_for("design/final/en/main.scene", "en") == v1
+
+
+def test_resolve_non_primary_lang_excluded_from_hero(monkeypatch):
+    """resolve_location: 비주 언어 verdict의 image가 v1.png가 아니어야 히어로 collect_rects에서 제외."""
+    loc = {"slot": "headline", "lang": "vi"}
+    out = resolve_location(loc, asset_id="design/final/vi/main.scene", lang="vi",
+                           layout_spec=LAYOUT, fixtures={}, primary_lang="ko")
+    assert out["image"] == "review/_render/vi.png"   # v1.png 히어로 아님
+
+
 # --- Task 4: collect_rects / pin_sort_key — 라우트 헬퍼 단위 테스트 ---------
 from app.gateway.review_highlight import collect_rects, pin_sort_key
 

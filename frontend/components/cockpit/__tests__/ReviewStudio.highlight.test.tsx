@@ -5,7 +5,7 @@ import { ReviewStudio } from "../ReviewStudio";
 import type { ReviewVerdict } from "@/lib/reviewArtifacts";
 
 const v: ReviewVerdict = { verdict_id: "x", node: "legal", severity: "critical",
-  evidence: "업계 최고 과장", location: { slot: "headline" } };
+  evidence: "국내유일 최고 유일성·최상급 표현", location: { slot: "headline" } };
 
 describe("ViolationCard pin", () => {
   it("renders pin number when provided", () => {

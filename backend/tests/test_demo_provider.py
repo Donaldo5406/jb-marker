@@ -41,10 +41,12 @@ def test_vi_zh_copy_has_no_hangul():
             assert not _HANGUL.search(val), f"{lang}.{role}에 한글 혼입: {val!r}"
 
 
-def test_layout_spec_has_logo_and_disclosure_slots():
-    """T2: 좌상단 logo + 최하단 disclosure 슬롯 추가."""
+def test_layout_spec_has_disclosure_slot_and_baked_logo_policy():
+    """T2(poc_E 개정): 고지 오버레이 슬롯은 유지, 로고는 자산 베이크 → 슬롯 없음 + baked 정책."""
     roles = {s["role"] for s in F.LAYOUT_SPEC["slots"]}
-    assert {"logo", "disclosure"} <= roles, f"누락 슬롯: {{'logo','disclosure'}} - {roles}"
+    assert "disclosure" in roles, f"disclosure 슬롯 누락 - {roles}"
+    assert "logo" not in roles, "poc_E 경로는 로고 오버레이 OFF(이중 로고 방지)"
+    assert F.LAYOUT_SPEC["logo_policy"] == "baked"
 
 
 def test_copy_numbers_are_grounded_in_factsheet():
@@ -131,12 +133,13 @@ def test_detect_s2b_returns_copy_4langs():
 
 
 def test_detect_s2b_default_returns_violating_copy():
-    """T7: 교정 신호 없는 1차 S2b → 위반 카피(과장 headline + 4.0% body) 반환."""
+    """T7: 교정 신호 없는 1차 S2b → 위반 카피(유일성·최상급 headline + 절대보장 body, 4개 언어)."""
     r = json.loads(_complete({"studio": "design", "step": "S2b"}).text)
-    assert "업계 최고" in r["copy"]["ko"]["headline"]      # 과장광고
-    assert "4.0%" in r["copy"]["ko"]["body"]               # 금리 불일치
-    # en/vi/zh는 clean(위반은 ko에 집중)
-    assert r["copy"]["en"] == F.COPY["en"]
+    assert "국내유일" in r["copy"]["ko"]["headline"]       # 유일성·최상급 무근거
+    assert "무조건 지급" in r["copy"]["ko"]["body"]        # 절대적 보장 오인
+    # poc_E: 비ko도 언어별 위반 카피 스테이징('모든 언어판에서 적발' 서사)
+    assert r["copy"]["en"] == F.COPY_VIOLATING["en"]
+    assert "No.1" in r["copy"]["en"]["headline"]
 
 
 def test_detect_s2b_remediation_returns_clean_copy():
@@ -150,18 +153,41 @@ def test_detect_s2b_remediation_returns_clean_copy():
 
 
 def test_copy_violating_is_caught_by_legal_findings():
-    """T7: 위반 카피 → R1 콘텐츠 기반 적발 critical 2(과장+금리) + warning 1(우대단서), ko 한정."""
+    """T7(poc_E): 위반 카피 → R1 콘텐츠 기반 적발 — 언어당 critical 2(유일성 headline +
+    절대보장 body), 4개 언어 전부. clean 카피는 무적발(위반→교정 루프의 양끝)."""
     from app.providers.demo import legal_findings
     fs = legal_findings(F.COPY_VIOLATING)
-    sev = [f["severity"] for f in fs]
-    assert sev.count("critical") >= 2
-    assert "warning" in sev
-    assert all(f["location"]["lang"] == "ko" for f in fs)
+    crit = [f for f in fs if f["severity"] == "critical"]
+    assert len(crit) == 8, [f["evidence"] for f in fs]     # (headline+body) × 4개 언어
+    assert {f["location"]["lang"] for f in crit} == {"ko", "en", "vi", "zh"}
+    assert legal_findings(F.COPY) == []                     # 교정 후 무적발
 
 
 def test_detect_critic_returns_passing_scores():
     r = json.loads(_complete({"studio": "design", "step": "critic"}).text)
     assert set(r["scores"]) >= {"hierarchy", "brand"}
+
+
+def test_review_image_controversy_vision_flags_pinch_on_violating_family(tmp_path, monkeypatch):
+    """RC 경로 3(mock): [controversy-vision] + 교정 전 포스터 바이트 → 집게손 warning
+    (손 위치 authored bbox 동반). 교정 후(v2)·비RC 프롬프트는 무적발(거짓 논란 방지)."""
+    from app.providers.demo import DemoProvider
+    for st in ("violating_gold", "v2"):
+        (tmp_path / f"poster_{st}.png").write_bytes(F.placeholder_png(64, 80) + st.encode())
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))
+    monkeypatch.setattr(F, "_POSTER_HASHES", None)
+    p = DemoProvider()
+    viol = F.load_poster_fixture("violating_gold")
+    r = json.loads(p.review_image(viol, "[controversy-vision] 논란 판정").text)
+    assert len(r["findings"]) == 1
+    f = r["findings"][0]
+    assert f["severity"] == "warning" and f["category"] == "community_signal"
+    assert f["location"]["bbox"] == F.CONTROVERSY_GESTURE_BBOX   # 손 위치 하이라이트
+    # 교정 후 포스터 → 무적발(집게손 없는 포즈)
+    clean = F.load_poster_fixture("v2")
+    assert json.loads(p.review_image(clean, "[controversy-vision] 논란 판정").text)["findings"] == []
+    # RC가 아닌 비전 호출(S2a 베이크 검수 등)은 제스처 finding을 내면 안 된다(오탐 가드).
+    assert json.loads(p.review_image(viol, "베이크 텍스트 정확성 검수").text)["findings"] == []
 
 
 def test_detect_review_b_returns_empty_findings():

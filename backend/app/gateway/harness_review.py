@@ -116,9 +116,21 @@ class ReviewHarness(Harness):
         # 합성 렌더 존재 언어 memo(run당 1회 list) — GAP9 하이라이트 대상 승격용.
         # 하네스는 gateway 요청마다 새로 구성되므로 요청 수명 캐시(신선도 보장).
         self._render_langs_memo: dict[str, frozenset] = {}
+        self._primary_lang_memo: dict[str, str | None] = {}
 
     def _base(self, run_id: str) -> str:
         return f"/{run_id}/review"
+
+    def _primary_lang(self, store, run_id: str) -> str | None:
+        """주 언어(발표·히어로 언어) = review state languages[0]. 합성 렌더가 없을 때
+        비주 언어 verdict를 주 언어 포스터에서 분리하는 기준(poc_E 정리)."""
+        if run_id not in self._primary_lang_memo:
+            try:
+                langs = self._load_state(store, run_id).get("languages") or []
+            except Exception:
+                langs = []
+            self._primary_lang_memo[run_id] = langs[0] if langs else None
+        return self._primary_lang_memo[run_id]
 
     def _render_langs(self, store, run_id: str) -> frozenset:
         """review/_render/{lang}.png가 존재하는 언어 집합 — 없으면 빈 집합(v1 폴백)."""
@@ -271,7 +283,8 @@ class ReviewHarness(Harness):
                 _layout = {}
         location = resolve_location(location, asset_id=asset_id, lang=lang,
                                     layout_spec=_layout, fixtures=HIGHLIGHT_BBOX_FIXTURES,
-                                    render_langs=self._render_langs(store, run_id))
+                                    render_langs=self._render_langs(store, run_id),
+                                    primary_lang=self._primary_lang(store, run_id))
         vid = _verdict_id(node, key, slot, lang or "")
         envelope = {
             "verdict_id": vid, "node": node, "asset_id": asset_id, "lang": lang,
@@ -677,7 +690,11 @@ class ReviewHarness(Harness):
             symbols_desc = "; ".join(
                 f"{s.get('name', '')}({s.get('description', '')})" for s in visual_symbols
                 if s.get("name"))
+            # [controversy-vision] 프리픽스 = provider 계약 마커([uploaded-audit]와 동일
+            # 패턴) — mock(DemoProvider)이 RC 심의를 다른 비전 호출(S2a 베이크 검수·R1
+            # 텍스트프리 계약)과 구분해 결정론 제스처 적발을 라우팅한다. 라이브 LLM엔 무해.
             vprompt = (
+                "[controversy-vision] "
                 "이 이미지는 금융 마케팅 비주얼입니다. 다음 블랙리스트 카테고리에 근거해 "
                 f"사회 논란·평판 리스크를 판정하세요: {categories}. "
                 "이미지에 박힌 텍스트(은어·숫자·문구)도 읽어 대조하세요. "
@@ -693,14 +710,21 @@ class ReviewHarness(Harness):
                 img_bytes = v1.blob if v1.blob else (v1.content_text or "").encode("utf-8")
                 vresp = self._vision_provider.review_image(img_bytes, vprompt, mime="image/png")
                 for f in (_parse_json(vresp.text).get("findings") or []):
+                    # finding이 제스처/도안 위치 bbox(정규화)를 실어 오면 보존한다 —
+                    # 하이라이트가 '어디가 논란인지'(집게손 등)를 포스터 위에 가리키게
+                    # (업로드 심의 루프의 bbox 보존과 동일 계약).
+                    loc = {"slot": "visual", "lang": None}
+                    fbbox = (f.get("location") or {}).get("bbox") or f.get("bbox")
+                    if isinstance(fbbox, dict):
+                        loc["bbox"] = fbbox
                     self._persist_verdict(
                         store, req.run_id, node="controversy",
                         asset_id="design/design-system/components/visual/v1.png",
                         lang=None, severity=f.get("severity", "warning"),
-                        location={"slot": "visual", "lang": None},
+                        location=loc,
                         evidence=f.get("evidence", ""),
                         official_source_url=f.get("source") or f.get("official_source_url"),
-                        kind=f.get("category"))
+                        kind=f.get("category"), identity=f.get("id"))
             except Exception:
                 state["vision_failed"] = True
                 state["vision_skipped"].append("controversy/visual/v1.png")

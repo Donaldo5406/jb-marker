@@ -12,191 +12,240 @@ import zlib
 
 LANGUAGES = ["ko", "en", "vi", "zh"]
 
-# 수치는 모든 copy와 일치해야 grounding 통과(3.5 / 12 / 100).
+# 수치는 모든 copy와 일치해야 grounding 통과(3.30 / 2.80 / 0.50 / 6~36 / 100 / 19~29 / 1).
+# 키는 steps._FACT_FIELDS(product_name·interest_rate=기본·max_rate·prime_rate·term·min_amount)와
+# 짝 — 금리 카드/혜택 칩이 이 값에서 결정론 파생된다. poc_E 자산(2026-07-05)에 구워진
+# 수치가 정본(계약: docs/finals/evidence/fullbake-poc/poc-e-fixture-contract.md).
 FACTSHEET = {
-    "product": "JB 정기예금",
-    "interest_rate": "3.5%",
-    "term": "12개월",
-    "min_amount": "100만원",
+    "product_name": "JB 20대 청년 정기예금",
+    "interest_rate": "연 2.80% (세전)",
+    "max_rate": "최고 연 3.30% (세전)",
+    "prime_rate": "우대 최대 연 0.50%p (세전)",
+    "term": "6개월~36개월",
+    "min_amount": "100만원부터",
+    "eligibility": "만 19~29세 · 1인 1계좌",
 }
 
 SPEC_MD = """---
-goal: 2030 직장인·사회초년생 대상 JB 정기예금 신규 가입 유치(분기 신규 계좌 +15%)
-target_segments: [2030 직장인, 사회초년생, 외국인 근로자]
-key_messages: [연 3.5% 경쟁 금리, 모바일 비대면 간편 가입, 예금자보호 신뢰]
+goal: 만 19~29세 청년 대상 JB 20대 청년 정기예금 신규 가입 유치(분기 신규 계좌 +15%)
+target_segments: [20대 사회초년생, 대학생·취준생, 외국인 청년 근로자]
+key_messages: [최고 연 3.30% 세전 금리, 20대 전용 우대, 모바일 비대면 간편 가입]
 channels: [email, kakao, instagram]
 languages: [ko, en, vi, zh]
 multinational: true
 tone: 신뢰감 있고 친근한
 factsheet:
-  product: JB 정기예금
-  interest_rate: 3.5%
-  term: 12개월
-  min_amount: 100만원
+  product_name: JB 20대 청년 정기예금
+  interest_rate: 연 2.80% (세전)
+  max_rate: 최고 연 3.30% (세전)
+  prime_rate: 우대 최대 연 0.50%p (세전)
+  term: 6개월~36개월
+  min_amount: 100만원부터
+  eligibility: 만 19~29세 · 1인 1계좌
 disclosures: [예금자보호법에 따라 5천만원까지 보호, 표시 금리는 세전 기준]
 ---
-# JB 정기예금 신규 가입 캠페인 — 기획(spec)
+# JB 20대 청년 정기예금 가입 캠페인 — 기획(spec)
 
 ## 1. 캠페인 목표
-2030 직장인·사회초년생의 **정기예금 신규 가입**을 유치한다. 분기 신규 계좌 수 +15%를
+만 19~29세 청년의 **첫 목돈 마련 정기예금 가입**을 유치한다. 분기 신규 계좌 수 +15%를
 1차 KPI로 삼고, 모바일 비대면 가입 전환율을 보조 지표로 추적한다.
 
 ## 2. 타겟 세그먼트
-- **2030 직장인**: 첫 목돈 마련·비상금 운용 수요. 금리 민감도 높고 모바일 채널 선호.
-- **사회초년생**: 예적금 입문층. 가입 절차의 간편함과 안전성(예금자보호)을 중시.
-- **외국인 근로자**: 다국어(en/vi/zh) 소재로 포용. 송금·저축 니즈가 분명.
+- **20대 사회초년생**: 첫 월급·첫 목돈 마련 수요. 금리 민감도 높고 모바일 채널 선호.
+- **대학생·취준생**: 예적금 입문층. 소액(100만원부터) 시작과 기간 선택 자유를 중시.
+- **외국인 청년 근로자**: 다국어(en/vi/zh) 소재로 포용. 송금·저축 니즈가 분명.
 
 ## 3. 핵심 메시지
-1. **연 3.5% 경쟁 금리** — 시장 대비 매력적인 금리(세전 기준 명시).
-2. **모바일 비대면 간편 가입** — 앱에서 수 분 내 개설, 영업점 방문 불필요.
-3. **예금자보호 신뢰** — 1인당 5천만원까지 예금자보호법으로 보호.
+1. **최고 연 3.30% (세전)** — 기본 2.80% + 20대·신규고객 우대 최대 0.50%p.
+2. **20대 전용 혜택** — 만 19~29세 전용 우대금리, 6~36개월 기간 선택 자유.
+3. **모바일 비대면 간편 가입** — 스마트뱅킹에서 수 분 내 개설.
 
 ## 4. 채널 & 다국어
-- 채널: 이메일 · 카카오 · 인스타그램(피드 4:5).
+- 채널: 이메일 · 카카오 · 인스타그램(세로 포스터 3:4).
 - 언어: 한국어 기본, 영어·베트남어·중국어 동시 제작(외국인 고객 포용).
 
 ## 5. 컴플라이언스 가드레일
 - 금리·수익률 표기 시 **세전 여부·우대조건**을 명확히 고지(금소법 §22).
-- 객관적 근거 없는 "업계 최고" 등 **최상급 표현 금지**(표시광고법 §3).
+- 객관적 근거 없는 "국내유일·최고" 등 **유일성·최상급 표현 금지**(표시광고법 §3).
+- "무조건 지급" 등 **절대적 보장 오인 표현 금지**(금소법 §22).
 - 모든 소재에 **예금자보호 고지** 포함.
 
 ## 6. 핵심 수치(grounding)
-상품 마스터: 금리 **3.5%** · 만기 **12개월** · 최소 가입 **100만원**. 모든 카피는 이 수치와 일치한다.
+상품 마스터: 최고 연 **3.30%**(세전) = 기본 **2.80%** + 우대 최대 **0.50%p** ·
+기간 **6~36개월** · 최소 가입 **100만원** · 대상 **만 19~29세**(1인 1계좌). 모든 카피는 이 수치와 일치한다.
 
 ## 7. 디자인 디렉션 (브레인스토밍 확정)
-- **팔레트**: 신뢰 그린 `#00857C` 베이스 + 딥 네이비 `#0B2B5B` · 화이트. 헤드라인 강조 시
-  골드 포인트(`#FFD166`)를 티키타카로 승격 가능.
+- **팔레트**: 스카이 블루 시티스케이프 베이스 + 코발트 블루 `#1E63D0` 헤드라인 ·
+  딥 네이비 `#0B2B5B` 푸터 · 화이트 카드. 붓펜 캘리그래피 서브헤드를 티키타카로 승격 가능.
+- **비주얼**: 밝은 도시 배경 앞 실사 청년 모델(스카이블루 니트) + 저금통 소품 — 신뢰+친근.
 - **타이포 3단 위계**: 굵은 디스플레이 헤드라인 > 금리 숫자(최대 강조) > 라벨·바디(가벼운 웨이트).
-- **아이콘**: 라인 픽토그램 세트(혜택 칩) — 일관된 스트로크.
-- **세이프존(safe zone)**: 좌상단 = 공식 로고 오버레이 자리(빈 배경 유지), 최하단 = 법령 고지
-  오버레이 밴드(무텍스트) — 로고·고지는 결정론 레이어가 담당한다.
+- **아이콘**: 3D 아이콘 혜택 칩 행(타깃·달력·선물·폰) — 일관된 블루 톤.
+- **로고·고지**: 공식 로고는 비주얼에 CI 정합 베이크(비전 검수로 정확성 확인), 최하단
+  법령 고지는 **결정론 오버레이 레이어**가 담당(푸터 밴드 위 고지 존).
 """
 
 PLAN_MD = """---
 creative_direction:
-  palette: ["#00857C", "#0B2B5B", "#FFFFFF"]
+  palette: ["#1E63D0", "#0B2B5B", "#FFFFFF"]
   font: Pretendard
   grid: 12col
-  aspect: "4:5"
-material_matrix: [{channel: instagram, format: square}, {channel: email, format: banner}]
-image_concept: 밝은 톤의 추상적 금융 성장 이미지
-copy_themes: [높은 금리, 간편 가입, 신뢰]
+  aspect: "3:4"
+material_matrix: [{channel: instagram, format: poster, aspect: "3:4"}, {channel: email, format: banner}]
+image_concept: 스카이 블루 시티스케이프 앞 실사 청년 모델 — 신뢰형 금융 포스터
+copy_themes: [최고 3.30% 세전, 20대 전용 우대, 간편 가입]
 multinational: true
 languages: [ko, en, vi, zh]
-slots: [background, logo, headline, body, cta, disclosure]
+slots: [background, subhead, headline, body, disclosure]
 factsheet:
-  product: JB 정기예금
-  interest_rate: 3.5%
-  term: 12개월
-  min_amount: 100만원
+  product_name: JB 20대 청년 정기예금
+  interest_rate: 연 2.80% (세전)
+  max_rate: 최고 연 3.30% (세전)
+  prime_rate: 우대 최대 연 0.50%p (세전)
+  term: 6개월~36개월
+  min_amount: 100만원부터
+  eligibility: 만 19~29세 · 1인 1계좌
 disclosures: [예금자보호법에 따라 5천만원까지 보호, 표시 금리는 세전 기준]
 ---
-# JB 정기예금 캠페인 — 구현 계획(plan)
+# JB 20대 청년 정기예금 캠페인 — 구현 계획(plan)
 
 확정된 spec을 **제작 가능한 소재 명세**로 변환한다. 4개 언어(ko/en/vi/zh) × 채널별 포맷.
 
 ## 1. 크리에이티브 디렉션
-- **팔레트**: JB 그린 `#00857C` · 딥 네이비 `#0B2B5B` · 화이트 `#FFFFFF`. 타이포 디렉션
-  채택 시 헤드라인 골드 포인트(`#FFD166`) — 프롬프트 슬롯 힌트로만 전달(팔레트 오염 금지).
-- **타이포 3단 위계**: 디스플레이 헤드라인(72px, 티키타카 시 88px 캘리그래피 질감) >
+- **팔레트**: 코발트 블루 `#1E63D0` 헤드라인 · 딥 네이비 `#0B2B5B` 푸터 · 화이트 카드
+  `#FFFFFF`, 배경은 밝은 스카이 블루 시티스케이프. 타이포 디렉션 채택 시 붓펜 캘리그래피
+  서브헤드 — 프롬프트 슬롯 힌트로만 전달(팔레트 오염 금지).
+- **타이포 3단 위계**: 디스플레이 헤드라인(76px, 티키타카 시 88px 코발트 강조) >
   금리 숫자(카드 내 최대 강조) > 라벨·바디(가벼운 웨이트). Pretendard(다국어 가독).
-- **그리드**: 12컬럼. **비율**: 4:5 세로형(피드 최적). **베이크 해상도**: 2K(잔글씨 글리프
-  정밀도 — 1K에서 칩 라벨 깨짐 실측).
-- **비주얼 컨셉**: 밝은 톤의 추상적 금융 성장 이미지. 금리 하이라이트 카드(둥근 화이트
-  컨테이너) + 혜택 아이콘 칩 행(라인 픽토그램)을 풀베이크로 디렉팅.
-- **세이프존(safe zone)**: 좌상단 로고 자리·최하단 고지 밴드는 텍스트-free — 결정론
-  오버레이(S2c)가 담당.
+- **그리드**: 12컬럼. **비율**: 3:4 세로형(포스터 규격, 1080×1440). **베이크 해상도**: 2K
+  (잔글씨 글리프 정밀도 — 1K에서 칩 라벨 깨짐 실측).
+- **비주얼 컨셉**: 밝은 도시 배경 앞 스카이블루 니트의 청년 모델 + 저금통 소품. 금리
+  하이라이트 카드(둥근 화이트 컨테이너) + 혜택 아이콘 칩 행을 풀베이크로 디렉팅.
+- **로고·고지**: 공식 로고는 비주얼에 CI 정합 베이크(좌상단), 최하단 네이비 푸터 밴드
+  위 고지 존은 **결정론 오버레이(S2c)**가 담당.
 
 ## 2. 소재 매트릭스
 | 채널 | 포맷 | 비율 |
 |------|------|------|
-| Instagram | square/feed | 4:5 |
+| Instagram | poster | 3:4 |
 | Email | banner | wide |
 
 ## 3. 레이아웃 슬롯(z-order)
-`background` → `logo` → `headline` → `body` → `cta` → `disclosure`.
-헤드라인·바디는 상단, CTA·고지는 하단 배치. 고지는 본문 대비 ≥30% 크기·대비 ≥4.5:1로 적법성 확보.
+`background` → `subhead` → `headline` → `body` → `disclosure`.
+캘리 서브헤드·헤드라인·금리 카드는 상단~중단, 고지는 푸터 밴드 위 배치.
+고지는 본문 대비 ≥30% 크기·대비 ≥4.5:1로 적법성 확보.
 
 ## 4. 카피 테마 & 다국어
-- 테마: 높은 금리 · 간편 가입 · 신뢰.
-- 언어별 카피를 동일 레이아웃에 주입(ko/en/vi/zh). 수치(3.5%/12개월/100만원)는 전 언어 일치.
+- 테마: 최고 3.30% 세전 · 20대 전용 우대 · 간편 가입.
+- 언어별 카피를 동일 레이아웃에 주입(ko/en/vi/zh). 수치(3.30/2.80/0.50%p·6~36개월·100만원)는 전 언어 일치.
 
 ## 5. 컴플라이언스
 - 전 소재 **예금자보호 고지** 포함. 금리는 **세전 기준** 명시, 우대조건 단서 동반.
-- 최상급·단정 표현 금지. R1 법률 검토에서 콘텐츠 기반으로 재검증한다.
+- 유일성·최상급·절대보장 표현 금지. R1 법률 검토에서 콘텐츠 기반으로 재검증한다.
 """
 
 LAYOUT_SPEC = {
-    "visual_concept": "밝은 톤의 추상적 금융 성장 이미지",
-    # 4:5 세로형(인스타/카톡 피드 최적) — 사용자 제공 배경(1122×1402=4:5)을 꽉 채운다.
-    # 프론트 assembleScene이 aspect로 캔버스 1080×1350을 산출 → 배경 클리핑 없음.
-    "aspect": "4:5",
-    # 시각 적법성 룰(core/visual_rules) 입력 — 배경 대표 톤(밝은 포스터). 고지 대비 계산 근거.
-    "bg_color": "#F2EFE9",
+    "visual_concept": "스카이 블루 시티스케이프 앞 실사 청년 모델(스카이블루 니트)과 저금통 — "
+                      "코발트 블루 헤드라인, 화이트 금리 카드, 딥 네이비 푸터 밴드의 신뢰형 금융 포스터",
+    # 3:4 세로형(포스터 규격) — poc_E 자산(≈1084×1451)에 맞춘다.
+    # 프론트 assembleScene이 aspect로 캔버스 1080×1440을 산출 → 배경 클리핑 없음.
+    "aspect": "3:4",
+    # 시각 적법성 룰(core/visual_rules) 입력 — 배경 대표 톤(밝은 스카이). 고지 대비 계산 근거.
+    "bg_color": "#EAF3FB",
+    # 로고는 자산에 CI 정합으로 베이크됨(2026-07-05 poc_E 계약) → S2c 로고 오버레이·프리뷰
+    # 로고 인라인을 이 경로에선 끈다. 고지 오버레이는 유지(오버레이 아키텍처 서사).
+    "logo_policy": "baked",
     # bbox는 레퍼런스·실 LLM·프론트 assembleScene과 동일한 {x,y,w,h} 객체 형식.
-    # (이전 배열 [x1,y1,x2,y2] 코너 형식은 프론트가 s.bbox.x로 읽어 좌표가 전부
-    #  undefined가 되는 버그를 유발 → 텍스트가 원점에 겹치고 배경이 안 채워졌다.)
-    # 좌표는 1080×1350 캔버스 기준(헤드라인/바디=상단, CTA/고지=하단).
+    # 좌표는 1080×1440 캔버스 기준 — poc_E 자산의 실제 존(캘리 서브헤드/헤드라인/금리 카드/
+    # 푸터 고지)에 맞춰 실측 정렬(프리뷰 스키매틱·슬롯 폴백 하이라이트가 이 존을 가리킨다).
     "slots": [
-        {"role": "background", "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1350}, "z": 0, "copy_key": None},
-        {"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3, "copy_key": None},
-        {"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200}, "z": 1, "copy_key": "headline", "font_px": 72, "color": "#0B1324"},
-        {"role": "body", "bbox": {"x": 80, "y": 400, "w": 920, "h": 300}, "z": 1, "copy_key": "body", "font_px": 34, "color": "#1A2332"},
-        {"role": "cta", "bbox": {"x": 80, "y": 1150, "w": 460, "h": 110}, "z": 2, "copy_key": "cta", "font_px": 30, "color": "#FFFFFF"},
-        # 고지 글자 26px = 최대(72)의 36% ≥ 30%(금투협 §5④), 대비 #3A3A3A/#F2EFE9 ≈ 9:1 ≥ 4.5(WCAG) → 적법.
-        {"role": "disclosure", "bbox": {"x": 80, "y": 1276, "w": 920, "h": 58}, "z": 3, "copy_key": "disclosure", "font_px": 26, "color": "#3A3A3A"},
+        {"role": "background", "bbox": {"x": 0, "y": 0, "w": 1080, "h": 1440}, "z": 0, "copy_key": None},
+        {"role": "subhead", "bbox": {"x": 72, "y": 118, "w": 700, "h": 64}, "z": 1, "copy_key": "subhead", "font_px": 34, "color": "#0B2B5B"},
+        {"role": "headline", "bbox": {"x": 64, "y": 215, "w": 660, "h": 260}, "z": 1, "copy_key": "headline", "font_px": 76, "color": "#0B2B5B"},
+        {"role": "body", "bbox": {"x": 100, "y": 660, "w": 420, "h": 220}, "z": 1, "copy_key": "body", "font_px": 30, "color": "#1A2332"},
+        # 고지 글자 26px = 최대(76)의 34% ≥ 30%(금투협 §5④), 대비 #2B3A55/#EAF3FB ≈ 10:1 ≥ 4.5(WCAG) → 적법.
+        # 위치 = 네이비 푸터 밴드 위 잔글씨 존(자산 실측) — 오버레이 스크림이 이 존을 덮는다.
+        {"role": "disclosure", "bbox": {"x": 460, "y": 1306, "w": 580, "h": 96}, "z": 3, "copy_key": "disclosure", "font_px": 26, "color": "#2B3A55"},
     ],
     "copy": {},
 }
 
-# 티키타카 v2 — S1 게이트 챗 "캘리/골드" 시그널의 결정론 응답(spec 2026-07-03 D3).
-# V1 대비 headline 88px 골드(#FFD166) + 붓펜 캘리그래피 디렉션. 시안 프리뷰
-# (build_layout_mock_html)가 font_px/color를 렌더하므로 게이트 화면에서 변화가 즉시 보이고,
-# 골드 hex는 S2a 프롬프트 힌트로 실려 poster_v2/violating_gold fixture 매칭 시그널이 된다.
+# 티키타카 v2 — S1 게이트 챗 "캘리/블루" 시그널의 결정론 응답(spec 2026-07-03 D3).
+# V1 대비 headline 88px 코발트 블루(#1E63D0) 승격 + 서브헤드 붓펜 캘리그래피 디렉션.
+# 시안 프리뷰(build_layout_mock_html)가 font_px/color/font_style을 렌더하므로 게이트
+# 화면에서 변화가 즉시 보이고, 코발트 hex는 S2a 프롬프트 힌트로 실려
+# poster_v2/violating_gold fixture 매칭 시그널이 된다(2×2의 '디렉션 축').
 import copy as _copy_mod
 
 LAYOUT_SPEC_V2 = _copy_mod.deepcopy(LAYOUT_SPEC)
 LAYOUT_SPEC_V2["visual_concept"] = (
-    "밝은 톤의 추상적 금융 성장 이미지 — 헤드라인은 붓펜 캘리그래피 질감의 골드(#FFD166) "
-    "포인트, 나머지 텍스트는 단정한 산세리프 투톤 대비. 골드 가독성을 위해 헤드라인 뒤는 "
-    "짙은 톤 처리")
+    "스카이 블루 시티스케이프 앞 실사 청년 모델 — 서브헤드는 붓펜 캘리그래피 질감, "
+    "헤드라인은 코발트 블루(#1E63D0) 디스플레이 웨이트로 승격, 나머지 텍스트는 단정한 "
+    "산세리프 투톤 대비. 화이트 금리 카드와 딥 네이비 푸터 밴드로 마감")
 for _s in LAYOUT_SPEC_V2["slots"]:
     if _s["role"] == "headline":
-        _s["font_px"], _s["color"] = 88, "#FFD166"
+        _s["font_px"], _s["color"] = 88, "#1E63D0"
+    if _s["role"] == "subhead":
         # 프리뷰 렌더러(layout_preview)의 캘리그래피 근사 신호(2026-07-05 GAP1) —
-        # 이탤릭+짙은 배경 처리로 '붓펜 골드' 디렉션이 시안에서 즉시 보이게 한다.
+        # 이탤릭+짙은 배경 처리로 '붓펜 캘리' 디렉션이 시안에서 즉시 보이게 한다.
         _s["font_style"] = "calligraphy"
 del _s
 
-# 모든 수치(3.5 / 12 / 100)는 FACTSHEET에 존재 → grounding 통과.
-# en/vi/zh는 한글 0(단위어 현지화: 개월→months/tháng/个月, 만원→vạn won/万韩元). 숫자만 유지.
+# 모든 수치(3.30 / 2.80 / 0.50 / 20)는 FACTSHEET에 존재 → grounding 통과.
+# 카피는 poc_E 교정 후 자산에 구워진 문구를 정본으로 채록(계약 §카피) — headline은
+# demo._poster_lang의 정확 일치 판별키이므로 글자 그대로 유지할 것.
 COPY = {
-    "ko": {"headline": "연 3.5% JB 정기예금", "body": "12개월 만기, 100만원부터 시작하세요.", "cta": "지금 가입하기"},
-    "en": {"headline": "JB Term Deposit at 3.5%", "body": "12-month term. Open online in minutes.", "cta": "Open now"},
-    "vi": {"headline": "JB Tiết kiệm 3.5%", "body": "Kỳ hạn 12 tháng, từ 100 vạn won.", "cta": "Mở ngay"},
-    "zh": {"headline": "JB定期存款 3.5%", "body": "12个月期限，100万韩元起。", "cta": "立即开户"},
+    "ko": {"headline": "JB 20대 청년 정기예금",
+           "subhead": "첫 목돈의 시작, 미래를 위한 가장 확실한 선택!",
+           "body": "최고 연 3.30% (세전) · 기본금리 연 2.80% + 우대금리 최대 연 0.50%p (세전)",
+           "cta": "지금 가입하기"},
+    "en": {"headline": "JB Savings Account for People in Their 20s",
+           "subhead": "The very first step toward your dreams, the smartest choice for your future!",
+           "body": "Up to 3.30% p.a. (pre-tax). Base rate 2.80% + preferred rate up to 0.50%p.",
+           "cta": "Open now"},
+    "vi": {"headline": "Tiết kiệm định kỳ JB cho người 20 tuổi",
+           "subhead": "Bước khởi đầu đầu tiên, lựa chọn thông minh nhất cho tương lai của bạn!",
+           "body": "Lãi suất tối đa 3.30%/năm (trước thuế). Cơ bản 2.80% + ưu đãi tối đa 0.50%p.",
+           "cta": "Mở ngay"},
+    "zh": {"headline": "JB 20代 青年 定期存款",
+           "subhead": "迈出第一步，为未来做出最明智的选择！",
+           "body": "最高年利3.30%（税前）。基本利率2.80% + 优惠利率最高0.50%p。",
+           "cta": "立即开户"},
 }
 
-# 티키타카 직후(카피 스테이징 전) 시안 프리뷰에 캘리 헤드라인 견본이 즉시 보이게
-# 프리스테이지(2026-07-05 발표자 피드백: '카피로 넘어가기 전에 캘리그래피가 보여야').
+# 티키타카 직후(카피 스테이징 전) 시안 프리뷰에 캘리 서브헤드·헤드라인 견본이 즉시
+# 보이게 프리스테이지(2026-07-05 발표자 피드백: '카피로 넘어가기 전에 캘리그래피가 보여야').
 # S2b가 spec.copy[lang].update(...)로 실제(위반 스테이징) 카피로 대체하므로 이후 단계
 # 산출물·2×2 상태 매칭에는 영향 없다.
-LAYOUT_SPEC_V2["copy"] = {"ko": {"headline": COPY["ko"]["headline"]}}
+LAYOUT_SPEC_V2["copy"] = {"ko": {"headline": COPY["ko"]["headline"],
+                                 "subhead": COPY["ko"]["subhead"]}}
 
-# 시연 핵심 — Design 1차 산출에 의도적으로 끼우는 위반 카피(ko만).
-#   headline = 과장광고(업계 최고/최고 금리, 객관적 근거 없는 최상급) → 표시광고법 §3
-#   body     = 금리 불일치(연 4.0% ≠ 마스터 3.5%) + 우대조건 단서(세전/우대) 누락
-# R1 법률 검토가 콘텐츠 기반으로 적발(critical 2 + warning 1) → 검토 BLOCKED.
-# en/vi/zh는 clean(COPY와 동일) — 위반은 ko에 집중하고, #4(vi/zh 예금자보호 고지
-# 누락)는 harness_design.DISCLOSURE_DISPLAY로 별도 스테이징한다.
-# 교정(FabricEditor 씬 수동 편집)으로 위반 토큰이 사라지면 재검토 PASS(위반→교정 루프).
+# 시연 핵심 — Design 1차 산출에 의도적으로 끼우는 위반 카피(poc_E 교정 전 자산 채록,
+# 4개 언어 전부 스테이징 — '모든 언어판에서 자동 적발' 서사).
+#   headline = 유일성·최상급 무근거("국내유일 최고"/Korea's No.1/tốt nhất/唯一最高) → 표시광고법 §3
+#   body     = 절대적 보장 오인("무조건 지급!"/No Conditions!/miễn phí/无条件支付) → 금소법 §22
+# R1 법률 검토가 콘텐츠 기반으로 적발(언어당 critical 2) → 검토 BLOCKED.
+# 교정(원클릭 remediate·FabricEditor 씬 편집)으로 위반 토큰이 사라지면 재검토 통과(위반→교정 루프).
 COPY_VIOLATING = {
-    "ko": {"headline": "업계 최고 금리 JB 정기예금",
-           "body": "연 4.0% 12개월 만기, 100만원부터 시작하세요.",
+    "ko": {"headline": "국내유일 최고 JB 20대 청년 정기예금",
+           "subhead": "첫 목돈의 시작, 미래를 위한 가장 확실한 선택!",
+           "body": "최고 연 3.30% (세전) 무조건 지급! 기본금리 연 2.80% + 우대금리 최고 연 "
+                   "0.50%p — 국내유일 최고금리 달성!",
            "cta": "지금 가입하기"},
-    "en": dict(COPY["en"]),
-    "vi": dict(COPY["vi"]),
-    "zh": dict(COPY["zh"]),
+    "en": {"headline": "Korea's No.1 JB Youth Savings for Your 20s",
+           "subhead": "The first step today, the best choice for your future!",
+           "body": "Max. annual 3.30% (before tax), no conditions! Base 2.80% + bonus up to "
+                   "0.50%p — reach Korea's highest interest rate!",
+           "cta": "Open now"},
+    "vi": {"headline": "Sản phẩm tiết kiệm định kỳ dành cho thanh niên 20 tuổi tốt nhất tại JB",
+           "subhead": "Khởi đầu cho tương lai, lựa chọn chắc chắn nhất!",
+           "body": "Lãi suất cao nhất năm 3.30% (trước thuế), trả lãi miễn phí! Cơ bản 2.80% + "
+                   "ưu đãi cao nhất 0.50%p — đạt lãi suất cao nhất tại Hàn Quốc!",
+           "cta": "Mở ngay"},
+    "zh": {"headline": "韩国唯一最高 JB 20多岁青年定期存款",
+           "subhead": "人生的第一个存款，为更美好的未来做出最明智的选择！",
+           "body": "最高年3.30%（税前），无条件支付！基本利率2.80% + 优惠利率最高0.50%p — "
+                   "实现韩国唯一最高利率！",
+           "cta": "立即开户"},
 }
 
 CRITIC_SCORES = {
@@ -206,7 +255,7 @@ CRITIC_SCORES = {
 
 # Stage A 1턴 리서치 인용 — 캠페인 의사결정 근거(공식 출처). 하네스 _save_research가
 # assets/research/article/src_N.md로 저장 → 파일 트리에 리서치 산출물로 노출.
-# 스니펫은 이후 단계의 핵심(3.5% 금리·예금자보호 5천만원·우대/세전 고지)과 연결된다.
+# 스니펫은 이후 단계의 핵심(최고 3.30% 세전 금리·예금자보호 5천만원·우대/세전 고지)과 연결된다.
 RESEARCH_CITATIONS = [
     {"url": "https://www.bok.or.kr/portal/main/main.do",
      "title": "한국은행 예금금리 동향",
@@ -299,20 +348,23 @@ RESEARCH_CITATIONS = [
 # (인터랙티브 기획: 1차 누락 → 2차 완성 흐름을 시연)
 PLAN_MD_PARTIAL = """---
 creative_direction:
-  palette: ["#00857C", "#0B2B5B", "#FFFFFF"]
+  palette: ["#1E63D0", "#0B2B5B", "#FFFFFF"]
   font: Pretendard
   grid: 12col
-  aspect: "4:5"
-material_matrix: [{channel: instagram, format: square}, {channel: email, format: banner}]
-image_concept: 밝은 톤의 추상적 금융 성장 이미지
-copy_themes: [높은 금리, 간편 가입, 신뢰]
+  aspect: "3:4"
+material_matrix: [{channel: instagram, format: poster, aspect: "3:4"}, {channel: email, format: banner}]
+image_concept: 스카이 블루 시티스케이프 앞 실사 청년 모델 — 신뢰형 금융 포스터
+copy_themes: [최고 3.30% 세전, 20대 전용 우대, 간편 가입]
 multinational: true
 languages: [ko, en, vi, zh]
 factsheet:
-  product: JB 정기예금
-  interest_rate: 3.5%
-  term: 12개월
-  min_amount: 100만원
+  product_name: JB 20대 청년 정기예금
+  interest_rate: 연 2.80% (세전)
+  max_rate: 최고 연 3.30% (세전)
+  prime_rate: 우대 최대 연 0.50%p (세전)
+  term: 6개월~36개월
+  min_amount: 100만원부터
+  eligibility: 만 19~29세 · 1인 1계좌
 ---
 # 구현 계획 (초안)
 
@@ -326,45 +378,50 @@ video_direction:
   aspect: "9:16"
   fps: 30
   pacing: medium
-  palette: ["#0B2B5B", "#00857C", "#FFFFFF"]
+  palette: ["#0B2B5B", "#1E63D0", "#FFFFFF"]
   font: Pretendard
   music: uplifting
   voiceover: false
-footage_concept: 밝은 톤의 추상적 금융 성장 모션 배경
+footage_concept: 밝은 톤의 청년 금융 라이프 모션 배경
 scene_beats: [훅, 혜택, 신뢰, CTA]
-copy_themes: [높은 금리, 간편 가입, 신뢰]
+copy_themes: [최고 3.30% 세전, 20대 전용 우대, 간편 가입]
 multinational: true
 languages: [ko, en, vi, zh]
 material_matrix: [{channel: instagram, format: reels, aspect: "9:16", duration: 15}]
 factsheet:
-  product: JB 정기예금
-  interest_rate: 3.5%
-  term: 12개월
-  min_amount: 100만원
+  product_name: JB 20대 청년 정기예금
+  interest_rate: 연 2.80% (세전)
+  max_rate: 최고 연 3.30% (세전)
+  prime_rate: 우대 최대 연 0.50%p (세전)
+  term: 6개월~36개월
+  min_amount: 100만원부터
+  eligibility: 만 19~29세 · 1인 1계좌
 disclosures: [예금자보호법에 따라 5천만원까지 보호]
 ---
 # 영상 구현 계획
 
-훅→혜택(3.5%)→신뢰(예금자보호)→CTA 4비트, 9:16 15초 릴스.
+훅→혜택(최고 3.30% 세전)→신뢰(예금자보호)→CTA 4비트, 9:16 15초 릴스.
 """
 
 VIDEO_SPEC_MD = """---
-goal: 2030 사회초년생 대상 정기예금 캠페인 — 영상(릴스)
+goal: 20대 청년 대상 JB 20대 청년 정기예금 캠페인 — 영상(릴스)
 medium: video
-target_segments: [2030 사회초년생, 직장인]
-key_messages: [3.5% 정기예금, 모바일 간편 가입]
+target_segments: [20대 사회초년생, 대학생·취준생]
+key_messages: [최고 연 3.30% 세전, 모바일 간편 가입]
 channels: [instagram_reels]
 languages: [ko, en, vi, zh]
 multinational: true
 tone: 밝고 신뢰감 있는
 factsheet:
-  product: JB 정기예금
-  interest_rate: 3.5%
-  term: 12개월
+  product_name: JB 20대 청년 정기예금
+  interest_rate: 연 2.80% (세전)
+  max_rate: 최고 연 3.30% (세전)
+  prime_rate: 우대 최대 연 0.50%p (세전)
+  term: 6개월~36개월
 disclosures: [예금자보호법에 따라 5천만원까지 보호]
 ---
 # 기획(spec) — 영상
-2030 사회초년생을 위한 9:16 릴스. 훅→혜택→신뢰→CTA 4비트.
+20대 사회초년생을 위한 9:16 릴스. 훅→혜택→신뢰→CTA 4비트.
 """
 
 VIDEO_PLAN_MD_PARTIAL = """---
@@ -441,20 +498,21 @@ def load_poster_bg() -> bytes:
         return placeholder_png()
 
 
-# 상태별 실생성 2K 포스터 fixture(spec 2026-07-03 D1) — 실 Gemini로 mock 카피 그대로
-# 사전 생성(scripts/gen_demo_posters.py). 실 Veo footage를 mock 영상 fixture로 박은 선례와
-# 동일 패턴. 파일 부재/미지 상태는 None → 호출부(demo.generate_image)가 PIL 폴백(완주 보장).
+# 상태별 실생성 포스터 fixture — poc_E 자산(2026-07-05, 발표자 제작 교정 전/후 × 4언어).
+# 파일 부재/미지 상태는 None → 호출부(demo.generate_image)가 PIL 폴백(완주 보장).
 _POSTER_DIR = os.path.join(os.path.dirname(__file__), "..", "references", "design")
 POSTER_STATES = ("violating", "violating_gold", "final", "v2")
-# 언어 변형 fixture(2026-07-04): 비ko는 poster_{state}_{lang}.png. 비ko 카피는 위반·교정
-# 모두 clean(COPY_VIOLATING가 COPY 복제)이라 골드 경로엔 v2 변형 3장이면 데모 전 구간 커버.
+# 자산은 교정 전/후 2종 × 4언어(8장)뿐 — 2×2 상태 계약은 파일 별칭으로 유지한다
+# (디렉션 축 무관 동일 포스터: violating=violating_gold, final=v2 같은 바이트).
+_STATE_FILE_ALIAS = {"violating": "violating_gold", "final": "v2"}
 POSTER_LANGS = ("ko", "en", "vi", "zh")
 
 
 def load_poster_fixture(state: str, lang: str = "ko") -> bytes | None:
     if state not in POSTER_STATES or lang not in POSTER_LANGS:
         return None
-    name = f"poster_{state}.png" if lang == "ko" else f"poster_{state}_{lang}.png"
+    eff = _STATE_FILE_ALIAS.get(state, state)
+    name = f"poster_{eff}.png" if lang == "ko" else f"poster_{eff}_{lang}.png"
     try:
         with open(os.path.join(_POSTER_DIR, name), "rb") as f:
             return f.read()
@@ -502,14 +560,29 @@ _VEO_DEMO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAABfYdXVpZNj+w9YbDkg
 
 
 # 하이라이트 authored bbox — mock 데모 구절-tight(정규화 0~1). 키=(image, slot, lang).
-# 값은 poster_violating_gold.png 기준 초기 근사 → Task 8 정렬 검증에서 보정.
+# 값은 poc_E 교정 전 자산(poster_violating_gold*, ≈1084×1451) 실측(2026-07-05).
+# headline=위반 문구가 있는 줄(ko/en/zh는 1행 "국내유일 최고"류, vi는 4행 "TỐT NHẤT TẠI JB"),
+# body=금리 카드 컨테이너("무조건 지급!"·"국내유일 최고금리 달성!" 포함 존).
+_V1_PNG = "design/design-system/components/visual/v1.png"
+# headline=위반 헤드라인 줄(ko/en/zh 1행 "국내유일 최고"류, vi 4행 "TỐT NHẤT TẠI JB"),
+# body=금리 카드 컨테이너("무조건 지급!"·"(세전)"·"국내유일 최고금리 달성!" 포함 존).
+# ⚠️ 주 언어(ko)만 붕괴 시 히어로(v1.png)에 표시됨 — 비주 언어는 자기 합성 렌더에만
+# 적용(resolve_location primary_lang 분리). 좌표는 각 언어 포스터(≈1084×1451) 실측.
 HIGHLIGHT_BBOX_FIXTURES = {
-    ("design/design-system/components/visual/v1.png", "headline", "ko"): {
-        # "업계 최고 금리" 첫 줄 구절-tight — poster_violating_gold(1856×2304) 재실측
-        # (2026-07-05 GAP7: 이전 근사값이 위로 ~0.04 치우쳐 브러시 획 위 여백을 잡았다).
-        "x": 0.055, "y": 0.125, "w": 0.665, "h": 0.105,
-    },
+    (_V1_PNG, "headline", "ko"): {"x": 0.052, "y": 0.150, "w": 0.545, "h": 0.082},
+    (_V1_PNG, "body", "ko"):     {"x": 0.088, "y": 0.505, "w": 0.400, "h": 0.170},
+    (_V1_PNG, "headline", "en"): {"x": 0.055, "y": 0.150, "w": 0.560, "h": 0.058},
+    (_V1_PNG, "body", "en"):     {"x": 0.070, "y": 0.450, "w": 0.470, "h": 0.115},
+    (_V1_PNG, "headline", "vi"): {"x": 0.068, "y": 0.305, "w": 0.475, "h": 0.060},
+    (_V1_PNG, "body", "vi"):     {"x": 0.070, "y": 0.435, "w": 0.500, "h": 0.125},
+    (_V1_PNG, "headline", "zh"): {"x": 0.060, "y": 0.150, "w": 0.545, "h": 0.062},
+    (_V1_PNG, "body", "zh"):     {"x": 0.068, "y": 0.445, "w": 0.470, "h": 0.120},
 }
+
+# RC 논란(집게손 제스처) authored bbox — poc_E 교정 전 ko 자산의 손 위치 실측(정규화).
+# demo.review_image가 [controversy-vision] 심의에서 violating 패밀리 입력에 이 bbox를
+# finding.location.bbox로 실어 반환 → 하이라이트가 손 제스처를 정확히 가리킨다.
+CONTROVERSY_GESTURE_BBOX = {"x": 0.470, "y": 0.360, "w": 0.150, "h": 0.120}
 
 # 업로드 데모 소재 authored bbox(정규화). 키=업로드 파일명(소문자). Phase 2a.
 # external-deposit-promo.png의 '원금 100% 보장' 영역(make_poster.py와 동일 좌표).

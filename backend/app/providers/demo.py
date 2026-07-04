@@ -47,13 +47,23 @@ def _pace(resp: ProviderResponse) -> ProviderResponse:
         time.sleep(min(base_ms / 1000 + len(resp.text or "") / 8000, 1.2))
     return resp
 
-# JB 정기예금 캠페인 마스터 금리(grounding 진실값). 이와 다른 금리 표기는 허위표시 위반.
-_CORRECT_RATE = "3.5%"
-# 한국어 과장/단정 표현(severity.EXAGGERATION_TOKENS는 vi/zh만 커버 → ko 보강).
-_EXAGGERATION_KO = ("업계 최고", "최고 금리", "최고의", "무조건", "확정 수익", "원금 보장")
+# JB 20대 청년 정기예금 마스터 금리(grounding 진실값) — 최고 3.30% = 기본 2.80% +
+# 우대 0.50%p. 이 집합 밖의 금리 표기는 허위표시 위반(poc_E 계약 2026-07-05).
+_ALLOWED_RATES = frozenset({"3.30%", "2.80%", "0.50%"})
+_MASTER_RATE = "3.30%"
+# 과장/단정 표현 — poc_E 교정 전 자산에 구워진 위반 축(유일성·최상급·절대보장)을
+# 4개 언어로 커버(severity.EXAGGERATION_TOKENS는 vi/zh 일반 표현만 → 여기서 보강).
+# 소문자 매칭. clean 카피(COPY)에는 등장하지 않는 토큰만 넣을 것(오탐 가드).
+_EXAGGERATION_TOKENS_I18N = (
+    "국내유일", "무조건", "업계 최고", "최고의", "확정 수익", "원금 보장",   # ko
+    "no.1", "no conditions", "highest interest rate",                        # en
+    "tốt nhất", "cao nhất", "miễn phí",                                      # vi
+    "唯一", "无条件",                                                          # zh
+)
 _RATE = re.compile(r"\d+(?:\.\d+)?\s*%")
 # 우대조건 단서 키워드(언어 무관 부분문자열). 있으면 단서 충족, 없으면 누락(금소법 §22).
-_PREFERENTIAL = ("세전", "우대", "pre-tax", "preferential", "trước thuế", "ưu đãi", "税前", "优惠")
+_PREFERENTIAL = ("세전", "우대", "pre-tax", "before tax", "preferential",
+                 "trước thuế", "ưu đãi", "税前", "优惠")
 # S2b 교정 신호 — 사용자가 위반 카피의 보강/교정을 요청하면 clean 카피로 재생성.
 # 일반 디자인 챗에 흔한 광범위 단어(수정·법률·고지)는 false-positive(위반 카피 조기 소거)를
 # 유발해 제외 — 교정 의도가 분명한 토큰만 유지(예: "카피 수정해줘"는 더 이상 발동하지 않음).
@@ -66,8 +76,9 @@ _LAW_CONSUMER = "https://www.law.go.kr/법령/금융소비자보호에관한법�
 def legal_findings(scene_copy: dict) -> list[dict]:
     """scene_copy(언어별 텍스트)에서 위반 토큰을 검출 → R1 법률 findings(law.go.kr 인용).
 
-    clean 카피면 빈 리스트. 위반 카피에서 #1 과장광고·#2 금리 불일치(critical)·#3 우대단서
-    누락(warning)이 점등. #3은 body 슬롯만 검사(헤드라인의 상품명 금리는 제외).
+    clean 카피면 빈 리스트. 위반 카피에서 #1 유일성·최상급·절대보장(critical, 4개 언어)·
+    #2 금리 불일치(critical)·#3 우대단서 누락(warning)이 점등. #3은 body 슬롯만 검사
+    (헤드라인의 상품명 금리는 제외).
     """
     findings: list[dict] = []
     for lang, copy in (scene_copy or {}).items():
@@ -76,8 +87,8 @@ def legal_findings(scene_copy: dict) -> list[dict]:
         for slot in ("headline", "body", "cta"):
             text = str(copy.get(slot, "") or "")
             low = text.lower()
-            # #1 과장광고
-            if any(tok in text for tok in _EXAGGERATION_KO) or any(
+            # #1 유일성·최상급·절대보장 표현(4개 언어 토큰 + severity 일반 토큰)
+            if any(tok in low for tok in _EXAGGERATION_TOKENS_I18N) or any(
                 t.lower() in low for t in EXAGGERATION_TOKENS
             ):
                 findings.append({
@@ -85,18 +96,18 @@ def legal_findings(scene_copy: dict) -> list[dict]:
                     "clause": "표시·광고의 공정화에 관한 법률 제3조",
                     "official_source_url": _LAW_ADVERTISING,
                     "severity": "critical",
-                    "evidence": f"객관적 근거 없는 최상급/단정 표현: '{text}'",
+                    "evidence": f"객관적 근거 없는 유일성·최상급/절대보장 표현: '{text}'",
                 })
-            # #2 금리 수치 불일치(마스터 3.5% 외 금리 표기 = 허위표시)
+            # #2 금리 수치 불일치(마스터 3.30/2.80/0.50 외 금리 표기 = 허위표시)
             for tok in _RATE.findall(text):
                 norm = tok.replace(" ", "")
-                if norm != _CORRECT_RATE:
+                if norm not in _ALLOWED_RATES:
                     findings.append({
                         "location": {"slot": slot, "lang": lang},
                         "clause": "표시·광고의 공정화에 관한 법률 제3조(허위·과장 광고)",
                         "official_source_url": _LAW_ADVERTISING,
                         "severity": "critical",
-                        "evidence": f"표시 금리 '{norm}'가 상품 마스터({_CORRECT_RATE})와 불일치",
+                        "evidence": f"표시 금리 '{norm}'가 상품 마스터(최고 {_MASTER_RATE} 세전)와 불일치",
                     })
             # #3 우대조건 단서 누락 — body에 금리 표기가 있는데 세전/우대 단서가 없을 때
             if slot == "body" and _RATE.search(text) and not any(
@@ -209,19 +220,19 @@ def _stage_a_brainstorm(messages, medium="image"):
     if turns <= 1:
         # 리서치 후 첫 질문(타겟) — 인용 동반.
         return json.dumps({
-            "reply": ("정기예금 캠페인이군요. 시장을 빠르게 살펴봤어요 — 2030 세대의 정기예금 "
-                      "가입이 늘고 금리 민감도가 높으며 모바일 채널 비중이 큽니다. 먼저 핵심 "
-                      "타겟을 누구로 잡을까요?"),
+            "reply": ("청년 정기예금 가입 캠페인이군요. 시장을 빠르게 살펴봤어요 — 20대의 "
+                      "정기예금 가입이 늘고 금리 민감도가 높으며 모바일 채널 비중이 큽니다. "
+                      "먼저 핵심 타겟을 누구로 잡을까요?"),
             "document": "",
             "ask": {"trigger": "a", "question": "핵심 타겟 세그먼트는?",
-                    "options": ["2030 사회초년생", "3040 자산형성기", "전 연령 일반"]},
+                    "options": ["20대 청년(만 19~29세)", "3040 자산형성기", "전 연령 일반"]},
             "ready": False,
         }, ensure_ascii=False), F.RESEARCH_CITATIONS
     if turns == 2:
         # 두 번째 질문(다국어 범위) — 리서치 근거 환기.
         return json.dumps({
-            "reply": ("좋아요, 2030 사회초년생으로 잡겠습니다. 외국인 고객까지 넓히면 다국어 "
-                      "소재가 필요해요. 어느 범위로 제작할까요?"),
+            "reply": ("좋아요, 20대 청년(만 19~29세)으로 잡겠습니다. 외국인 청년 고객까지 "
+                      "넓히면 다국어 소재가 필요해요. 어느 범위로 제작할까요?"),
             "document": "",
             "ask": {"trigger": "a", "question": "다국어 제작 범위는?",
                     "options": ["국문만", "영어 포함", "영어+베트남어+중국어"]},
@@ -231,15 +242,15 @@ def _stage_a_brainstorm(messages, medium="image"):
         # AI 제안 턴(spec D4) — 리서치 근거로 디렉션을 권장안으로 제시하고 논의 유도.
         # image 한정: video는 3턴째 spec 불변(D6 영상 무변경)이라 이 블록을 건너뛴다.
         return json.dumps({
-            "reply": ("좋아요. 이제 디자인 디렉션이에요 — 리서치에서 봤듯 2030은 금리 수치가 "
-                      "또렷하게 보이는 신뢰형 디자인에 반응합니다. 저는 **A안: 신뢰 그린(#00857C) "
-                      "베이스 + 골드 포인트, 굵은 디스플레이 헤드라인의 3단 타이포 위계, 라인 "
-                      "픽토그램 아이콘**을 권합니다 — 금리 카드와 혜택 칩이 살아나는 조합이에요. "
-                      "톤을 더 차분하게 가려면 B안(딥 네이비 미니멀), 더 친근하게는 C안(밝은 "
-                      "일러스트)도 가능해요. 어느 방향으로 갈까요?"),
+            "reply": ("좋아요. 이제 디자인 디렉션이에요 — 리서치에서 봤듯 20대는 금리 수치가 "
+                      "또렷하게 보이는 신뢰형 디자인에 반응합니다. 저는 **A안: 스카이 블루 "
+                      "시티스케이프 + 코발트 블루(#1E63D0) 헤드라인, 실사 청년 모델과 화이트 "
+                      "금리 카드, 3D 아이콘 혜택 칩 행**을 권합니다 — 신뢰와 친근함을 동시에 "
+                      "잡는 조합이에요. 톤을 더 차분하게 가려면 B안(딥 네이비 미니멀), 더 "
+                      "발랄하게는 C안(밝은 일러스트)도 가능해요. 어느 방향으로 갈까요?"),
             "document": "",
             "ask": {"trigger": "a", "question": "디자인 디렉션은?",
-                    "options": ["A. 신뢰 그린+골드 포인트 (권장)", "B. 딥 네이비 미니멀",
+                    "options": ["A. 스카이 블루 신뢰형+실사 모델 (권장)", "B. 딥 네이비 미니멀",
                                 "C. 밝은 일러스트 친근형"]},
             "ready": False,
         }, ensure_ascii=False), []
@@ -279,15 +290,15 @@ def _stage_b_brainstorm(system: str, medium="image") -> str:
 
 # S1 티키타카 시그널(spec D3) — 데모 대본의 타이포 디렉션 멘트에 결정론 반응.
 # _REMEDIATION_SIGNAL과 동일한 콘텐츠 기반 분기 패턴. 대본 밖 챗은 V1 고정(오발동 가드).
-_TIKITAKA_SIGNAL = ("캘리", "골드")
+_TIKITAKA_SIGNAL = ("캘리", "코발트", "블루")
 
 
 def _layout_json(messages=None) -> str:
     user = _user_text(messages)
     if any(sig in user for sig in _TIKITAKA_SIGNAL):
         return json.dumps({
-            "reply": "헤드라인을 붓펜 캘리그래피 질감의 골드 포인트로 키웠어요. "
-                     "시안 프리뷰에서 확인해 주세요.",
+            "reply": "서브헤드를 붓펜 캘리그래피 질감으로, 헤드라인을 코발트 블루 디스플레이로 "
+                     "승격했어요. 시안 프리뷰에서 확인해 주세요.",
             "layout_spec": F.LAYOUT_SPEC_V2, "ready": True}, ensure_ascii=False)
     return json.dumps({"reply": "러프 완성", "layout_spec": F.LAYOUT_SPEC, "ready": True},
                       ensure_ascii=False)
@@ -330,7 +341,7 @@ _DIRECTED_COPY_LINE = re.compile(
     r"^\s*\d+\.\s*(초대형 헤드라인|본문 서브카피|CTA 버튼)(?:\s*\([^)]*\))?\s*:\s*\"(.+?)\"",
     re.MULTILINE)
 _HINT_SUFFIX = re.compile(r"\s*\((?:[^()]*(?:색\s*#|px)[^()]*)\)\s*$")
-_GOLD_HEX = "#ffd166"   # LAYOUT_SPEC_V2 headline 골드 — 2×2 상태의 골드 축 시그널
+_V2_HINT_HEX = "#1e63d0"   # LAYOUT_SPEC_V2 headline 코발트 — 2×2 상태의 디렉션 축 시그널
 
 
 def _copy_from_prompt(prompt: str) -> dict:
@@ -342,40 +353,46 @@ def _copy_from_prompt(prompt: str) -> dict:
     return out
 
 
-def _headline_gold(prompt: str) -> bool:
-    """헤드라인 라인에 골드 힌트(#FFD166)가 있는가 — 2×2 골드 축(라인 한정: 팔레트 오염 가드)."""
+def _headline_v2(prompt: str) -> bool:
+    """헤드라인 라인에 V2 코발트 힌트(#1E63D0)가 있는가 — 2×2 디렉션 축(라인 한정: 팔레트 오염 가드)."""
     for line in (prompt or "").splitlines():
-        if _GOLD_HEX in line.lower() and ("- headline" in line or "초대형 헤드라인" in line):
+        if _V2_HINT_HEX in line.lower() and ("- headline" in line or "초대형 헤드라인" in line):
             return True
     return False
 
 
-_VIOLATION_TOKENS = ("업계 최고", "4.0%")   # COPY_VIOLATING.ko와 동기(과장·금리 불일치)
+# COPY_VIOLATING(4개 언어)와 동기 — 유일성·최상급·절대보장 토큰(소문자 매칭).
+# clean 카피(COPY)에는 등장하지 않는 토큰만(오탐 = 교정본이 위반 fixture로 매칭되는 사고).
+_VIOLATION_TOKENS = ("국내유일", "무조건",            # ko
+                     "no.1", "no conditions",         # en
+                     "tốt nhất", "cao nhất",          # vi
+                     "唯一", "无条件")                  # zh
 
 
 def _poster_lang(copy: dict) -> str:
-    """카피 언어 감지 — headline이 COPY[lang]과 정확 일치하는 비ko 언어(기본 ko).
+    """카피 언어 감지 — headline이 COPY/COPY_VIOLATING[lang]과 정확 일치하는 비ko 언어(기본 ko).
 
     S2a 언어 변형 베이크 프롬프트는 copy[lang]을 글자 그대로 인용(build_director_prompt)
-    → 정확 일치로 안전하게 판별된다. 미지 카피는 ko로 두면 상태 매칭이 None → PIL 폴백."""
+    → 정확 일치로 안전하게 판별된다. 위반 카피도 언어별로 스테이징(poc_E 자산)되므로
+    양쪽 사전을 모두 본다. 미지 카피는 ko로 두면 상태 매칭이 None → PIL 폴백."""
     hl = (copy or {}).get("headline")
     for lang in ("en", "vi", "zh"):
-        if hl == F.COPY[lang]["headline"]:
+        if hl in (F.COPY[lang]["headline"], F.COPY_VIOLATING[lang]["headline"]):
             return lang
     return "ko"
 
 
 def _poster_state(copy: dict, prompt: str) -> str | None:
-    """파싱된 카피(위반 축) × 헤드라인 골드 힌트(골드 축) → 2×2 fixture 상태(spec D1).
+    """파싱된 카피(위반 축) × 헤드라인 코발트 힌트(디렉션 축) → 2×2 fixture 상태(spec D1).
 
     발표자가 티키타카를 어느 시점에 하든/생략하든 두 축이 독립 검출되어 일관된다.
-    비ko 카피는 설계상 clean(COPY_VIOLATING가 COPY 복제) — clean 축으로만 매칭된다."""
-    joined = " ".join(str(v) for v in (copy or {}).values())
-    gold = _headline_gold(prompt)
+    poc_E 자산은 디렉션 축 무관 동일 포스터(파일 별칭) — 축 계약만 유지된다."""
+    joined = " ".join(str(v) for v in (copy or {}).values()).lower()
+    v2 = _headline_v2(prompt)
     if any(t in joined for t in _VIOLATION_TOKENS):
-        return "violating_gold" if gold else "violating"
+        return "violating_gold" if v2 else "violating"
     if (copy or {}).get("headline") == F.COPY[_poster_lang(copy)]["headline"]:
-        return "v2" if gold else "final"
+        return "v2" if v2 else "final"
     return None
 
 
@@ -462,6 +479,33 @@ def _upload_audit_findings(prompt: str) -> str | None:
     return _empty_findings()
 
 
+def _controversy_vision_findings(prompt: str, image: bytes | None) -> str | None:
+    """[controversy-vision](RC 경로 3) 심의에 한해 결정론 제스처 적발(poc_E 데모).
+
+    poc_E 교정 전 포스터에는 모델의 **집게손 제스처**가 실제로 구워져 있다 — 라이브
+    비전이 시각 심볼 대조로 잡는 영역을, mock은 입력 바이트의 fixture 패밀리 판별
+    (poster_family_of)로 결정론 재현한다. 교정 후(v2/final) 포스터·미지 이미지는 빈
+    findings(거짓 논란 방지). 비-RC 프롬프트는 None → 현행 경로(빈 findings) 유지.
+    finding에는 손 위치 authored bbox(정규화)를 실어 하이라이트가 제스처를 가리키게 한다.
+    """
+    if not (prompt or "").startswith("[controversy-vision]"):
+        return None
+    fam = F.poster_family_of(image)
+    if fam not in ("violating", "violating_gold"):
+        return _empty_findings()
+    return json.dumps({"findings": [{
+        "location": {"slot": "visual", "lang": None,
+                     "bbox": dict(F.CONTROVERSY_GESTURE_BBOX)},
+        "category": "community_signal",
+        "id": "visual_pinch_gesture",
+        "severity": "warning",
+        "evidence": ("모델 손 포즈가 집게손 제스처(엄지·검지로 작은 것을 집는 모양)로 "
+                     "읽힐 수 있음 — 특정 커뮤니티 남성 비하 연상 논란 선례 다수(게임·유통업계 "
+                     "2023~). 포즈 교체 또는 크롭 권장."),
+        "source": "게임·유통업계 집게손 논란 사례(2023~)",
+    }]}, ensure_ascii=False)
+
+
 class DemoProvider(Provider):
     name = "demo"
 
@@ -539,8 +583,9 @@ class DemoProvider(Provider):
         lang = _poster_lang(copy)
         if state and lang != "ko" and image is not None:
             # 언어 변형은 입력 이미지(주 언어 베이크 산출)의 fixture 패밀리로 단계를
-            # 물려받는다(2026-07-05 GAP2) — 비ko 카피는 위반·교정 양쪽 clean이라
-            # 카피만으로 v2(교정본)에 매칭돼 '교정 전인데 교정본 변형' 오노출이 났다.
+            # 물려받는다(2026-07-05 GAP2 안전망). poc_E 자산은 위반 카피도 언어별
+            # 스테이징이라 카피만으로도 매칭되지만, 카피가 라이브 수정돼도 변형이
+            # 주 언어 단계를 따라가도록 패밀리 상속을 유지한다.
             fam = F.poster_family_of(image)
             if fam:
                 state = fam
@@ -569,4 +614,7 @@ class DemoProvider(Provider):
         audited = _upload_audit_findings(prompt)
         if audited is not None:
             return ProviderResponse(text=audited, model="demo")
+        controversial = _controversy_vision_findings(prompt, image_bytes)
+        if controversial is not None:
+            return ProviderResponse(text=controversial, model="demo")
         return ProviderResponse(text=_empty_findings(), model="demo")

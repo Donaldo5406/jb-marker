@@ -227,9 +227,9 @@ class DesignHarness(Harness):
             meta = {"source": "marker", "step": DONE, "remediated": True,
                     "applied_recs": applied}
         else:
-            text = ("리뷰에서 지적된 예금자보호 고지 누락(베트남어·중국어)과 과장광고 표현을 반영해 "
-                    "카피를 교정하고 4개 언어에 예금자보호 고지를 보강했습니다. 캔버스를 갱신했어요 — "
-                    "검토(review)를 다시 실행하면 통과합니다.")
+            text = ("리뷰에서 지적된 유일성·최상급('국내유일 최고')과 절대보장('무조건 지급') "
+                    "표현을 4개 언어에서 교정하고 예금자보호 고지를 보강했습니다. 캔버스를 "
+                    "갱신했어요 — 검토(review)를 다시 실행하면 반영 여부를 재검증합니다.")
             meta = {"source": "marker", "step": DONE, "remediated": True}
         events = list(res.events) + [
             {"type": "artifact", "path": f"{base}/rough/layout.spec.json"},

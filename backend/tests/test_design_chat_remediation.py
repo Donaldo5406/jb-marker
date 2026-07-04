@@ -36,11 +36,12 @@ def test_design_chat_feedback_remediates_copy(monkeypatch):
     design(action="advance")        # S0→S1(Rough) 게이트
     r = design(action="advance")    # S1 승인 → S2b(카피) 게이트 — 1차 카피(의도적 위반)
     assert r.status_code == 200
-    assert "업계 최고" in _headline_ko(client, rid)   # 1차 = 위반 카피
+    assert "국내유일" in _headline_ko(client, rid)   # 1차 = 위반 카피
 
     # 게이트 상태에서 챗 교정 피드백(action 없음, user_prompt에 교정 신호) → S2b 재실행.
     r2 = design(prompt="과장 표현 빼고 준법 표현으로 카피를 교정해줘")
     assert r2.status_code == 200
     ko = _headline_ko(client, rid)
-    assert "업계 최고" not in ko       # 위반 표현 제거
-    assert "3.5%" in ko                # clean 카피로 교체
+    assert "국내유일" not in ko        # 위반 표현 제거
+    from app.providers.demo_fixtures import COPY
+    assert ko == COPY["ko"]["headline"]   # clean 카피로 교체
