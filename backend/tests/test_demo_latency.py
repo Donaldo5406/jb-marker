@@ -27,3 +27,15 @@ def test_latency_invalid_env_is_off(monkeypatch):
     t0 = time.perf_counter()
     _critic(DemoProvider())
     assert time.perf_counter() - t0 < 0.1
+
+
+def test_latency_image_edit_skips_sleep(monkeypatch):
+    """image 입력(편집·언어 변형) 베이크는 지연 생략 — 비주얼 스텝이 변형 3장 지연으로
+    불필요하게 길어졌다(2026-07-05 스텝 레이턴시 단축). 신규 생성(image=None)만 페이싱."""
+    monkeypatch.setenv("DEMO_LATENCY_MS", "200")
+    slept: list[float] = []
+    monkeypatch.setattr("app.providers.demo.time.sleep", lambda s: slept.append(s))
+    DemoProvider().generate_image("- headline: x", image=b"\x89PNG")
+    assert slept == []
+    DemoProvider().generate_image("- headline: x")   # 신규 생성은 여전히 페이싱
+    assert len(slept) == 1

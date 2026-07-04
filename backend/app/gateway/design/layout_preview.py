@@ -64,6 +64,14 @@ _CSS = (
     ".role{position:absolute;top:1px;left:1px;font-size:9px;color:#2563eb;"
     "background:rgba(255,255,255,.82);padding:0 3px;border-radius:3px;pointer-events:none}"
     ".txt{font-weight:600;line-height:1.15;word-break:break-word;margin-top:12px}"
+    # 캘리그래피 근사(2026-07-05 GAP1): 서체 자산 없이(self-contained) 이탤릭·기울임·
+    # 짙은 브러시 배경으로 '붓펜 골드' 디렉션을 표현 — fixture의 다크 스트로크+골드와 호응.
+    ".txt.calli{font-style:italic;font-weight:800;letter-spacing:.01em;"
+    "display:inline-block;transform:rotate(-1.5deg);background:rgba(11,19,36,.82);"
+    "padding:2px 10px;border-radius:6px;text-shadow:0 1px 4px rgba(0,0,0,.4)}"
+    # 로고 자산 슬롯(2026-07-05 GAP4): 점선 존 박스 대신 실제 로고를 인라인 표시.
+    ".slot.asset{border:none;background:transparent;padding:0}"
+    ".logo-img{width:100%;height:100%;object-fit:contain;object-position:left top;display:block}"
     ".empty{color:#94a3b8;font-size:13px;margin:0}"
 )
 
@@ -109,6 +117,7 @@ def build_layout_mock_html(
     tokens: dict,
     facts: dict,
     visual_png: bytes | None = None,
+    logo_png: bytes | None = None,
 ) -> str:
     """layout.spec.json(+tokens+facts[+visual])을 self-contained HTML 시안으로 렌더.
 
@@ -116,6 +125,8 @@ def build_layout_mock_html(
     - tokens: ``tokens.json`` (palette·color_palette·font·grid·typography·concept·visual_mood)
     - facts: ``_facts_from_factsheet`` 결과(label→value 문자열 dict — 금리 카드 미리보기)
     - visual_png: 선택적 v1.png 바이트. 있으면 캔버스 배경 이미지로 인라인(썸네일 다운스케일).
+    - logo_png: 선택적 로고 자산 바이트(브랜드 단계 후). 있으면 logo 슬롯에 실제 로고를
+      인라인해 '로고가 안 박혀 보이는' 프리뷰 공백을 없앤다(2026-07-05 GAP4).
     """
     spec = spec if isinstance(spec, dict) else {}
     tokens = tokens if isinstance(tokens, dict) else {}
@@ -193,11 +204,24 @@ def build_layout_mock_html(
                     break
                 disp = max(7.0, disp * (boxpx_h / need) ** 0.5)
         color = _safe_color(s.get("color"), "#0b1324")
+        pos = (f"left:{left:.2f}%;top:{top:.2f}%;"
+               f"width:{bw:.2f}%;height:{bh:.2f}%")
+        if role == "logo" and logo_png:
+            # 브랜드 단계 후: 점선 존 대신 실제 로고 인라인(작은 자산이라 원본 그대로).
+            lb64 = base64.b64encode(logo_png).decode("ascii")
+            boxes.append(
+                f"<div class='slot asset' style='{pos}'>"
+                f"<img class='logo-img' alt='logo' "
+                f"src='data:image/png;base64,{lb64}'></div>"
+            )
+            continue
+        # 캘리 배경은 텍스트가 있을 때만 — 카피 전(rough) 빈 슬롯에 어두운 띠('작대기')가
+        # 그려지던 부작용 방지(2026-07-05 사용자 실측).
+        calli = " calli" if (text and str(s.get("font_style") or "") == "calligraphy") else ""
         boxes.append(
-            f"<div class='slot' style='left:{left:.2f}%;top:{top:.2f}%;"
-            f"width:{bw:.2f}%;height:{bh:.2f}%'>"
+            f"<div class='slot' style='{pos}'>"
             f"<span class='role'>{_esc(label)}</span>"
-            f"<span class='txt' style='font-size:{disp:.1f}px;color:{_esc(color)}'>"
+            f"<span class='txt{calli}' style='font-size:{disp:.1f}px;color:{_esc(color)}'>"
             f"{_esc(text)}</span></div>"
         )
     boxes_html = "".join(boxes)

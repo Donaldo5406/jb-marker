@@ -6,7 +6,7 @@ import "./fabricDefaults"; // fabric v7 origin(center) → left/top 복원 (side
  *  M4 FabricEditor와 동일 라이브러리(spec §8.2). v6 named import + Promise-returning loadFromJSON. */
 export async function renderSceneToPng(
   sceneJson: any,
-  opts: { width?: number; height?: number } = {}
+  opts: { width?: number; height?: number; multiplier?: number } = {}
 ): Promise<string> {
   const c = new StaticCanvas(undefined, {
     width: opts.width ?? 1080,
@@ -15,7 +15,7 @@ export async function renderSceneToPng(
   // v6 시그니처: loadFromJSON(json, reviver?, {signal}?) → Promise<this>
   await c.loadFromJSON(sceneJson);
   c.renderAll();
-  const url = c.toDataURL({ format: "png", multiplier: 1 }) as string;
+  const url = c.toDataURL({ format: "png", multiplier: opts.multiplier ?? 1 }) as string;
   c.dispose();
   return url;
 }
@@ -91,7 +91,11 @@ export async function renderAndUploadAll(
     try {
       // scene의 width/height(4:5=1080×1350 등)를 렌더러에 전달 — 미전달 시 항상 1080² 정사각으로
       // 렌더돼 4:5 합성 PNG 하단이 클리핑되던 버그(sceneAssembler가 aspect 기반 치수를 저장).
-      const url = await renderSceneToPng(scene, { width: scene?.width, height: scene?.height });
+      // multiplier 0.6(≈648×810): 심의 vision·하이라이트(라우터가 720px로 다운스케일)에
+      // 충분한 해상도로 업로드 바이트를 ~1/3로 — 검토 시작 레이턴시의 주범이 4언어
+      // 풀사이즈 PNG 업로드였다(2026-07-05 GAP6).
+      const url = await renderSceneToPng(scene,
+        { width: scene?.width, height: scene?.height, multiplier: 0.6 });
       const blob = await dataUrlToBlob(url);
       await uploadRender(runId, lang, blob, baseUrl);
       uploaded.push(lang);

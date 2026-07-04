@@ -28,6 +28,11 @@ from ..providers.demo_fixtures import HIGHLIGHT_BBOX_FIXTURES
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
 from .review_highlight import resolve_location
+
+import re as _re
+
+# review/_render/{lang}.png 경로 매처 — _render_langs(GAP9)에서 사용.
+_RENDER_PNG_RE = _re.compile(r"/_render/([A-Za-z]{2})\.png$")
 from .state import load_state, save_state
 from .uploads import list_upload_images
 
@@ -108,9 +113,26 @@ PERSONA_RC = (
 class ReviewHarness(Harness):
     def __init__(self, *, vision_provider: Provider) -> None:
         self._vision_provider = vision_provider
+        # 합성 렌더 존재 언어 memo(run당 1회 list) — GAP9 하이라이트 대상 승격용.
+        # 하네스는 gateway 요청마다 새로 구성되므로 요청 수명 캐시(신선도 보장).
+        self._render_langs_memo: dict[str, frozenset] = {}
 
     def _base(self, run_id: str) -> str:
         return f"/{run_id}/review"
+
+    def _render_langs(self, store, run_id: str) -> frozenset:
+        """review/_render/{lang}.png가 존재하는 언어 집합 — 없으면 빈 집합(v1 폴백)."""
+        if run_id not in self._render_langs_memo:
+            langs: set[str] = set()
+            try:
+                for n in store.list(f"/{run_id}/review"):
+                    m = _RENDER_PNG_RE.search(n.path or "")
+                    if m:
+                        langs.add(m.group(1).lower())
+            except Exception:
+                langs = set()
+            self._render_langs_memo[run_id] = frozenset(langs)
+        return self._render_langs_memo[run_id]
 
     def _load_state(self, store, run_id: str) -> dict:
         st = load_state(store, run_id, "review", default_factory=lambda: {
@@ -248,7 +270,8 @@ class ReviewHarness(Harness):
             except Exception:
                 _layout = {}
         location = resolve_location(location, asset_id=asset_id, lang=lang,
-                                    layout_spec=_layout, fixtures=HIGHLIGHT_BBOX_FIXTURES)
+                                    layout_spec=_layout, fixtures=HIGHLIGHT_BBOX_FIXTURES,
+                                    render_langs=self._render_langs(store, run_id))
         vid = _verdict_id(node, key, slot, lang or "")
         envelope = {
             "verdict_id": vid, "node": node, "asset_id": asset_id, "lang": lang,

@@ -95,6 +95,38 @@ def test_resolve_no_bbox_when_unresolvable():
     assert "bbox" not in out and out["image"] == "design/design-system/components/visual/v1.png"
 
 
+# --- 2026-07-05 GAP9: 합성 렌더(_render/{lang}.png — 고지·로고 오버레이 포함) 우선 ---
+
+def test_resolve_prefers_composite_render_when_available():
+    """고지(disclosure) 지적은 베이크 원본(v1)엔 고지가 안 보인다 — 합성 렌더가 있으면
+    심의가 본 화면(_render/{lang}.png)을 하이라이트 대상으로 쓴다."""
+    loc = {"slot": "disclosure", "lang": None}
+    out = resolve_location(loc, asset_id="design/rough/layout.spec.json", lang=None,
+                           layout_spec=LAYOUT, fixtures={},
+                           render_langs=frozenset({"ko"}))
+    assert out["image"] == "review/_render/ko.png"
+    assert out["bbox"] == slot_to_bbox_norm("disclosure", LAYOUT)
+
+
+def test_resolve_composite_reuses_v1_authored_fixture_geometry():
+    """합성 렌더로 이미지가 바뀌어도 v1 기준 authored bbox(같은 정규화 좌표계)를 재사용한다."""
+    loc = {"slot": "headline", "lang": "ko"}
+    out = resolve_location(loc, asset_id="design/final/ko/main.scene", lang="ko",
+                           layout_spec=LAYOUT, fixtures=FIX,
+                           render_langs=frozenset({"ko"}))
+    assert out["image"] == "review/_render/ko.png"
+    assert out["bbox"] == FIX[("design/design-system/components/visual/v1.png",
+                               "headline", "ko")]
+
+
+def test_resolve_render_missing_falls_back_to_v1():
+    loc = {"slot": "headline", "lang": "vi"}
+    out = resolve_location(loc, asset_id="design/final/vi/main.scene", lang="vi",
+                           layout_spec=LAYOUT, fixtures={},
+                           render_langs=frozenset({"ko"}))   # vi 렌더 없음
+    assert out["image"] == "design/design-system/components/visual/v1.png"
+
+
 # --- Task 4: collect_rects / pin_sort_key — 라우트 헬퍼 단위 테스트 ---------
 from app.gateway.review_highlight import collect_rects, pin_sort_key
 

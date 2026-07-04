@@ -65,7 +65,12 @@ export function highlightImages(verdicts: ReviewVerdict[]): string[] {
       out.push(img);
     }
   }
-  return out;
+  // 주 시각근거는 ko(발표 언어) 합성 렌더 → v1 → 기타 순 — verdict 적재 순서(트리
+  // 알파벳순: i18n reason_*이 legal보다 앞)에 끌려 vi/zh 포스터가 첫 화면이 되는
+  // 문제를 막는다(2026-07-05). sort는 stable — 같은 급 내 기존 순서 보존.
+  const rank = (p: string) =>
+    /_render\/ko\.png$/.test(p) ? 0 : /\/v1\.png$/.test(p) ? 1 : /_render\//.test(p) ? 2 : 3;
+  return out.sort((a, b) => rank(a) - rank(b));
 }
 
 /** 해당 image의 bbox verdict를 정규 정렬해 verdict_id→핀번호(1..N) 매핑. */
