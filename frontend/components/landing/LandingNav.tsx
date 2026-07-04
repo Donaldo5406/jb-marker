@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronDown, Workflow, FileText, MessageSquareText, Sparkles } from "lucide-react";
+import { ChevronDown, FileText, MessageSquareText, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,9 +52,7 @@ export function LandingNav() {
       <div className="mx-auto flex h-header max-w-container items-center justify-between gap-6 border-b border-outline-variant/50 bg-surface/70 px-margin-x backdrop-blur-glass">
         {/* 로고 */}
         <Link href="/" className="group flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-on-primary">
-            <Workflow className="h-[18px] w-[18px]" strokeWidth={2.25} />
-          </span>
+          <img src="/brand/jb-symbol.png" alt="JB 금융그룹 심볼" className="h-8 w-8 rounded-md" />
           <span className="text-body-lg font-semibold tracking-tight text-on-surface">JB Marker</span>
         </Link>
 
@@ -69,7 +67,7 @@ export function LandingNav() {
             >
               <Link
                 href={item.link ?? "#"}
-                className="group relative flex items-center gap-1 rounded-full px-4 py-1.5 text-body-sm text-on-surface-variant transition-colors hover:text-on-surface"
+                className="group relative flex items-center gap-1 rounded-full px-4 py-1.5 text-body-sm font-medium text-on-surface/70 transition-colors hover:bg-surface-container-lowest/70 hover:text-on-surface"
               >
                 <span>{item.label}</span>
                 {item.subMenus && (
