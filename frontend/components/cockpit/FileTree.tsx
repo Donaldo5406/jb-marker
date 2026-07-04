@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Folder, FolderOpen, Loader2 } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Loader2, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 import { fileType } from "@/lib/fileType";
+import { api } from "@/lib/api";
 import type { VfsNode } from "@/lib/api";
+import { UPLOAD_STUDIOS, readForPut, uploadKind, uploadMime, uploadTargetPath, validateSize } from "@/lib/uploads";
 
 type TreeNode = {
   name: string;
@@ -91,6 +93,32 @@ export function FileTree() {
   const [query, setQuery] = React.useState("");
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
 
+  const canUpload = !!c.runId && (UPLOAD_STUDIOS as readonly string[]).includes(c.activeStudio);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [uploading, setUploading] = React.useState(false);
+
+  const onUploadChange = React.useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";                       // 같은 파일 재선택 허용
+    if (!f || !c.runId) return;
+    const kind = uploadKind(f.name);
+    if (!kind) { setUploadError("md/txt/csv/json/png/jpg만 업로드할 수 있어요"); return; }
+    const sizeErr = validateSize(kind, f.size);
+    if (sizeErr) { setUploadError(sizeErr); return; }
+    setUploading(true); setUploadError(null);
+    try {
+      const { content, encoding } = await readForPut(f, kind);
+      await api.vfsPut(c.runId, uploadTargetPath(c.activeStudio, f.name),
+        content, uploadMime(f.name, kind), encoding);
+      await c.refreshTree();
+    } catch {
+      setUploadError("업로드에 실패했어요");
+    } finally {
+      setUploading(false);
+    }
+  }, [c]);
+
   // 숨김: 내부 상태(_접두) + 관측성(usage). 비용/토큰은 History에서 제공.
   const visible = React.useMemo(
     () => c.nodes.filter((n) => {
@@ -153,12 +181,27 @@ export function FileTree() {
         <span className="text-caption uppercase tracking-wide text-on-surface-variant">탐색기</span>
         <span className="flex items-center gap-1.5">
           <span className="text-caption text-outline">{visible.length}</span>
+          {canUpload && (
+            <>
+              <button type="button" aria-label="파일 업로드" title="파일 업로드 (md/txt/csv/json/png/jpg)"
+                data-testid="upload-file" disabled={uploading}
+                onClick={() => inputRef.current?.click()}
+                className="rounded border border-outline-variant px-1.5 py-0.5 text-[11px] text-on-surface-variant hover:bg-surface-container-high disabled:opacity-40">
+                {uploading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Upload className="h-3 w-3" aria-hidden />}
+              </button>
+              <input ref={inputRef} type="file" data-testid="upload-input" className="hidden"
+                accept=".md,.txt,.csv,.json,.png,.jpg,.jpeg" onChange={(e) => void onUploadChange(e)} />
+            </>
+          )}
           <button type="button" aria-label="전체 펼치기" title="전체 펼치기" onClick={expandAll}
             className="rounded border border-outline-variant px-1.5 py-0.5 text-[11px] text-on-surface-variant hover:bg-surface-container-high">⤢</button>
           <button type="button" aria-label="전체 접기" title="전체 접기" onClick={collapseAll}
             className="rounded border border-outline-variant px-1.5 py-0.5 text-[11px] text-on-surface-variant hover:bg-surface-container-high">⤡</button>
         </span>
       </div>
+      {uploadError && (
+        <p className="border-b border-outline-variant px-3 py-1 text-caption text-severity-critical-fg">{uploadError}</p>
+      )}
       <div className="border-b border-outline-variant p-2">
         <input
           type="search"
@@ -179,7 +222,9 @@ export function FileTree() {
             ) : (
               <>
                 <p className="text-body-sm text-on-surface-variant">아직 산출물이 없습니다</p>
-                <p className="text-caption text-outline">우측 챗으로 작업을 시작하면 트리에 나타납니다</p>
+                <p className="text-caption text-outline">
+                  우측 챗으로 작업을 시작하면 트리에 나타납니다{canUpload ? " — 참고 자료는 ⬆ 버튼으로 업로드하세요" : ""}
+                </p>
               </>
             )}
           </div>
