@@ -143,17 +143,19 @@ class DesignHarness(Harness):
         # S2aVisual 재실행이 새 v1.png로 프리뷰를 다시 덮어써 최종 교정본을 반영한다.
         _vnode = store.get(f"{base}/design-system/components/visual/v1.png")
         _write_preview(ctx, spec, _vnode.blob if _vnode else None)
-        # 비주얼도 교정 — clean 카피로 v1.png(및 추가언어 변형)를 재베이크한다. sceneAssembler가
+        # 비주얼도 교정 — clean 카피로 v1.png(및 추가언어 변형)를 갱신한다. sceneAssembler가
         # visual_by_lang→background로 v1.png를 그대로 쓰므로(헤드라인 배경 베이크), 카피만 고치면
         # 캔버스 배경엔 과장표현('업계 최고'/4.0%)이 그대로 남는다. layout.spec.copy는 위에서
-        # clean으로 갱신됐으므로 S2aVisual이 그 카피를 다시 베이크 → 캔버스도 교정본으로 갱신.
-        # 실패(이미지 생성 오류 등)해도 카피·고지 교정은 이미 저장됐으므로 graceful 진행.
+        # clean으로 갱신됐다.
+        # 교정은 layout spec 불변·카피만 변경 → run_edit(image-edit, spec 2026-07-04): 기존
+        # v1.png 위에 텍스트만 교체해 사용자가 승인한 아트를 보존한다('카피만 고쳤다' 서사의
+        # 시각 연속성 + 런별 변동성 제거). 기존 비주얼 부재/편집 실패/비전 critical은 run_edit
+        # 내부에서 전체 재베이크(run)로 폴백. 실패해도 카피·고지 교정은 이미 저장됨(graceful).
         # rich 모드: 카피는 벡터 레이어라 재베이크 불필요(유료 gemini 재호출 0·사용자가 보던
         # 히어로 보존). 게다가 _run_rich의 slots 교체가 S2c logo 슬롯을 지운다(S2c는 재실행 안 됨).
-        # 베이크 모드만 v1.png를 clean 카피로 재생성한다.
         if not _rich_enabled():
             try:
-                S2aVisual(self._image_provider).run(ctx)
+                S2aVisual(self._image_provider).run_edit(ctx)
             except Exception:
                 pass
         self._save_state(store, req.run_id, state)   # step=done 유지

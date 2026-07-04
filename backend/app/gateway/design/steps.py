@@ -331,19 +331,7 @@ class S2aVisual(PipelineStep):
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"concept": concept, "aspect": aspect, "image_fallback": fallback})
         spec.setdefault("visual_by_lang", {})[lang] = "design-system/components/visual/v1.png"
-        # 추가 언어: image-edit 변형(같은 비주얼 유지, 텍스트만 교체). 비차단(경고+에디터 교정).
-        for vlang in (ctx.state.get("languages") or ["ko"])[1:]:
-            vcopy = (spec.get("copy") or {}).get(vlang, {})
-            try:
-                var_png = self._image_provider.generate_image(self._edit_prompt(vcopy),
-                                                              aspect=aspect, image=png)
-            except Exception:
-                continue   # 변형 실패는 무시(주 언어는 이미 확보) — 에디터 안전망
-            self._vision_check(var_png, vcopy)   # findings는 경고용(게이트 비차단)
-            vpath = f"{base}/design-system/components/visual/v1.{vlang}.png"
-            ctx.store.put(vpath, var_png, source="gemini", mime="image/png",
-                          meta={"lang": vlang, "edited_from": "v1.png"})
-            spec["visual_by_lang"][vlang] = f"design-system/components/visual/v1.{vlang}.png"
+        self._edit_lang_variants(ctx, spec, png, aspect)
         ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
                       source="marker", mime="application/json")
         _write_preview(ctx, spec, png)   # 시안 프리뷰(visual 인라인) — 비차단
@@ -354,6 +342,64 @@ class S2aVisual(PipelineStep):
         return HarnessResult(text=text, output_path=path,
             meta={"source": "gemini", "step": self.name,
                   "image_fallback": fallback, "vision_failed": vision_failed},
+            events=[{"type": "artifact", "path": path}])
+
+    def _edit_lang_variants(self, ctx, spec, png, aspect) -> None:
+        """추가 언어: 주 언어 비주얼 기반 image-edit 변형(같은 비주얼, 텍스트만 교체).
+
+        비차단(경고+에디터 교정) — 변형 실패는 무시(주 언어는 이미 확보). 슬롯 힌트를
+        함께 넘겨 원본 타이포 유지 + mock 골드 축 검출을 보존한다."""
+        base = ctx.base
+        for vlang in (ctx.state.get("languages") or ["ko"])[1:]:
+            vcopy = (spec.get("copy") or {}).get(vlang, {})
+            try:
+                var_png = self._image_provider.generate_image(
+                    self._edit_prompt(vcopy, spec.get("slots")), aspect=aspect, image=png)
+            except Exception:
+                continue   # 변형 실패는 무시(주 언어는 이미 확보) — 에디터 안전망
+            self._vision_check(var_png, vcopy)   # findings는 경고용(게이트 비차단)
+            vpath = f"{base}/design-system/components/visual/v1.{vlang}.png"
+            ctx.store.put(vpath, var_png, source="gemini", mime="image/png",
+                          meta={"lang": vlang, "edited_from": "v1.png"})
+            spec["visual_by_lang"][vlang] = f"design-system/components/visual/v1.{vlang}.png"
+
+    def run_edit(self, ctx: StepContext) -> HarnessResult:
+        """revise 재베이크(spec 2026-07-04) — 카피만 바뀐 교정은 기존 v1.png 위 image-edit.
+
+        전체 재생성 대비: 사용자가 승인한 아트 보존·런별 변동성 제거·'카피만 고쳤다' 서사의
+        시각 연속성. 기존 비주얼 부재/편집 실패/비전 critical이면 run()(전체 재베이크) 폴백 —
+        완주 보장은 기존 경로가 진다. layout spec이 바뀐 재실행(티키타카 등)은 호출부가
+        run()을 쓰므로 여기 오지 않는다."""
+        base = ctx.base
+        prev = ctx.store.get(f"{base}/design-system/components/visual/v1.png")
+        if prev is None or not getattr(prev, "blob", None):
+            return self.run(ctx)
+        spec = read_json_node(ctx.store, f"{base}/rough/layout.spec.json")
+        aspect = spec.get("aspect", "1:1")
+        lang = (ctx.state.get("languages") or ["ko"])[0]
+        copy = (spec.get("copy") or {}).get(lang, {})
+        try:
+            png = self._image_provider.generate_image(
+                self._edit_prompt(copy, spec.get("slots")), aspect=aspect, image=prev.blob)
+        except Exception:
+            return self.run(ctx)   # 편집 실패 → 전체 재베이크 폴백
+        findings, vision_failed = self._vision_check(png, copy)
+        if any(f.get("severity") == "critical" for f in findings):
+            return self.run(ctx)   # 편집이 카피를 못 바꿨거나 왜곡 → 전체 재베이크
+        path = f"{base}/design-system/components/visual/v1.png"
+        ctx.store.put(path, png, source="gemini", mime="image/png",
+                      meta={"aspect": aspect, "edited_from": "v1.png"})
+        spec.setdefault("visual_by_lang", {})[lang] = "design-system/components/visual/v1.png"
+        self._edit_lang_variants(ctx, spec, png, aspect)
+        ctx.store.put(f"{base}/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
+                      source="marker", mime="application/json")
+        _write_preview(ctx, spec, png)   # 시안 프리뷰 갱신 — 비차단
+        ctx.cache[S2A_VISION_CACHE] = findings
+        return HarnessResult(
+            text="기존 비주얼을 유지한 채 텍스트만 교정했습니다(image-edit).",
+            output_path=path,
+            meta={"source": "gemini", "step": self.name, "edited_from": "v1.png",
+                  "vision_failed": vision_failed},
             events=[{"type": "artifact", "path": path}])
 
     def _run_rich(self, ctx, spec, copy, facts, aspect, lang):
@@ -437,14 +483,15 @@ class S2aVisual(PipelineStep):
                 return sem
         return DEFAULT_SEMANTIC
 
-    def _bake_prompt(self, concept: str, copy: dict, slots: list | None = None,
-                     facts: str = "", chips: list | None = None) -> str:
-        lines = [concept,
-                 "다음 문구를 디자인 요소로 **정확히** 렌더하세요(오타·누락 금지):"]
-        # 슬롯별 색·크기를 그대로 넘긴다 — 안 넘기면 모델이 임의로 한 가지 어두운 색만
-        # 써 텍스트가 단조로워진다(실측 피드백). layout_spec의 color/font_px를 명시.
+    @staticmethod
+    def _copy_lines(copy: dict, slots: list | None) -> list[str]:
+        """카피 라인(+슬롯 색·크기 힌트) — bake/edit 프롬프트 공용.
+
+        힌트는 실모델의 타이포 일관성 신호이자 mock 2×2 골드 축 검출(demo._headline_gold)의
+        공통 시그널 — edit 프롬프트에서 빠지면 mock 언어 변형·교정이 골드 fixture를 못 잡는다."""
         by_role = {s.get("role"): s for s in (slots or [])
                    if s.get("role") in ("headline", "body", "cta")}
+        lines = []
         for k in ("headline", "body", "cta"):
             if copy.get(k):
                 s = by_role.get(k) or {}
@@ -453,6 +500,15 @@ class S2aVisual(PipelineStep):
                     hint = f" (색 {s['color']}"
                     hint += f", 약 {int(s['font_px'])}px 굵게)" if s.get("font_px") else ")"
                 lines.append(f"- {k}: {copy[k]}{hint}")
+        return lines
+
+    def _bake_prompt(self, concept: str, copy: dict, slots: list | None = None,
+                     facts: str = "", chips: list | None = None) -> str:
+        lines = [concept,
+                 "다음 문구를 디자인 요소로 **정확히** 렌더하세요(오타·누락 금지):"]
+        # 슬롯별 색·크기를 그대로 넘긴다 — 안 넘기면 모델이 임의로 한 가지 어두운 색만
+        # 써 텍스트가 단조로워진다(실측 피드백). layout_spec의 color/font_px를 명시.
+        lines.extend(self._copy_lines(copy, slots))
         lines.append(
             "색 위계를 살리세요: 헤드라인·CTA는 브랜드 포인트 컬러로 뚜렷한 색 대비를 주고, "
             "CTA는 버튼처럼 눈에 띄게. 한 가지 어두운 색으로 단조롭게 처리하지 마세요.")
@@ -517,11 +573,10 @@ class S2aVisual(PipelineStep):
                 + facts)
         return "\n".join(lines)
 
-    def _edit_prompt(self, copy: dict) -> str:
+    def _edit_prompt(self, copy: dict, slots: list | None = None) -> str:
         lines = ["이 포스터의 텍스트만 다음으로 정확히 교체하고, 인물·배경·구도·색은 그대로 유지:"]
-        for k in ("headline", "body", "cta"):
-            if copy.get(k):
-                lines.append(f"- {k}: {copy[k]}")
+        # 색·크기 힌트 포함(_copy_lines) — 교체 텍스트도 원본과 같은 타이포로 렌더되게.
+        lines.extend(self._copy_lines(copy, slots))
         lines.append("교체 문구 외 다른 텍스트·앱/UI 화면·간판·워터마크는 만들지 말고, "
                      "기기 화면·배경 소품은 글자 없이 유지하세요(가짜 잔글씨 금지).")
         return "\n".join(lines)
