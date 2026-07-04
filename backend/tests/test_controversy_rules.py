@@ -51,3 +51,24 @@ def test_finding_carries_evidence_and_no_political_label():
     assert out and out[0]["severity"] == "critical"
     # 근거(why_risky) 포함, 정치 진영 라벨링 없음
     assert "극단주의" in out[0]["evidence"]
+
+
+def test_interest_rate_percent_is_not_disaster_date():
+    """금리 '5.18%'는 참사 날짜 신호 '5.18'과 부분문자열이 겹치지만 숫자 경계 매칭으로 무탐이어야
+    한다(회귀: 예전엔 disaster_518이 critical로 오탐해 정상 은행 마케팅 카피를 하드블록했음)."""
+    out = evaluate({"ko": {"headline": "이자율 5.18% 특별판매", "cta": "가입을 축하드립니다"}})
+    assert out == []
+
+
+def test_promo_code_is_not_sewol_date():
+    """프로모션 코드 '041678'은 세월호 신호 '0416'을 내장하지만 뒤에 숫자가 이어지므로
+    숫자 경계 매칭으로 무탐이어야 한다(회귀: 예전엔 disaster_sewol이 오탐했음)."""
+    out = evaluate({"ko": {"body": "이벤트 코드 041678 입력 시 할인"}})
+    assert out == []
+
+
+def test_disaster_518_genuine_date_still_critical_after_boundary_fix():
+    """숫자 경계 매칭 도입 후에도 진짜 5·18 날짜 + 탱크 co_signal 조합은 critical을
+    유지해야 한다(오탐 수정이 실제 탐지력을 훼손하지 않았는지 확인하는 회귀 가드)."""
+    out = evaluate({"ko": {"headline": "5·18 탱크데이 기념 이벤트"}})
+    assert out and any(o["severity"] == "critical" for o in out)

@@ -11,6 +11,7 @@ Tier-2(맥락의존): signal + co_signal 결합 시에만 warning. 단독 신호
 from __future__ import annotations
 
 import os
+import re
 
 import yaml
 
@@ -27,6 +28,29 @@ def load_blacklist() -> list[dict]:
 def _norm(text: str) -> str:
     """정규화 — 소문자 + 중점·공백 제거(신호 부분문자열 매칭 안정화)."""
     return (text or "").lower().replace("·", ".").replace(" ", "")
+
+
+def _has_digit(s: str) -> bool:
+    return any(ch.isdigit() for ch in s)
+
+
+def _signal_matches(signal: str, norm: str) -> bool:
+    """정규화된 signal이 정규화된 카피(norm)에 매칭되는지 판정.
+
+    숫자를 포함한 신호(참사 날짜·코드: 5.18, 0416, 1488 등)를 순수 부분문자열로
+    매칭하면 더 큰 숫자에 내장된 경우(금리 "5.18%") 또는 다른 숫자열에 내장된
+    경우(프로모션 코드 "041678")까지 오탐한다. 따라서 숫자를 포함한 신호는
+    숫자 경계 매칭을 적용 — 앞이 숫자/점이거나 뒤가 숫자/점/'%'이면 매칭하지
+    않는다. 순수 텍스트 신호(짱깨·한남충 등)는 오탐 우려가 없으므로 기존
+    부분문자열 매칭을 그대로 유지한다.
+    """
+    sig_norm = _norm(signal)
+    if not sig_norm:
+        return False
+    if _has_digit(sig_norm):
+        pattern = r"(?<![\d.])" + re.escape(sig_norm) + r"(?![\d.%])"
+        return re.search(pattern, norm) is not None
+    return sig_norm in norm
 
 
 def _finding(entry: dict, lang: str, matched: str, severity: str) -> dict:
@@ -56,13 +80,13 @@ def evaluate(scene_copy: dict, *, blacklist: list[dict] | None = None) -> list[d
             continue
         norm = _norm(" ".join(str(v) for v in copy.values()))
         for e in entries:
-            hit = next((s for s in e.get("signals", []) if _norm(s) in norm), None)
+            hit = next((s for s in e.get("signals", []) if _signal_matches(s, norm)), None)
             if not hit:
                 continue
             if e.get("tier", 2) == 1:
                 findings.append(_finding(e, lang, hit, e.get("severity_default", "critical")))
             else:
-                co = next((c for c in e.get("co_signals", []) if _norm(c) in norm), None)
+                co = next((c for c in e.get("co_signals", []) if _signal_matches(c, norm)), None)
                 if co:
                     findings.append(
                         _finding(e, lang, f"{hit}+{co}", e.get("severity_default", "warning")))
