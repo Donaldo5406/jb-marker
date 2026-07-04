@@ -5,6 +5,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.providers import demo_fixtures as _F
+
 
 def _client(monkeypatch):
     monkeypatch.setenv("VFS_BACKEND", "local")
@@ -120,14 +122,15 @@ def test_design_demo_produces_layout_and_visual(monkeypatch):
     assert ls.status_code == 200 and "slots" in ls.json()["content_text"]
     png = client.get(f"/vfs/{rid}/design/design-system/components/visual/v1.png")
     assert png.status_code == 200
-    # JB 로고 핀: S2c가 기존 logo 슬롯에도 asset_ref를 채우고 로고 PNG를 VFS에 기록해야
-    # 어셈블러가 로고를 그린다(Mock 로고 미표시 회귀 가드).
+    # poc_E 로고 정책: 로고는 자산에 베이크됨 → S2c가 logo 슬롯·logo PNG를 만들지 않아야
+    # 한다(이중 로고 방지). 고지 오버레이는 유지(disclosure copy 병합 확인).
     spec = json.loads(ls.json()["content_text"])
-    logo = next((s for s in spec["slots"] if s.get("role") == "logo"), None)
-    assert logo and logo.get("asset_ref") == "design-system/components/logo/v1.png", \
-        f"logo 슬롯 asset_ref 누락: {logo}"
+    assert spec.get("logo_policy") == "baked"
+    assert next((s for s in spec["slots"] if s.get("role") == "logo"), None) is None, \
+        "baked 정책인데 logo 슬롯이 추가됨 — 이중 로고"
     logo_png = client.get(f"/vfs/{rid}/design/design-system/components/logo/v1.png")
-    assert logo_png.status_code == 200
+    assert logo_png.status_code == 404
+    assert (spec.get("copy", {}).get("ko", {}) or {}).get("disclosure"), "고지 오버레이 누락"
 
 
 def test_review_demo_blocks_on_staged_violations(monkeypatch):
@@ -162,10 +165,23 @@ def test_review_demo_blocks_on_staged_violations(monkeypatch):
     assert report.status_code == 200
     state = client.get(f"/vfs/{rid}/review/_state.json")
     assert state.status_code == 200 and '"step": "done"' in state.json()["content_text"]
+    # RC 논란: 교정 전 포스터의 집게손을 mock 비전이 결정론 적발 — verdict에 손 위치
+    # bbox가 보존돼(경로 3 영속) 하이라이트가 제스처를 가리킨다(poc_E 시나리오).
+    listing = client.get(f"/vfs/{rid}", params={"prefix": f"/{rid}/review/controversy/"})
+    assert listing.status_code == 200
+    pinch = []
+    for n in listing.json()["nodes"]:
+        if not n["path"].endswith("verdict.json"):
+            continue
+        rest = n["path"].split(f"/{rid}/", 1)[1]
+        v = json.loads(client.get(f"/vfs/{rid}/{rest}").json()["content_text"])
+        if v.get("kind") == "community_signal" and (v.get("location") or {}).get("bbox"):
+            pinch.append(v)
+    assert pinch, "RC 집게손 verdict(bbox 포함)가 영속되지 않음"
 
 
 def test_review_r1_flags_ko_exaggeration_and_rate(monkeypatch):
-    """R1 법률 검토가 ko 헤드라인 과장광고('업계 최고')·바디 금리 불일치(4.0%≠3.5%)를 적발한다.
+    """R1 법률 검토가 ko 헤드라인 유일성·최상급('국내유일 최고')·바디 절대보장('무조건 지급')을 적발한다.
 
     원-레이어에서 헤드라인/바디가 배경 v1.png에 베이크돼 main.scene textbox(=scene_copy)엔
     disclosure만 남아 R1이 무탐이던 회귀 가드 — _collect_scene_copy가 layout.spec 카피를
@@ -181,23 +197,21 @@ def test_review_r1_flags_ko_exaggeration_and_rate(monkeypatch):
             break
     report = client.get(f"/vfs/{rid}/review/report.md").json()["content_text"]
     r1 = report.split("## R1 법률 검토")[1].split("## R2")[0]
-    # ko 헤드라인 과장광고(표시광고법 §3) + 바디 금리 불일치(4.0%)가 R1 섹션에 critical로 등장.
+    # ko 헤드라인 유일성·최상급(표시광고법 §3) + 바디 절대보장이 R1 섹션에 critical로 등장.
     assert "ko" in r1 and "표시" in r1, f"R1이 ko 과장광고를 적발하지 못함:\n{r1}"
-    assert ("업계 최고" in r1) or ("4.0%" in r1), f"R1 ko 위반 증거 누락:\n{r1}"
+    assert ("국내유일" in r1) or ("무조건" in r1), f"R1 ko 위반 증거 누락:\n{r1}"
 
 
-# 교정된 4언어 카피 — 위반 토큰 제거 + vi/zh 예금자보호 고지 현지화 키워드 포함.
+# 교정된 4언어 카피 — 위반 토큰(국내유일/무조건 등) 제거 + 예금자보호 고지 키워드 포함.
 # (FabricEditor 씬 수동 편집 = 결정 A안의 결과물을 백엔드 테스트에서 재현)
-_REMEDIATED = {
-    "ko": {"headline": "연 3.5% JB 정기예금", "body": "12개월 만기, 100만원부터 시작하세요.",
-           "cta": "지금 가입하기", "disclosure": "예금자보호법에 따라 5천만원까지 보호"},
-    "en": {"headline": "JB Term Deposit at 3.5%", "body": "12-month term. Open online in minutes.",
-           "cta": "Open now", "disclosure": "Protected up to KRW 50M under the Depositor Protection Act."},
-    "vi": {"headline": "JB Tiết kiệm 3.5%", "body": "Kỳ hạn 12 tháng, từ 100 vạn won.",
-           "cta": "Mở ngay", "disclosure": "Được bảo hiểm tiền gửi tới 50 triệu KRW theo luật."},
-    "zh": {"headline": "JB定期存款 3.5%", "body": "12个月期限，100万韩元起。",
-           "cta": "立即开户", "disclosure": "根据存款保护法，最高保护5000万韩元。"},
+_DISC = {
+    "ko": "예금자보호법에 따라 5천만원까지 보호",
+    "en": "Protected up to KRW 50M under the Depositor Protection Act.",
+    "vi": "Được bảo hiểm tiền gửi tới 50 triệu KRW theo luật.",
+    "zh": "根据存款保护法，最高保护5000万韩元。",
 }
+_REMEDIATED = {lang: {**_F.COPY[lang], "disclosure": _DISC[lang]}
+               for lang in ("ko", "en", "vi", "zh")}
 
 
 def _drive_review(client, rid, restart_first=False):
@@ -243,6 +257,12 @@ def test_review_demo_passes_after_remediation(monkeypatch):
         # 합성 렌더 시드 — 없으면 vision_skipped가 PASS를 WARN으로 강등.
         client.put(f"/vfs/{rid}/review/_render/{lang}.png",
                    json={"content": png_b64, "content_encoding": "base64", "mime": "image/png"})
+    # 비주얼도 교정본으로 교체(수동 교정 = 씬 편집 + 재베이크 재현) — 교정 전 포스터에는
+    # 집게손 제스처가 실제로 구워져 있어(poc_E) RC 비전이 논란 warning을 유지한다.
+    v2 = _F.load_poster_fixture("v2")
+    client.put(f"/vfs/{rid}/design/design-system/components/visual/v1.png",
+               json={"content": base64.b64encode(v2).decode(),
+                     "content_encoding": "base64", "mime": "image/png"})
 
     # 재검토(restart=R0부터 멱등 재구축) → 무위반 PASS
     last_step, gate = _drive_review(client, rid, restart_first=True)
@@ -267,7 +287,7 @@ def test_design_chat_remediation_cleans_layout_copy(monkeypatch):
     state = client.get(f"/vfs/{rid}/design/_state.json").json()["content_text"]
     assert '"step": "done"' in state
     before = client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"]
-    assert "업계 최고" in before          # COPY_VIOLATING headline(ko)
+    assert "국내유일" in before          # COPY_VIOLATING headline(ko)
 
     # 디자인 챗 자유 교정 지시(action 없음 + 교정 토큰) → remediate 재진입
     r = _run(client, rid, "design", "리뷰 결과대로 카피 수정해줘")
@@ -277,10 +297,11 @@ def test_design_chat_remediation_cleans_layout_copy(monkeypatch):
     assert "교정" in (body.get("text") or "")
 
     after = client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"]
-    assert "업계 최고" not in after        # 과장광고 제거
-    assert "연 4.0%" not in after          # 금리 불일치 제거
-    assert "연 3.5% JB 정기예금" in after   # clean 카피 반영
-    assert "예금자보호" in after            # 모든 언어 예금자보호 고지 보강(R2 critical 해소)
+    assert "국내유일" not in after         # 유일성·최상급 제거
+    assert "무조건 지급" not in after      # 절대보장 표현 제거
+    assert "No.1" not in after             # en 위반 표현 제거
+    assert "우대금리 최대 연 0.50%p" in after   # clean 카피 반영
+    assert "예금자보호" in after            # 모든 언어 예금자보호 고지 보강
     assert "theo luật" in after            # vi 현지화 고지 보강
 
 
@@ -325,7 +346,7 @@ def test_design_chat_nonremediation_keeps_pipeline(monkeypatch):
     assert (r.json().get("meta") or {}).get("remediated") is not True
     # 위반 카피는 그대로 유지(조기 소거 없음)
     after = client.get(f"/vfs/{rid}/design/rough/layout.spec.json").json()["content_text"]
-    assert "업계 최고" in after
+    assert "국내유일" in after
 
 
 def _assemble_one_layer(client, rid):
@@ -372,7 +393,7 @@ def test_design_chat_remediation_then_review_passes(monkeypatch):
 
 
 def test_design_s1_gate_tikitaka_updates_spec_and_preview(monkeypatch):
-    """S1 게이트에서 챗 '캘리/골드' → layout.spec.json이 V2로, 시안 프리뷰에 골드 반영(AC 3)."""
+    """S1 게이트에서 챗 '캘리/블루' → layout.spec.json이 V2로, 시안 프리뷰에 코발트 반영(AC 3)."""
     client = _client(monkeypatch)
     rid = client.post("/runs", json={}).json()["run_id"]
     _seed_brainstorming(client, rid)
@@ -380,15 +401,15 @@ def test_design_s1_gate_tikitaka_updates_spec_and_preview(monkeypatch):
     r = _run(client, rid, "design", "디자인 시작", action="advance")
     assert r.status_code == 200
     # 게이트 챗(action 없음) — 티키타카 시그널.
-    r = _run(client, rid, "design", "헤드라인을 붓펜 캘리그래피 골드로 키워줘")
+    r = _run(client, rid, "design", "서브헤드는 붓펜 캘리그래피로, 헤드라인은 코발트 블루로 키워줘")
     assert r.status_code == 200, r.text
     spec = json.loads(client.get(f"/vfs/{rid}/design/rough/layout.spec.json")
                       .json()["content_text"])
     hl = next(s for s in spec["slots"] if s["role"] == "headline")
-    assert hl["color"] == "#FFD166" and hl["font_px"] == 88
+    assert hl["color"] == "#1E63D0" and hl["font_px"] == 88
     preview = client.get(f"/vfs/{rid}/design/rough/preview.html")
     assert preview.status_code == 200
-    assert "FFD166" in preview.json()["content_text"]   # 프리뷰에 골드 즉시 반영
+    assert "1E63D0" in preview.json()["content_text"]   # 프리뷰에 코발트 즉시 반영
 
 
 @pytest.mark.parametrize("directed", ["0", "1"])

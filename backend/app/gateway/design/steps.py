@@ -187,12 +187,16 @@ NOTICES = {"ko": "가입 전 상품설명서·약관 확인 필수. 본 이미�
 
 # 필수 법령 고지의 언어별 표시문(번역). 표시문이 있는 언어에만 부착하고,
 # 없는 언어는 고지를 '누락'시켜(무번역 한국어 법령문이 외국어 포스터에 새지 않게)
-# 검토(R2)가 잡아 교정을 유도한다. severity.DISCLOSURE_I18N(탐지 키워드)와 짝.
-# demo: ko·en만 표시문 보유 → vi/zh는 예금자보호 고지 누락(spec §2 위반 #4 스테이징).
+# 검토(R2)가 잡아 교정을 유도한다. severity.DISCLOSURE_I18N(탐지 키워드)와 짝 —
+# 표시문은 해당 언어의 탐지 키워드를 포함해야 R2 안전망을 통과한다.
+# 2026-07-05 poc_E 시나리오: vi/zh 표시문 추가로 '고지 누락' 스테이징 폐기(4개 언어
+# 전부 고지 부착). 새 적발원은 R1 위반 카피(4개 언어) + RC 집게손 논란.
 DISCLOSURE_DISPLAY = {
     "예금자보호법에 따라 5천만원까지 보호": {
         "ko": "예금자보호법에 따라 5천만원까지 보호",
         "en": "Protected up to KRW 50M under the Depositor Protection Act.",
+        "vi": "Tiền gửi được bảo vệ tới 50 triệu KRW theo Luật Bảo hiểm tiền gửi.",
+        "zh": "根据存款人保护法，本息合计每人最高受保护至5,000万韩元。",
     },
 }
 
@@ -529,8 +533,8 @@ class S2aVisual(PipelineStep):
     def _copy_lines(copy: dict, slots: list | None) -> list[str]:
         """카피 라인(+슬롯 색·크기 힌트) — bake/edit 프롬프트 공용.
 
-        힌트는 실모델의 타이포 일관성 신호이자 mock 2×2 골드 축 검출(demo._headline_gold)의
-        공통 시그널 — edit 프롬프트에서 빠지면 mock 언어 변형·교정이 골드 fixture를 못 잡는다."""
+        힌트는 실모델의 타이포 일관성 신호이자 mock 2×2 디렉션 축 검출(demo._headline_v2)의
+        공통 시그널 — edit 프롬프트에서 빠지면 mock 언어 변형·교정이 V2 fixture를 못 잡는다."""
         by_role = {s.get("role"): s for s in (slots or [])
                    if s.get("role") in ("headline", "body", "cta")}
         lines = []
@@ -762,12 +766,6 @@ class S2cBrand(PipelineStep):
             notices[lang] = text
             ctx.store.put(f"{base}/design-system/components/disclosure/{lang}.txt",
                           text, source="marker", mime="text/plain", meta={"lang": lang})
-            ctx.store.put(f"{base}/design-system/components/logo/{lang}.txt",
-                          "[LOGO]", source="marker", mime="text/plain", meta={"lang": lang})
-        # 공식 로고 핀(결정론 오버레이): 번들 PNG 바이트를 VFS에 기록. 히어로 텍스트는 AI가
-        # 베이크하지만 공식 로고는 정확성이 필수라 placeholder가 아닌 실 바이트로 박는다.
-        logo_path = f"{base}/design-system/components/logo/v1.png"
-        ctx.store.put(logo_path, _bundled_logo(), source="marker", mime="image/png")
         # 단일 소스: 프론트 어셈블러가 읽는 layout.spec.json["copy"]에 고지 텍스트를 병합하고,
         # logo 슬롯(asset_ref)을 같은 spec에 추가(slots/visual_concept/aspect/기존 copy 등 나머지는
         # 보존). 한 번의 read/put으로 직렬화 — 별도 read/put 금지(경합·덮어쓰기 방지). S2bCopy 동일 idiom.
@@ -777,15 +775,28 @@ class S2cBrand(PipelineStep):
             spec["copy"].setdefault(lang, {})
             spec["copy"][lang]["disclosure"] = text
         spec.setdefault("slots", [])
-        logo_slot = next((s for s in spec["slots"] if s.get("role") == "logo"), None)
-        if logo_slot is None:
-            spec["slots"].append({"role": "logo", "z": 9,
-                "bbox": {"x": 48, "y": 48, "w": 300, "h": 96},
-                "asset_ref": "design-system/components/logo/v1.png"})
-        else:
-            # 기존 logo 슬롯(데모 fixture 등)에 asset_ref가 없으면 핀할 공식 로고 경로를 채운다 —
-            # 없으면 어셈블러가 빈 src로 로고를 못 그린다(Mock에서 JB 로고 미표시 원인).
-            logo_slot.setdefault("asset_ref", "design-system/components/logo/v1.png")
+        # 로고 정책: spec.logo_policy == "baked"(poc_E 계약 2026-07-05)면 로고가 비주얼에
+        # CI 정합으로 이미 구워져 있다 — 오버레이 핀·프리뷰 인라인을 걸면 이중 로고가
+        # 된다(실측). baked 경로는 로고 컴포넌트·슬롯을 만들지 않고 고지 오버레이만 수행.
+        baked_logo = str(spec.get("logo_policy") or "").strip().lower() == "baked"
+        if not baked_logo:
+            for lang in langs:
+                ctx.store.put(f"{base}/design-system/components/logo/{lang}.txt",
+                              "[LOGO]", source="marker", mime="text/plain",
+                              meta={"lang": lang})
+            # 공식 로고 핀(결정론 오버레이): 번들 PNG 바이트를 VFS에 기록. 히어로 텍스트는 AI가
+            # 베이크하지만 공식 로고는 정확성이 필수라 placeholder가 아닌 실 바이트로 박는다.
+            logo_path = f"{base}/design-system/components/logo/v1.png"
+            ctx.store.put(logo_path, _bundled_logo(), source="marker", mime="image/png")
+            logo_slot = next((s for s in spec["slots"] if s.get("role") == "logo"), None)
+            if logo_slot is None:
+                spec["slots"].append({"role": "logo", "z": 9,
+                    "bbox": {"x": 48, "y": 48, "w": 300, "h": 96},
+                    "asset_ref": "design-system/components/logo/v1.png"})
+            else:
+                # 기존 logo 슬롯(데모 fixture 등)에 asset_ref가 없으면 핀할 공식 로고 경로를 채운다 —
+                # 없으면 어셈블러가 빈 src로 로고를 못 그린다(Mock에서 JB 로고 미표시 원인).
+                logo_slot.setdefault("asset_ref", "design-system/components/logo/v1.png")
         ctx.store.put(f"{base}/rough/layout.spec.json",
                       json.dumps(spec, ensure_ascii=False), source="marker",
                       mime="application/json")

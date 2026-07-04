@@ -1,5 +1,16 @@
 # poc_E 기반 Mock 포스터 fixture 교체 계약 (2026-07-05 새벽)
 
+> ✅ **구현 완료(2026-07-05, feat/albert-poc-fixture)** — 자산 8장 전부 도착
+> (`C:\Users\jgqet\FinAI\asset\`, 교정 전 4장 + 교정 후 4장, 비ko 위반 카피도 번역 스테이징됨)
+> 후 backend/app/references/design/에 poster_violating_gold*·poster_v2*로 배치
+> (violating/final은 코드 별칭 `_STATE_FILE_ALIAS`). 아래 확정 결정 5항 모두 반영:
+> 로고 `logo_policy: baked`(S2c 오버레이 OFF) · R2 고지누락 아크 폐기(vi/zh 표시문 추가) ·
+> RC 집게손 결정론 적발(`[controversy-vision]` 마커 + poster_family_of, 손 위치 bbox) ·
+> 위반 축 4개 언어("국내유일 최고"/No.1/tốt nhất/唯一最高 + "무조건 지급" 계열) ·
+> FACTSHEET/COPY 채록·3:4 레이아웃·하이라이트 bbox 언어별 실측. ack 서사(고지 비율
+> 26/88px warning)는 유지 확정. 이 문서 하단의 원계약 중 "굽지 말 것" §1·2는 확정
+> 결정으로 대체됨(로고 baked·고지누락 아크 폐기).
+
 ## 🔴 확정 결정 (2026-07-05 02시대, 사용자)
 
 자산이 먼저 도착(poc_E_before_revise/en/VI/zh.png)했고 아래 3가지가 원계약과 다름 — **자산에 코드를 맞춘다**:
