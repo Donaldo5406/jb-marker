@@ -14,18 +14,23 @@ V1_INSTR = (
     "shots 배열의 각 항목은 id·start·end(초)·footage_prompt·camera·"
     "transition_in·transition_out·layers를 갖습니다. "
     "footage_prompt는 텍스처/패턴 배경이 아니라 실제 광고 같은 시네마틱 장면을 묘사하세요 "
-    "— 인물·표정·제품(모바일뱅킹 앱 등) 사용·공간·라이팅·카메라 무빙·무드. "
+    "— 인물·표정·공간·라이팅·카메라 무빙·무드. "
     "단 글자/숫자/로고는 절대 장면에 넣지 마세요(텍스트-free, 레이어로 분리). "
+    "특히 폰·노트북 등 기기 화면이 카메라를 향하면 모델이 깨진 가짜 UI 글씨를 만들어 "
+    "광고 품질을 망치므로, 기기 화면은 보이지 않게 하거나 꺼진/블랭크로 두고 "
+    "화면이 보이지 않는 연출(표정·라이프스타일·공간)을 우선하세요. "
     "layers의 각 항목은 role·copy_key·in·out(초)·anim·font_px·color(#RRGGBB)·"
     "bbox{x,y,w,h}를 갖습니다. "
+    "color는 **위계 있게** — 헤드라인은 밝고 강한 대비, CTA는 브랜드 포인트/액션 컬러로 "
+    "눈에 띄게(흰색 한 색만 쓰지 말 것). font_px도 헤드라인>CTA>바디 순으로 대비를 주세요. "
     "반드시 headline·body·cta·disclosure 역할을 영상 전체에 걸쳐 포함하고, "
     "disclosure 레이어는 마지막 비트에서 충분히 길게(>=3초) 노출하세요. "
     "최상위에 aspect·duration_sec·fps·bg_color(#RRGGBB)를 포함하세요. "
     "텍스트는 copy[lang][key]에 둡니다. JSON 한 개만 출력(코드펜스 금지). 형식 예시:\n"
     '{"reply":"...","ready":true,"storyboard":{"aspect":"9:16","duration_sec":15,'
     '"fps":30,"bg_color":"#0B2B5B","shots":[{"id":"s1","start":0.0,"end":4.0,'
-    '"footage_prompt":"밝은 카페에서 모바일뱅킹 앱으로 적금에 가입하며 미소 짓는 '
-    '30대 직장인, 따뜻한 시네마틱 조명, 부드러운 핸드헬드, 텍스트 없음",'
+    '"footage_prompt":"밝은 카페 창가에서 환하게 미소 지으며 창밖을 바라보는 '
+    '30대 직장인, 따뜻한 시네마틱 조명, 부드러운 핸드헬드, 화면·기기 없이, 텍스트 없음",'
     '"camera":"slow zoom-in",'
     '"transition_in":"fade","transition_out":"cut","layers":[{"role":"headline",'
     '"copy_key":"headline","in":0.5,"out":3.8,"anim":"rise-fade","font_px":96,'
@@ -35,7 +40,10 @@ V1_INSTR = (
 # [V2b] 카피 지시 — design S2B_INSTR 미러
 V2B_INSTR = (
     "\n\n[V2b 카피] 헤드라인/바디/CTA를 언어별로 확정하세요. "
-    'factsheet 외 수치 금지. JSON: {"copy":{lang:{headline,body,cta}}}'
+    "**무엇을 광고하는지 한눈에** 드러나게 — 헤드라인은 핵심 혜택(상품명+가치)을 짧고 굵게, "
+    "바디는 그 혜택을 뒷받침하는 구체적 한 줄, CTA는 명확한 행동 유도(예: '지금 가입'). "
+    "막연한 표현 대신 구체적 이점으로. factsheet 외 수치 금지. "
+    'JSON: {"copy":{lang:{headline,body,cta}}}'
 )
 
 # [자기-크리틱] 지시 — design CRITIC_INSTR 미러(7항목)

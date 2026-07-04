@@ -25,8 +25,6 @@ function setupFetchMock() {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ package_id: "email_ko", status: "ok" }) });
     if (u.includes("/deploy/dispatch"))
       return Promise.resolve({ ok: false, status: 402, json: async () => ({}) });
-    if (u.includes("/deploy/demo-payment"))
-      return Promise.resolve({ ok: true, status: 200, json: async () => ({ dev_pass: true }) });
     return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
   });
 }
@@ -39,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("DeployStudio", () => {
-  it("opens payment modal when dispatch returns 402", async () => {
+  it("dispatch 402 시 결제 모달 없이 에러 텍스트를 표기한다 (결제 표면 폐기 2026-07-04)", async () => {
     render(
       <CockpitProvider runId="r1">
         <DeployStudio />
@@ -50,25 +48,9 @@ describe("DeployStudio", () => {
     fireEvent.click(screen.getByText("적법성 검사 실행"));
     await waitFor(() => expect(screen.getByTestId("eligibility-panel")).toBeInTheDocument());
     fireEvent.click(screen.getByText("발송 확정 (시뮬)"));
-    await waitFor(() => expect(screen.queryByTestId("demo-payment-modal")).toBeInTheDocument());
-  });
-
-  it("clicking demo-pay closes modal", async () => {
-    render(
-      <CockpitProvider runId="r1">
-        <DeployStudio />
-      </CockpitProvider>,
-    );
-    await waitFor(() => expect(screen.getByTestId("provider-email")).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId("provider-email"));
-    fireEvent.click(screen.getByText("적법성 검사 실행"));
-    await waitFor(() => screen.getByTestId("eligibility-panel"));
-    fireEvent.click(screen.getByText("발송 확정 (시뮬)"));
-    await waitFor(() => screen.getByTestId("demo-payment-modal"));
-    fireEvent.click(screen.getByTestId("demo-pay-btn"));
-    await waitFor(() =>
-      expect(screen.queryByTestId("demo-payment-modal")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("발송 요청 실패"));
+    expect(screen.queryByTestId("demo-payment-modal")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dispatch-result")).not.toBeInTheDocument();
   });
 
   it("keeps channel selection across studio remount", async () => {

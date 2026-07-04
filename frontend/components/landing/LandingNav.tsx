@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils";
  * 렌더하고 top-level 항목에 실제 링크를 연결하지 않으므로(서브메뉴 anchor는 href="#"
  * 하드코딩), 헤더 바로 직접 사용할 수 없다. 대신 그 `navItems` 타입 형태(id/label/
  * subMenus/link)를 그대로 따르되, sticky 글래스 헤더 + 실제 next/link 네비게이션으로
- * 재구성한다. 메뉴: 파이프라인 소개(드롭다운) / 결제 / 작업 내역(History 딥링크) + CTA 체험해보기.
+ * 재구성한다. 메뉴: 파이프라인 소개(드롭다운) / 작업 내역(History 딥링크) + CTA 체험해보기
+ * (결제 메뉴는 2026-07-04 결제 표면 폐기로 제거).
  */
 
 type SubItem = { label: string; description: string; icon: React.ElementType; link?: string };
@@ -40,7 +41,6 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  { id: 3, label: "결제", link: "/pricing" },
   { id: 4, label: "작업 내역", link: "/cockpit?view=history" },
 ];
 
@@ -138,12 +138,6 @@ export function LandingNav() {
 
         {/* 우측 CTA */}
         <div className="flex items-center gap-2">
-          <Link
-            href="/pricing"
-            className="hidden rounded-full px-4 py-1.5 text-body-sm text-on-surface-variant transition-colors hover:text-on-surface sm:inline-flex md:hidden"
-          >
-            결제
-          </Link>
           <Link
             href="/cockpit"
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-primary px-5 text-caption font-medium text-on-primary transition-colors hover:bg-primary-container"

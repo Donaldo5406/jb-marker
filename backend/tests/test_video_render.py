@@ -99,21 +99,32 @@ def _segs():
             Segment(kind="video", path="/t/s2.mp4", dur=6.0)]
 
 
-def test_build_filter_complex_concat_and_drawtext_chain():
+def test_build_filter_complex_xfade_default_and_drawtext_chain():
     from app.gateway.video.render import build_filter_complex
     fc = build_filter_complex(_segs(), ["drawtext=text='a'[x]REPLACED"], w=1080, h=1920, fps=30)
-    # 세그먼트별 라벨 + concat + vout 산출
+    # 세그먼트별 정규화 + 기본 크로스페이드(joints=None→fade) + vout
     assert "[0:v]scale=1080:1920" in fc and "crop=1080:1920" in fc
-    assert "trim=duration=6.0" in fc               # 모든 세그먼트 trim+fps 정규화
-    assert "fps=30" in fc                          # concat 전 fps 통일(image2 25fps 혼입 방지)
-    assert "concat=n=2:v=1:a=0[base]" in fc
+    assert "trim=duration=6.0" in fc and "fps=30" in fc
+    # seg0 길이 6, D=0.6 → offset=6-0.6=5.400, 마지막 조인트 출력=base
+    assert "xfade=transition=fade:duration=0.6:offset=5.400[base]" in fc
+    assert "concat=" not in fc                     # 기본은 크로스페이드(하드컷 아님)
     assert fc.strip().endswith("[vout]")
 
 
-def test_build_filter_complex_no_drawtext_uses_null_passthrough():
+def test_build_filter_complex_cut_joint_uses_concat():
     from app.gateway.video.render import build_filter_complex
-    fc = build_filter_complex(_segs(), [], w=1080, h=1920, fps=30)
+    fc = build_filter_complex(_segs(), [], w=1080, h=1920, fps=30, joints=["cut"])
+    assert "concat=n=2:v=1:a=0[base]" in fc        # 'cut'=하드컷(concat)
+    assert "xfade=" not in fc
     assert "[base]null[vout]" in fc
+
+
+def test_build_filter_complex_single_segment_passthrough():
+    from app.gateway.video.render import build_filter_complex, Segment
+    fc = build_filter_complex([Segment("video", "/v.mp4", 6.0)], [],
+                              w=1080, h=1920, fps=30)
+    assert "[v0]null[base]" in fc and "[base]null[vout]" in fc  # 단일 샷=합성 없음
+    assert "xfade=" not in fc and "concat=" not in fc
 
 
 def test_build_ffmpeg_command_inputs_map_and_music():
@@ -180,10 +191,14 @@ def test_render_video_missing_storyboard_raises(tmp_path):
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg 미설치")
 def test_render_video_real_ffmpeg_produces_nontrivial_mp4(tmp_path):
-    from app.gateway.video.render import render_video, STUB_MP4
+    import sys
+    from app.gateway.video.render import render_video, STUB_MP4, _resolve_font
+    # Windows ffmpeg는 drawtext fontfile의 드라이브 콜론(C:)을 못 읽는다(로컬 한정).
+    font = _resolve_font()
+    if sys.platform == "win32" and font and ":" in font:
+        pytest.skip("Windows ffmpeg fontfile 드라이브 콜론 미지원(배포 Linux는 무관)")
     s = LocalVfsStore(storage_dir=str(tmp_path))
-    _seed(s, "rv", STORY_OK)
-    _seed_footage(s, "rv", "s1", b"\x89PNG\r\n\x1a\n", "image/png")  # 깨진 PNG → color 폴백 경유
+    _seed(s, "rv", STORY_OK)   # footage 미시드 → 두 샷 color 폴백(zoompan+grade+drawtext 실렌더)
     path = render_video(s, "rv", lang="ko")   # auto-detect ffmpeg
     blob = s.get(path).blob
     assert blob is not None and len(blob) > len(STUB_MP4)
@@ -250,3 +265,133 @@ def test_compliance_gate_raises_on_empty_disclosure_copy(tmp_path):
     with pytest.raises(ComplianceError) as ei:
         assert_render_compliance(story, "ko")
     assert "고지 문구" in str(ei.value)
+
+
+# ── 시네마틱 빌더(순수 최적화) 회귀 ────────────────────────────────────────
+def test_caption_deco_disclosure_box_others_shadow():
+    from app.gateway.video.render import build_drawtext_filters
+    fs = build_drawtext_filters(STORY_OK, "ko", font_path=None)
+    head, disc = fs[0], fs[1]                         # headline, disclosure
+    assert "shadowcolor=" in head and "borderw=2" in head and "box=1" not in head
+    assert "box=1:boxcolor=black@" in disc           # 고지=박스 스크림(가독)
+
+
+def test_drawtext_has_alpha_fade_ramp():
+    from app.gateway.video.render import build_drawtext_filters
+    fs = build_drawtext_filters(STORY_OK, "ko", font_path=None)
+    assert ":alpha='max(0,min(1," in fs[0]           # 페이드 인/아웃 램프
+
+
+def test_drawtext_rise_anim_makes_y_expression():
+    from app.gateway.video.render import build_drawtext_filters
+    story = json.loads(json.dumps(STORY_OK))
+    story["shots"][0]["layers"][0]["anim"] = "rise-fade"
+    fs = build_drawtext_filters(story, "ko", font_path=None)
+    assert ":y='" in fs[0] and "max(0,1-(t-" in fs[0]   # 라이즈 이징식
+    assert ":y=1700" in fs[1]                          # anim 없는 고지는 상수 y
+
+
+def test_fontfile_opt_quotes_path():
+    from app.gateway.video.render import _fontfile_opt
+    assert _fontfile_opt("/f/Noto.ttc") == "fontfile='/f/Noto.ttc':"
+    assert _fontfile_opt(None) == ""
+
+
+def test_segment_chain_kenburns_on_stills_not_video_grade_on_all():
+    from app.gateway.video.render import _segment_chain, Segment
+    img = _segment_chain(0, Segment("image", "/i.png", 6.0), w=1080, h=1920, fps=30)
+    col = _segment_chain(1, Segment("color", None, 6.0, "#000"), w=1080, h=1920, fps=30)
+    vid = _segment_chain(2, Segment("video", "/v.mp4", 6.0), w=1080, h=1920, fps=30)
+    assert "zoompan=" in img and "zoompan=" in col   # 정지/단색=켄번스
+    assert "zoompan=" not in vid                      # 실 footage=이중무빙 회피
+    for chain in (img, col, vid):                     # 그레이드는 전부 공통
+        assert "eq=contrast=" in chain and "vignette=" in chain and "unsharp=" in chain
+
+
+def test_dims_for_aspect_map():
+    from app.gateway.video.render import _dims_for_aspect
+    assert _dims_for_aspect("9:16") == (1080, 1920)
+    assert _dims_for_aspect("16:9") == (1920, 1080)
+    assert _dims_for_aspect("1:1") == (1080, 1080)
+    assert _dims_for_aspect(None) == (1080, 1920)     # 기본 세로
+    assert _dims_for_aspect("ugh") == (1080, 1920)    # 미지원 폴백
+
+
+def test_music_filter_loudnorm_and_fades():
+    from app.gateway.video.render import build_ffmpeg_command, Segment
+    argv = build_ffmpeg_command([Segment("color", None, 6.0, "#000")], [],
+                                out_path="/o.mp4", w=1080, h=1920, fps=30,
+                                music_path="/m/bed.m4a")
+    j = " ".join(argv)
+    assert "loudnorm=" in j and "afade=t=in" in j and "afade=t=out" in j
+    assert "[aout]" in argv and "-c:a" in argv
+
+
+def test_x264_quality_tuning_flags():
+    from app.gateway.video.render import build_ffmpeg_command, Segment
+    argv = build_ffmpeg_command([Segment("color", None, 6.0, "#000")], [],
+                                out_path="/o.mp4", w=1080, h=1920, fps=30, music_path=None)
+    for flag in ("-crf", "18", "-preset", "slow", "-profile:v", "high", "+faststart"):
+        assert flag in argv
+
+
+# ── 크로스페이드 전환(정밀) ────────────────────────────────────────────────
+def _segs3():
+    from app.gateway.video.render import Segment
+    return [Segment("video", "/a.mp4", 6.0), Segment("video", "/b.mp4", 6.0),
+            Segment("video", "/c.mp4", 6.0)]
+
+
+def test_joint_transition_resolution():
+    from app.gateway.video.render import _joint_transition
+    # right.transition_in 우선
+    assert _joint_transition({"transition_out": "cut"}, {"transition_in": "fade"}) == "fade"
+    # right 없으면 left.transition_out
+    assert _joint_transition({"transition_out": "cut"}, {}) == "cut"
+    # 미지정 기본 fade
+    assert _joint_transition({}, {}) == "fade"
+    # crossfade/dissolve 별칭 → fade, 미지원 → fade
+    assert _joint_transition({}, {"transition_in": "crossfade"}) == "fade"
+    assert _joint_transition({}, {"transition_in": "zoomwarp"}) == "fade"
+    # 안전 화이트리스트는 유지
+    assert _joint_transition({}, {"transition_in": "wipeleft"}) == "wipeleft"
+
+
+def test_plan_transitions_offsets_and_total_all_fade():
+    from app.gateway.video.render import plan_transitions
+    story = {"shots": [{"transition_in": "fade"}, {"transition_in": "fade"},
+                       {"transition_in": "fade"}]}
+    plan = plan_transitions(story, _segs3())          # D=min(0.6, 6*0.5)=0.6
+    assert plan["dur"] == 0.6
+    assert plan["joints"] == ["fade", "fade"]
+    # 샷별 누적 페이드 오프셋: 0, 0.6, 1.2
+    assert plan["shot_offset"] == [0.0, 0.6, 1.2]
+    # 총길이 = 18 - (2 페이드 * 0.6) = 16.8
+    assert plan["total"] == 16.8
+
+
+def test_plan_transitions_cut_joint_no_compression():
+    from app.gateway.video.render import plan_transitions
+    story = {"shots": [{}, {"transition_in": "cut"}, {"transition_in": "fade"}]}
+    plan = plan_transitions(story, _segs3())
+    assert plan["joints"] == ["cut", "fade"]
+    # 첫 조인트 cut → 오프셋 누적 안 됨, 둘째 fade → +0.6
+    assert plan["shot_offset"] == [0.0, 0.0, 0.6]
+    assert plan["total"] == 18.0 - 0.6
+
+
+def test_plan_transitions_clamps_dur_to_short_segment():
+    from app.gateway.video.render import plan_transitions, Segment
+    segs = [Segment("video", "/a.mp4", 0.8), Segment("video", "/b.mp4", 6.0)]
+    plan = plan_transitions({"shots": [{}, {}]}, segs)   # D=min(0.6, 0.8*0.5=0.4)=0.4
+    assert plan["dur"] == 0.4
+
+
+def test_drawtext_shot_offsets_remap_preserve_duration():
+    from app.gateway.video.render import build_drawtext_filters
+    # 샷1(disclosure 8~12=4s)을 0.6 당겨도 노출 길이는 4s 보존 → 7.4~11.4
+    fs = build_drawtext_filters(STORY_OK, "ko", font_path=None, shot_offsets=[0.0, 0.6])
+    disc = fs[1]
+    assert "between(t,7.4,11.4)" in disc
+    # 길이 보존: 11.4-7.4 = 4.0 == 원본 12-8
+    assert (11.4 - 7.4) == (12.0 - 8.0)

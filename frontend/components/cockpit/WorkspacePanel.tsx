@@ -46,19 +46,31 @@ export function WorkspacePanel() {
         setStarting(false);
       }
     };
+    const STEPS = ["기획", "디자인", "준법 검토", "발송"];
     return (
       <div className="flex flex-1 items-center justify-center bg-surface px-6">
-        <div className="flex max-w-md animate-fade-in-up flex-col items-center gap-5 rounded-[24px] border border-outline-variant bg-surface-container-lowest p-10 text-center shadow-ambient">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-on-primary">
-            <Sparkles className="h-6 w-6" aria-hidden />
+        <div className="flex w-full max-w-lg animate-fade-in-up flex-col items-center gap-7 rounded-[28px] border border-outline-variant bg-surface-container-lowest px-10 py-12 text-center shadow-elev-2">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-on-primary shadow-elev-2">
+            <Sparkles className="h-7 w-7" aria-hidden />
           </div>
-          <div className="space-y-1.5">
-            <h2 className="text-h3 text-on-surface">Use Marker로 첫 작업을 시작하세요</h2>
-            <p className="text-body-sm text-on-surface-variant">
-              파이프라인을 시작하면 brainstorming 스튜디오가 열리고, 챗으로 산출물을 만들 수 있습니다.
+          <div className="space-y-2">
+            <h2 className="text-balance break-keep text-h3 text-on-surface">
+              Marker로 첫 마케팅 작업을 시작하세요
+            </h2>
+            <p className="mx-auto max-w-sm text-balance break-keep text-body-sm text-on-surface-variant">
+              기획부터 디자인·준법 검토·발송까지, 하나의 파이프라인으로 이어집니다.
             </p>
           </div>
-          <Button variant="primary" size="lg" className="text-white" onClick={start} disabled={starting}>
+          {/* 파이프라인 미리보기 — 시작 전 여정을 보여줘 빈 상태가 인터페이스를 가르치게 한다 */}
+          <div className="flex flex-wrap items-center justify-center gap-2 text-caption text-on-surface-variant">
+            {STEPS.map((step, i) => (
+              <React.Fragment key={step}>
+                {i > 0 && <span className="text-outline" aria-hidden>→</span>}
+                <span className="rounded-full bg-surface-container px-3 py-1">{step}</span>
+              </React.Fragment>
+            ))}
+          </div>
+          <Button variant="primary" size="lg" onClick={start} disabled={starting}>
             {starting ? "시작 중…" : "Use Marker"}
           </Button>
         </div>

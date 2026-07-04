@@ -75,8 +75,12 @@ def test_google_generate_video_returns_bytes_and_passes_aspect(monkeypatch):
     out = GoogleProvider("k").generate_video("프리미엄 금융 배경", aspect="9:16",
                                              duration_sec=8, fps=30)
     assert out == b"\x00\x00\x00\x18ftypmp42_vid"
-    assert captured["config"] == {"video_cfg": {"aspect_ratio": "9:16"}}
-    assert "글자" in captured["prompt"]   # no-text 지시 포함
+    cfg = captured["config"]["video_cfg"]
+    assert cfg["aspect_ratio"] == "9:16"
+    # 화면·외국어 글자 억제: negative_prompt(억제어) + 결정론 seed
+    assert "글자" in cfg["negative_prompt"] and "텍스트" in cfg["negative_prompt"]
+    assert isinstance(cfg["seed"], int)
+    assert "글자" in captured["prompt"]   # 프롬프트 no-text 지시도 유지
 
 
 def test_google_generate_video_omits_config_for_unsupported_aspect(monkeypatch):

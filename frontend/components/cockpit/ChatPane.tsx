@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Paperclip, SendHorizontal, Sparkles } from "lucide-react";
+import { Loader2, SendHorizontal, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 import { ModelSelector, MODELS, type ModelChoice } from "./ModelSelector";
@@ -131,16 +131,7 @@ export function ChatPane() {
             placeholder="메시지를 입력하세요… (Enter 전송, Shift+Enter 줄바꿈)"
             className="block w-full resize-none bg-transparent px-3 py-2.5 text-body-sm text-on-surface outline-none placeholder:text-outline"
           />
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <button
-              type="button"
-              disabled
-              title="파일 첨부 (준비 중)"
-              aria-label="파일 첨부 (준비 중)"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-outline opacity-50"
-            >
-              <Paperclip className="h-4 w-4" aria-hidden />
-            </button>
+          <div className="flex items-center justify-end gap-2 px-2 pb-2">
             <div className="flex items-center gap-2">
               <ModelSelector value={model.id} onChange={setModel} />
               <button

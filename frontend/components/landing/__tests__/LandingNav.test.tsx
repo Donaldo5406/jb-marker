@@ -15,9 +15,10 @@ describe("LandingNav 와이어링", () => {
     expect(screen.getByText("작업 내역")).toBeInTheDocument();
   });
 
-  it("결제·체험해보기 링크는 유지된다", () => {
+  it("결제 표면(/pricing)은 폐기, 체험해보기 링크는 유지된다", () => {
     const { container } = render(<LandingNav />);
-    expect(container.querySelector('a[href="/pricing"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/pricing"]')).toBeNull();
+    expect(screen.queryByText("결제")).toBeNull();
     expect(container.querySelector('a[href="/cockpit"]')).not.toBeNull();
   });
 

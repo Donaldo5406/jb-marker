@@ -38,13 +38,12 @@ def test_golden_path_end_to_end(client):
     })
     assert p.json()["status"] == "ok"
 
-    # 4. dispatch w/o dev_pass = 402
+    # 4. dispatch w/o entitlement = 402 (게이트 유지 — 결제 표면만 폐기, spec 2026-07-04)
     d_fail = client.post(f"/runs/{rid}/deploy/dispatch", json={"confirmed": True})
     assert d_fail.status_code == 402
 
-    # 5. demo-payment → dev_pass=true
-    pm = client.post(f"/runs/{rid}/deploy/demo-payment")
-    assert pm.json()["dev_pass"] is True
+    # 5. entitlement 직접 부여(demo-payment 엔드포인트는 폐기됨)
+    entitlement.set_dev_pass("demo")
 
     # 6. dispatch happy
     d_ok = client.post(f"/runs/{rid}/deploy/dispatch", json={"confirmed": True})

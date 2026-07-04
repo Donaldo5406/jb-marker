@@ -12,4 +12,8 @@ class EntitlementError(PermissionError):
 
 def check_entitlement(*, is_marker: bool, override: bool) -> None:
     if is_marker and not override:
-        raise EntitlementError("Marker/Advisor 기능은 유료 티어($100/월) 전용입니다.")
+        # 메시지에 우회 경로를 명시 — 라이브 시연에서 조용한 402로 막히면 원인을
+        # 못 찾는다. Mock 모드(무료·결정적) 또는 운영 엔타이틀먼트 오버라이드로 우회.
+        raise EntitlementError(
+            "Marker/Advisor 기능은 유료 티어($100/월) 전용입니다. "
+            "시연은 Mock 모드로 실행하거나 운영 환경에 엔타이틀먼트 오버라이드를 설정하세요.")

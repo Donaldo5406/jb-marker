@@ -126,14 +126,17 @@ def test_dispatch_happy_writes_report(client, run_id):
     assert res.json()["step_status"] == "PASS"
 
 
-# ----- Task 17: demo-payment + _state -------------------------------------
+# ----- Task 17: _state (demo-payment는 2026-07-04 결제 표면 폐기로 제거) ----
 
-def test_demo_payment_sets_dev_pass(client, run_id):
-    entitlement.reset()
+def test_demo_payment_endpoint_removed(client, run_id):
     res = client.post(f"/runs/{run_id}/deploy/demo-payment")
+    assert res.status_code in (404, 405)
+
+
+def test_state_has_no_dev_pass_surface(client, run_id):
+    res = client.get(f"/runs/{run_id}/deploy/_state")
     assert res.status_code == 200
-    assert res.json()["dev_pass"] is True
-    assert entitlement.check("demo") is True
+    assert "dev_pass" not in res.json()
 
 
 def test_state_reflects_setup(client, run_id):

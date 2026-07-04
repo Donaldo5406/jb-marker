@@ -32,7 +32,7 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
 
       {breakdown && breakdown.length > 0 && (
         <div data-testid="eligibility-breakdown">
-          <div className="text-xs text-on-surface-variant mb-1">제외 사유 (법령별)</div>
+          <div className="mb-1 text-caption text-on-surface-variant">제외 사유 (법령별)</div>
           <div className="space-y-2">
             {breakdown.map((g) => (
               <div
@@ -41,8 +41,8 @@ export function EligibilityPanel({ total, eligibleCount, excludedCount, calendar
                 className="rounded-lg border border-outline-variant bg-surface-container-low p-2"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-on-surface">{g.label}</span>
-                  <span className="text-sm font-bold text-severity-critical-fg">{g.count}명</span>
+                  <span className="text-body-sm font-medium text-on-surface">{g.label}</span>
+                  <span className="text-body-sm font-bold text-severity-critical-fg">{g.count}명</span>
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {g.reasons.map((r) => (

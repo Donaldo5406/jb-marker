@@ -3,18 +3,16 @@
 import { Loader2 } from "lucide-react";
 
 /** DispatchConfirm (M6 T21) — D3 발송 확정 게이트.
- *  devPass=false 시 결제 모달 트리거 링크 노출. dispatch 클릭 가능 여부는 eligible+selected만 본다
- *  (실제 결제 게이트는 백엔드 402로 강제). busy=발송 처리 중(로딩). */
+ *  클릭 가능 여부는 eligible+selected만 본다(권한은 백엔드 402로 강제, 결제 표면 폐기 2026-07-04).
+ *  busy=발송 처리 중(로딩). */
 type Props = {
   eligibleCount: number;
   selectedCount: number;
-  devPass: boolean;
   busy?: boolean;
   onConfirm: () => void;
-  onPayDemo: () => void;
 };
 
-export function DispatchConfirm({ eligibleCount, selectedCount, devPass, busy = false, onConfirm, onPayDemo }: Props) {
+export function DispatchConfirm({ eligibleCount, selectedCount, busy = false, onConfirm }: Props) {
   const canDispatch = eligibleCount > 0 && selectedCount > 0 && !busy;
   return (
     <div className="space-y-3" data-testid="dispatch-confirm">
@@ -23,11 +21,6 @@ export function DispatchConfirm({ eligibleCount, selectedCount, devPass, busy = 
         <span className="text-outline">·</span>
         <span>채널 <b className="tabular-nums">{selectedCount}</b>개</span>
       </div>
-      {!devPass && (
-        <button type="button" onClick={onPayDemo} className="text-caption font-medium text-primary underline">
-          결제 필요 — 데모 결제로 진행
-        </button>
-      )}
       <button
         type="button"
         disabled={!canDispatch}

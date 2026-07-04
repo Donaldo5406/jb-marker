@@ -3,11 +3,11 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const button = cva(
-  "inline-flex items-center justify-center rounded-full font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none",
+  "inline-flex items-center justify-center rounded-full font-medium transition duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:pointer-events-none",
   {
     variants: {
       variant: {
-        primary: "bg-primary text-white hover:bg-primary-container",
+        primary: "bg-primary text-on-primary shadow-elev-1 hover:bg-primary-container hover:shadow-elev-2",
         secondary: "bg-surface-container text-on-surface hover:bg-surface-container-high",
       },
       size: { md: "h-11 px-6 text-body-sm", sm: "h-9 px-4 text-caption", lg: "h-12 px-8 text-body-lg" },

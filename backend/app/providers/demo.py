@@ -12,13 +12,35 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
 
 from ..core.severity import EXAGGERATION_TOKENS
 from . import demo_fixtures as F
 from .base import Message, Provider, ProviderResponse
 
 logger = logging.getLogger(__name__)
+
+
+def _latency_base_ms() -> int:
+    """DEMO_LATENCY_MS(기본 0=끔) — 데모 체감용 자연 레이턴시 기저값(ms).
+
+    mock 즉답은 라이브 데모에서 인위적으로 보인다(2026-07-04 사용자 지적). 기본 0이라
+    테스트·CI는 무영향, 데모 서버만 env로 켠다.
+    """
+    try:
+        return int(os.getenv("DEMO_LATENCY_MS", "0") or "0")
+    except ValueError:
+        return 0
+
+
+def _pace(resp: ProviderResponse) -> ProviderResponse:
+    """응답 길이에 비례한 지연(기저 + len/4000초, 상한 2.5s) 후 그대로 반환."""
+    base_ms = _latency_base_ms()
+    if base_ms > 0:
+        time.sleep(min(base_ms / 1000 + len(resp.text or "") / 4000, 2.5))
+    return resp
 
 # JB 정기예금 캠페인 마스터 금리(grounding 진실값). 이와 다른 금리 표기는 허위표시 위반.
 _CORRECT_RATE = "3.5%"
@@ -128,8 +150,8 @@ def reconcile(verdicts: list[dict]) -> dict:
 
 
 def _spec_json() -> str:
-    return json.dumps({"reply": "스펙 초안을 정리했어요.", "document": F.SPEC_MD,
-                       "ask": None, "ready": True}, ensure_ascii=False)
+    return json.dumps({"reply": "선택하신 디렉션을 디자인 시스템에 반영해 스펙을 확정했어요.",
+                       "document": F.SPEC_MD, "ask": None, "ready": True}, ensure_ascii=False)
 
 
 def _plan_json() -> str:
@@ -182,6 +204,22 @@ def _stage_a_brainstorm(messages, medium="image"):
                     "options": ["국문만", "영어 포함", "영어+베트남어+중국어"]},
             "ready": False,
         }, ensure_ascii=False), []
+    if turns == 3 and medium != "video":
+        # AI 제안 턴(spec D4) — 리서치 근거로 디렉션을 권장안으로 제시하고 논의 유도.
+        # image 한정: video는 3턴째 spec 불변(D6 영상 무변경)이라 이 블록을 건너뛴다.
+        return json.dumps({
+            "reply": ("좋아요. 이제 디자인 디렉션이에요 — 리서치에서 봤듯 2030은 금리 수치가 "
+                      "또렷하게 보이는 신뢰형 디자인에 반응합니다. 저는 **A안: 신뢰 그린(#00857C) "
+                      "베이스 + 골드 포인트, 굵은 디스플레이 헤드라인의 3단 타이포 위계, 라인 "
+                      "픽토그램 아이콘**을 권합니다 — 금리 카드와 혜택 칩이 살아나는 조합이에요. "
+                      "톤을 더 차분하게 가려면 B안(딥 네이비 미니멀), 더 친근하게는 C안(밝은 "
+                      "일러스트)도 가능해요. 어느 방향으로 갈까요?"),
+            "document": "",
+            "ask": {"trigger": "a", "question": "디자인 디렉션은?",
+                    "options": ["A. 신뢰 그린+골드 포인트 (권장)", "B. 딥 네이비 미니멀",
+                                "C. 밝은 일러스트 친근형"]},
+            "ready": False,
+        }, ensure_ascii=False), []
     # 정보 충분 → spec 작성(매체별).
     if medium == "video":
         return json.dumps({"reply": "영상 기획을 정리했어요.", "document": F.VIDEO_SPEC_MD,
@@ -216,7 +254,18 @@ def _stage_b_brainstorm(system: str, medium="image") -> str:
     }, ensure_ascii=False)
 
 
-def _layout_json() -> str:
+# S1 티키타카 시그널(spec D3) — 데모 대본의 타이포 디렉션 멘트에 결정론 반응.
+# _REMEDIATION_SIGNAL과 동일한 콘텐츠 기반 분기 패턴. 대본 밖 챗은 V1 고정(오발동 가드).
+_TIKITAKA_SIGNAL = ("캘리", "골드")
+
+
+def _layout_json(messages=None) -> str:
+    user = _user_text(messages)
+    if any(sig in user for sig in _TIKITAKA_SIGNAL):
+        return json.dumps({
+            "reply": "헤드라인을 붓펜 캘리그래피 질감의 골드 포인트로 키웠어요. "
+                     "시안 프리뷰에서 확인해 주세요.",
+            "layout_spec": F.LAYOUT_SPEC_V2, "ready": True}, ensure_ascii=False)
     return json.dumps({"reply": "러프 완성", "layout_spec": F.LAYOUT_SPEC, "ready": True},
                       ensure_ascii=False)
 
@@ -245,14 +294,66 @@ def _empty_findings() -> str:
     return json.dumps({"findings": []}, ensure_ascii=False)
 
 
-# S2a bake/edit 프롬프트의 카피 라인('- headline: ...' / '- body: ...' / '- cta: ...') 파서.
-# steps.py S2aVisual._bake_prompt / _edit_prompt가 이 형식으로 언어별 카피를 실어 보낸다.
+# S2a bake/edit 프롬프트의 카피 라인 파서 — 두 형식 지원(spec 2026-07-03 D2):
+#   baked   : '- headline: 텍스트 (색 #.., 약 NNpx 굵게)'  (steps._bake_prompt / _edit_prompt)
+#   directed: 'N. 초대형 헤드라인 (존, 색 #.., 약 NNpx 굵게): "텍스트" — 이 문구만…'
+#             (directing._layout_section — DIRECTED_FULLBAKE=1에서 mock 폴백 시 이 형식이 온다)
+# 힌트 괄호는 카피가 아니므로 스트립한다(정확 매칭·PIL 베이크 오염 방지).
 _COPY_LINE = re.compile(r"^\s*-\s*(headline|body|cta)\s*:\s*(.+?)\s*$", re.MULTILINE)
+# 라벨은 directing._ROLE_KR의 복제 — 런타임 import는 providers→gateway 순환 위험이 있어
+# 금지하고, 계약 테스트(test_role_label_mapping_matches_directing)로 드리프트를 잠근다.
+_ROLE_KR_TO_SLOT = {"초대형 헤드라인": "headline", "본문 서브카피": "body", "CTA 버튼": "cta"}
+_DIRECTED_COPY_LINE = re.compile(
+    r"^\s*\d+\.\s*(초대형 헤드라인|본문 서브카피|CTA 버튼)(?:\s*\([^)]*\))?\s*:\s*\"(.+?)\"",
+    re.MULTILINE)
+_HINT_SUFFIX = re.compile(r"\s*\((?:[^()]*(?:색\s*#|px)[^()]*)\)\s*$")
+_GOLD_HEX = "#ffd166"   # LAYOUT_SPEC_V2 headline 골드 — 2×2 상태의 골드 축 시그널
 
 
 def _copy_from_prompt(prompt: str) -> dict:
-    """generate_image 프롬프트에서 헤드라인/바디/CTA 카피를 추출(베이크 입력)."""
-    return {m.group(1): m.group(2) for m in _COPY_LINE.finditer(prompt or "")}
+    """generate_image 프롬프트에서 헤드라인/바디/CTA 카피를 추출(베이크 입력, 두 형식)."""
+    out = {m.group(1): _HINT_SUFFIX.sub("", m.group(2)).strip()
+           for m in _COPY_LINE.finditer(prompt or "")}
+    for m in _DIRECTED_COPY_LINE.finditer(prompt or ""):
+        out.setdefault(_ROLE_KR_TO_SLOT[m.group(1)], m.group(2).strip())
+    return out
+
+
+def _headline_gold(prompt: str) -> bool:
+    """헤드라인 라인에 골드 힌트(#FFD166)가 있는가 — 2×2 골드 축(라인 한정: 팔레트 오염 가드)."""
+    for line in (prompt or "").splitlines():
+        if _GOLD_HEX in line.lower() and ("- headline" in line or "초대형 헤드라인" in line):
+            return True
+    return False
+
+
+_VIOLATION_TOKENS = ("업계 최고", "4.0%")   # COPY_VIOLATING.ko와 동기(과장·금리 불일치)
+
+
+def _poster_lang(copy: dict) -> str:
+    """카피 언어 감지 — headline이 COPY[lang]과 정확 일치하는 비ko 언어(기본 ko).
+
+    S2a 언어 변형 베이크 프롬프트는 copy[lang]을 글자 그대로 인용(build_director_prompt)
+    → 정확 일치로 안전하게 판별된다. 미지 카피는 ko로 두면 상태 매칭이 None → PIL 폴백."""
+    hl = (copy or {}).get("headline")
+    for lang in ("en", "vi", "zh"):
+        if hl == F.COPY[lang]["headline"]:
+            return lang
+    return "ko"
+
+
+def _poster_state(copy: dict, prompt: str) -> str | None:
+    """파싱된 카피(위반 축) × 헤드라인 골드 힌트(골드 축) → 2×2 fixture 상태(spec D1).
+
+    발표자가 티키타카를 어느 시점에 하든/생략하든 두 축이 독립 검출되어 일관된다.
+    비ko 카피는 설계상 clean(COPY_VIOLATING가 COPY 복제) — clean 축으로만 매칭된다."""
+    joined = " ".join(str(v) for v in (copy or {}).values())
+    gold = _headline_gold(prompt)
+    if any(t in joined for t in _VIOLATION_TOKENS):
+        return "violating_gold" if gold else "violating"
+    if (copy or {}).get("headline") == F.COPY[_poster_lang(copy)]["headline"]:
+        return "v2" if gold else "final"
+    return None
 
 
 def _user_text(messages) -> str:
@@ -289,6 +390,11 @@ class DemoProvider(Provider):
     def complete(self, messages: list[Message], *, model: str | None = None,
                  system: str | None = None, tools: list[dict] | None = None,
                  meta: dict | None = None, **kwargs) -> ProviderResponse:
+        """라우팅(_route) 결과를 자연 레이턴시(_pace, 기본 끔)로 페이싱해 반환."""
+        return _pace(self._route(messages, system=system, meta=meta))
+
+    def _route(self, messages: list[Message], *, system: str | None = None,
+               meta: dict | None = None) -> ProviderResponse:
         """meta{studio,step} 명시 신호로 단계 라우팅(spec §5.2) — system 문구 비의존.
 
         system은 단계 감지에 쓰지 않고, stage_b가 '[현재 plan.md]' 컨텍스트 블록의
@@ -304,8 +410,8 @@ class DemoProvider(Provider):
             return ProviderResponse(text=text, model="demo", citations=citations)
         if key == ("brainstorming", "stage_b"):   # Stage B — 1차 누락→보충 완성
             return ProviderResponse(text=_stage_b_brainstorm(s, medium), model="demo")
-        if key == ("design", "S1"):               # 러프 레이아웃
-            return ProviderResponse(text=_layout_json(), model="demo", raw=None)
+        if key == ("design", "S1"):               # 러프 레이아웃(티키타카 시그널 분기)
+            return ProviderResponse(text=_layout_json(messages), model="demo", raw=None)
         if key == ("design", "S2b"):              # 카피(위반→교정은 콘텐츠 기반)
             return ProviderResponse(text=_copy_json(messages), model="demo", raw=None)
         if key == ("design", "critic"):           # 자기 평가 scores
@@ -330,15 +436,26 @@ class DemoProvider(Provider):
                                 model="demo", raw=None)
 
     def generate_image(self, prompt: str, *, aspect: str = "1:1",
-                       image: bytes | None = None) -> bytes:
-        """실모드 S2a는 Gemini가 카피를 이미지에 베이크한다 — mock은 동등 결과를 결정적 재현.
+                       image: bytes | None = None,
+                       image_size: str | None = None) -> bytes:
+        """실모드 S2a와 동등한 결과를 결정적으로 재현(spec 2026-07-03 D1).
 
-        bake/edit 프롬프트에서 헤드라인/바디/CTA를 파싱해 배경(텍스트-free)에 PIL로 합성.
-        (이전엔 텍스트-free 배경을 그대로 반환 → 최종 포스터에 카피가 빠져 '맨 배경'으로 보였다.)
-        카피 없음/합성 실패는 배경 원본으로 graceful 폴백.
+        1) 프롬프트에서 카피 파싱(baked/directed 두 형식) → 2×2 상태 매칭 시
+           실 Gemini로 사전 생성한 2K 포스터 fixture 반환(프로급 산출물).
+        2) 미매칭(미지 카피·비ko 언어 변형)·파일 부재는 현행 PIL 베이크 폴백 — 내일
+           라이브 수정으로 카피가 바뀌어도 mock은 반드시 완주한다(회귀 보험).
         """
-        bg = F.load_poster_bg()
+        base_ms = _latency_base_ms()
+        if base_ms > 0:   # 베이크 즉답의 부자연 제거(스펙 D3) — 텍스트보다 긴 고정 지연.
+            time.sleep(min(base_ms * 3 / 1000, 3.0))
         copy = _copy_from_prompt(prompt)
+        state = _poster_state(copy, prompt)
+        if state:
+            # 언어 변형(en/vi/zh)은 해당 언어 fixture — 없는 조합은 None → PIL 폴백.
+            fixture = F.load_poster_fixture(state, _poster_lang(copy))
+            if fixture:
+                return fixture
+        bg = F.load_poster_bg()
         if copy:
             try:
                 from ..core.poster_bake import bake_copy

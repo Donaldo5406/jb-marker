@@ -1,3 +1,6 @@
+import { DEFAULT_FONT } from "./design/fontStack";
+import { iconSrc } from "./editor/iconRegistry";
+
 export type BBox = { x: number; y: number; w: number; h: number };
 export type Slot = {
   role: string;
@@ -9,11 +12,23 @@ export type Slot = {
   style_token?: string;
   font_px?: number;   // layout.spec의 글자크기(없으면 48 폴백)
   color?: string;     // #RRGGBB 텍스트 색(없으면 #0b1324 폴백)
+  // vector_chrome 확장
+  font_family?: string;
+  weight?: number;
+  align?: "left" | "center" | "right";
+  scrim?: boolean;
+  container?: { fill?: string; radius?: number; opacity?: number; shadow?: boolean };
+  lines?: { text: string; style: "label" | "figure" | "caption" }[];
+  items?: { icon_key: string; title: string; desc: string }[];
+  fill?: string;
+  text_color?: string;
+  radius?: number;
 };
 export type LayoutSpec = {
   aspect?: string;
   // 언어별 베이크 배경(풀 포스터) asset_ref 맵. 예: { ko: "...v1.png", en: "...v1.en.png" }.
   visual_by_lang?: Record<string, string>;
+  render_mode?: "baked" | "vector_chrome";
   slots: Slot[];
   copy?: Record<string, Record<string, string>>;
 };
@@ -69,7 +84,9 @@ function scrimFor(bb: BBox, color: string, role: string): any {
   };
 }
 
-/** layout.spec + 언어 → Fabric JSON(toJSON 호환). assetUrl로 asset_ref 해석. */
+/** layout.spec + 언어 → Fabric JSON(toJSON 호환). assetUrl로 asset_ref 해석.
+ *  로고는 별도 플레이트 없이 베이크가 남긴 밝은 세이프존 코너 위에 정확한 오버레이로 얹는다
+ *  (플레이트는 얹힌 카드처럼 정합성이 떨어져 제거 — 베이크가 코너 배경을 담당, 오버레이가 정확 로고). */
 export function assembleScene(
   spec: LayoutSpec, lang: string, assetUrl: (ref: string) => string,
 ): FabricScene {
@@ -90,18 +107,99 @@ export function assembleScene(
           : s.asset_ref;
         return [{ ...common, type: "image", src: ref ? assetUrl(ref) : "" }];
       }
-      // 헤드라인/바디/CTA는 배경에 베이크됨 → 어떤 객체도 방출하지 않음. disclosure만 오버레이.
-      if (s.role !== "disclosure") return [];
-      const key = s.copy_key ?? s.role;
-      const color = s.color ?? "#0b1324";
-      const textbox = { ...common, type: "textbox", lang,
-        text: (key && copy[key]) || "",
-        fontSize: s.font_px ?? 30, fill: color };
-      // 스크림을 먼저(낮은 z), 텍스트를 그 위로
-      return [scrimFor(bb, color, s.role), textbox];
+      // 헤드라인/바디/CTA는 baked 모드에서 배경에 구워짐 → 미방출. disclosure만 오버레이.
+      if (s.role === "disclosure") {
+        const key = s.copy_key ?? s.role;
+        const color = s.color ?? "#0b1324";
+        const textbox: any = { ...common, type: "textbox", lang,
+          text: (key && copy[key]) || "",
+          fontSize: s.font_px ?? 30, fill: color };
+        // vector_chrome 모드에서만 서체 통일(baked는 현행 바이트 동등 유지 — spec §8 안전).
+        if ((spec.render_mode ?? "baked") === "vector_chrome") {
+          textbox.fontFamily = s.font_family ?? DEFAULT_FONT;
+        }
+        return [scrimFor(bb, color, s.role), textbox];
+      }
+      if ((spec.render_mode ?? "baked") !== "vector_chrome") return [];  // baked: 텍스트 미방출(하위호환)
+      // vector_chrome: 텍스트/위젯 role을 편집 벡터로 방출
+      const emitted = renderVectorRole(s, bb, common, lang, copy);
+      return s.scrim ? [scrimFor(bb, s.color ?? "#0b1324", s.role), ...emitted] : emitted;
     });
   const { width, height } = aspectToDims(spec.aspect);
   return { version: "6.0.0", objects, width, height };
+}
+
+/** vector_chrome 모드: role별 편집 Fabric 객체 방출. Task2~5에서 rate_card/benefit_row/cta_button 확장. */
+function renderVectorRole(
+  s: Slot, bb: BBox, common: Record<string, any>, lang: string,
+  copy: Record<string, string>,
+): any[] {
+  const RATE_STYLE: Record<string, { size: number; weight: number }> = {
+    figure: { size: 72, weight: 800 }, label: { size: 28, weight: 600 }, caption: { size: 24, weight: 400 },
+  };
+  if (s.role === "rate_card" && Array.isArray(s.lines)) {
+    const c = s.container ?? {};
+    const rect = {
+      ...common, type: "rect", fill: c.fill ?? "#FFFFFF",
+      rx: c.radius ?? 16, ry: c.radius ?? 16, opacity: c.opacity ?? 0.94,
+      shadow: c.shadow ? "rgba(0,0,0,0.18) 0px 8px 24px" : null,
+    };
+    const pad = 24;
+    let y = bb.y + pad;
+    const lines = s.lines.map((ln) => {
+      const st = RATE_STYLE[ln.style] ?? RATE_STYLE.caption;
+      const t = { type: "textbox", role: "rate_card", slotId: "rate_card", lang,
+        left: bb.x + pad, top: y, width: bb.w - pad * 2,
+        text: ln.text, fontSize: st.size, fontWeight: st.weight,
+        fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.color ?? "#0B1324", textAlign: "left" };
+      y += st.size + 10;
+      return t;
+    });
+    return [rect, ...lines];
+  }
+  if (s.role === "benefit_row" && Array.isArray(s.items)) {
+    const n = Math.max(1, s.items.length);
+    const colW = bb.w / n;
+    const iconSize = 44;
+    const out: any[] = [];
+    s.items.forEach((it, i) => {
+      const cx = bb.x + colW * i;                 // 칼럼 좌측
+      const iconLeft = cx + (colW - iconSize) / 2; // 칼럼 내 중앙
+      out.push({ type: "image", role: "benefit_row", slotId: "benefit_row",
+        left: iconLeft, top: bb.y, width: iconSize, height: iconSize,
+        src: iconSrc(it.icon_key) });
+      out.push({ type: "textbox", role: "benefit_row", slotId: "benefit_row", lang,
+        left: cx, top: bb.y + iconSize + 8, width: colW,
+        text: it.title, fontSize: 26, fontWeight: 700,
+        fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.color ?? "#0B1324", textAlign: "center" });
+      out.push({ type: "textbox", role: "benefit_row", slotId: "benefit_row", lang,
+        left: cx, top: bb.y + iconSize + 40, width: colW,
+        text: it.desc, fontSize: 22, fontWeight: 400,
+        fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.color ?? "#3A3A3A", textAlign: "center" });
+    });
+    return out;
+  }
+  if (s.role === "cta_button") {
+    const rect = { ...common, type: "rect", fill: s.fill ?? "#0066FF",
+      rx: s.radius ?? 999, ry: s.radius ?? 999 };
+    const key = s.copy_key ?? "cta";
+    const txt = { type: "textbox", role: "cta_button", slotId: "cta_button", lang,
+      left: bb.x, top: bb.y + Math.max(0, (bb.h - (s.font_px ?? 40)) / 2), width: bb.w,
+      text: (key && copy[key]) || "", fontSize: s.font_px ?? 40, fontWeight: s.weight ?? 700,
+      fontFamily: s.font_family ?? DEFAULT_FONT, fill: s.text_color ?? "#FFFFFF", textAlign: "center" };
+    return [rect, txt];
+  }
+  const key = s.copy_key ?? s.role;
+  const textbox = {
+    ...common, type: "textbox", lang,
+    text: (key && copy[key]) || "",
+    fontSize: s.font_px ?? 40,
+    fontFamily: s.font_family ?? DEFAULT_FONT,
+    fontWeight: s.weight ?? 400,
+    textAlign: s.align ?? "left",
+    fill: s.color ?? "#0b1324",
+  };
+  return [textbox];
 }
 
 /** 원-레이어 언어 교체: 베이크 배경(visual_by_lang) + disclosure 텍스트를 언어별 교체.

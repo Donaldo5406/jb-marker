@@ -2,6 +2,7 @@
 import base64
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -34,6 +35,7 @@ def _seed_brainstorming(client, rid):
     turn("정기예금 캠페인 기획하자")
     turn("2030 사회초년생", answer="2030 사회초년생")
     turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
+    turn("A. 신뢰 그린+골드 포인트 (권장)", answer="A. 신뢰 그린+골드 포인트 (권장)")  # 디렉션
     turn("예, plan으로", answer="예, plan으로")     # spec 확정
     turn("보충하기", answer="보충하기")               # plan 누락 보충
     turn("예, 확정", answer="예, 확정")               # plan 확정 → done
@@ -78,25 +80,29 @@ def test_brainstorming_demo_interactive_research_to_plan(monkeypatch):
     r2 = turn("2030 사회초년생", answer="2030 사회초년생")
     assert (r2.get("gate") or {}).get("trigger") == "a"
 
-    # 턴3: 전체 spec + spec-lock 질문(b).
+    # 턴3: 디자인 디렉션 제안(a) — AI 권장안 + 옵션.
     r3 = turn("영어+베트남어+중국어", answer="영어+베트남어+중국어")
-    assert (r3.get("gate") or {}).get("trigger") == "b"
+    assert (r3.get("gate") or {}).get("trigger") == "a"
+
+    # 턴4: 전체 spec + spec-lock 질문(b).
+    r4 = turn("A. 신뢰 그린+골드 포인트 (권장)", answer="A. 신뢰 그린+골드 포인트 (권장)")
+    assert (r4.get("gate") or {}).get("trigger") == "b"
     spec = client.get(f"/vfs/{rid}/brainstorming/spec.md")
     assert spec.status_code == 200 and "goal:" in spec.json()["content_text"]
 
-    # 턴4: spec 확정 → plan 1차 초안(누락) + 보충 질문(c).
-    r4 = turn("예, plan으로", answer="예, plan으로")
-    assert (r4.get("gate") or {}).get("trigger") == "c"
+    # 턴5: spec 확정 → plan 1차 초안(누락) + 보충 질문(c).
+    r5 = turn("예, plan으로", answer="예, plan으로")
+    assert (r5.get("gate") or {}).get("trigger") == "c"
     plan_partial = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
     assert "disclosures:" not in plan_partial   # 1차 누락
 
-    # 턴5: 보충 → 완성 plan + plan-lock 질문(b).
-    r5 = turn("보충하기", answer="보충하기")
-    assert (r5.get("gate") or {}).get("trigger") == "b"
+    # 턴6: 보충 → 완성 plan + plan-lock 질문(b).
+    r6 = turn("보충하기", answer="보충하기")
+    assert (r6.get("gate") or {}).get("trigger") == "b"
     plan_full = client.get(f"/vfs/{rid}/brainstorming/plan.md").json()["content_text"]
     assert "creative_direction:" in plan_full and "disclosures:" in plan_full
 
-    # 턴6: plan 확정 → done.
+    # 턴7: plan 확정 → done.
     turn("예, 확정", answer="예, 확정")
     state = client.get(f"/vfs/{rid}/brainstorming/_state.json").json()["content_text"]
     assert '"stage": "done"' in state
@@ -363,3 +369,63 @@ def test_design_chat_remediation_then_review_passes(monkeypatch):
     last, gate = _drive_review(client, rid, restart_first=True)
     assert gate.get("status") == "PASS", f"교정 후 PASS 기대, 실제 {gate}"
     assert gate.get("critical_count") == 0
+
+
+def test_design_s1_gate_tikitaka_updates_spec_and_preview(monkeypatch):
+    """S1 게이트에서 챗 '캘리/골드' → layout.spec.json이 V2로, 시안 프리뷰에 골드 반영(AC 3)."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    # bypass 없이 S1까지만 전진 → S1 게이트에 머문다.
+    r = _run(client, rid, "design", "디자인 시작", action="advance")
+    assert r.status_code == 200
+    # 게이트 챗(action 없음) — 티키타카 시그널.
+    r = _run(client, rid, "design", "헤드라인을 붓펜 캘리그래피 골드로 키워줘")
+    assert r.status_code == 200, r.text
+    spec = json.loads(client.get(f"/vfs/{rid}/design/rough/layout.spec.json")
+                      .json()["content_text"])
+    hl = next(s for s in spec["slots"] if s["role"] == "headline")
+    assert hl["color"] == "#FFD166" and hl["font_px"] == 88
+    preview = client.get(f"/vfs/{rid}/design/rough/preview.html")
+    assert preview.status_code == 200
+    assert "FFD166" in preview.json()["content_text"]   # 프리뷰에 골드 즉시 반영
+
+
+@pytest.mark.parametrize("directed", ["0", "1"])
+def test_design_demo_poster_copy_survives_directed_flag(monkeypatch, directed):
+    """AC 2 — DIRECTED_FULLBAKE 0/1 어느 쪽에서도 mock 포스터가 맨 배경이 아니다.
+    위반 카피 상태 → poster_violating fixture 바이트와 일치(AC 4, fixture 실파일 기반)."""
+    monkeypatch.setenv("DIRECTED_FULLBAKE", directed)
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "디자인 시작", action="advance", bypass_map=bm)
+    from app.providers.demo_fixtures import load_poster_bg, load_poster_fixture
+    png = client.get(f"/vfs/{rid}/design/design-system/components/visual/v1.png").content
+    assert png != load_poster_bg(), "맨 배경 회귀 — 카피 파싱 실패"
+    expected = load_poster_fixture("violating")
+    if expected:                       # fixture 커밋 후엔 정확 일치까지 요구
+        assert png == expected
+
+
+def test_design_tikitaka_then_full_run_selects_gold_fixtures(monkeypatch):
+    """AC 3 — S1 게이트 티키타카 후 완주 시 골드 축 fixture(violating_gold) 선택.
+
+    S1 게이트에서 '캘리/골드' 티키타카 → layout.spec이 V2(88px 골드)로 갱신된다. 이어지는
+    advance는 이미 S1을 지난 지점(S2a)에서 재개되므로 bypass_map의 S1 플래그는 실질 무관 —
+    S1이 재실행되지 않아 V2 spec(골드 헤드라인)이 보존되고, generate_image가 프롬프트의 골드
+    힌트를 검출해 골드 축(violating_gold) fixture를 선택한다(brief Step 2 검증 결과: S1 포함/제외
+    무관하게 V2 보존). mock 프로덕션 경로는 손대지 않는다."""
+    client = _client(monkeypatch)
+    rid = client.post("/runs", json={}).json()["run_id"]
+    _seed_brainstorming(client, rid)
+    _run(client, rid, "design", "디자인 시작", action="advance")          # S1 게이트
+    _run(client, rid, "design", "헤드라인을 캘리그래피 골드로")            # 티키타카 → V2
+    bm = {s: True for s in ("S1", "S2a", "S2b", "S2c", "S3")}
+    _run(client, rid, "design", "계속", action="advance", bypass_map=bm)  # 완주
+    from app.providers.demo_fixtures import load_poster_fixture
+    expected = load_poster_fixture("violating_gold")
+    if expected:
+        png = client.get(f"/vfs/{rid}/design/design-system/components/visual/v1.png").content
+        assert png == expected

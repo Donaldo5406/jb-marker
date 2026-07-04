@@ -24,6 +24,12 @@ export function useFabricCanvas(
     if (!elRef.current) return;
     const c = new Canvas(elRef.current, { width, height, backgroundColor: "#fff" });
     setCanvas(c);
+    // 웹폰트(CDN)가 늦게 로드되면 텍스트가 폴백 폰트로 굳는다 → 로드 완료 시 1회 재렌더(비차단).
+    if (typeof document !== "undefined" && (document as any).fonts?.ready) {
+      (document as any).fonts.ready.then(() => {
+        try { c.requestRenderAll(); } catch { /* 캔버스 dispose 후면 무시 */ }
+      });
+    }
     return () => { void c.dispose(); setCanvas(null); };
   }, [elRef, width, height]);
 
@@ -37,14 +43,24 @@ export function useFabricCanvas(
     for (const o of objs) {
       const t = String(o.type ?? "").toLowerCase();
       if (t === "rect") {
-        // 스크림(텍스트 가독성 배경) — assembleScene이 텍스트보다 먼저(낮은 z) 배치.
-        // 보조 배경이라 비선택(텍스트 클릭 시 스크림이 잡히지 않게). 저장 직렬화엔 포함됨.
+        // 스크림(텍스트 가독성 배경) — assembleScene이 텍스트보다 먼저(낮은 z) 배치. 보조 배경이라
+        // 비선택(텍스트 클릭 시 스크림이 잡히지 않게). 그 외 rect(rate_card 컨테이너·cta_button 버튼)는
+        // vector_chrome의 편집 대상이므로 다른 객체처럼 선택·이벤트 허용. opacity/shadow는 있을 때만 전달.
+        const isScrim = String(o.role) === "scrim";
         const r = new Rect({ left: o.left, top: o.top, width: o.width, height: o.height,
-          fill: o.fill, rx: o.rx, ry: o.ry, selectable: false, evented: false });
+          fill: o.fill, rx: o.rx, ry: o.ry,
+          ...(o.opacity != null ? { opacity: o.opacity } : {}),
+          ...(o.shadow ? { shadow: o.shadow } : {}),        // Fabric은 shadow 문자열을 Shadow로 변환(_set)
+          ...(isScrim ? { selectable: false, evented: false } : {}) });
         (r as any).role = o.role; (r as any).slotId = o.slotId;
         canvas.add(r);
       } else if (t === "textbox") {
-        const tb = new Textbox(o.text ?? "", { left: o.left, top: o.top, width: o.width, fontSize: o.fontSize ?? 48, fill: o.fill ?? "#0b1324" });
+        // fontFamily/fontWeight/textAlign은 vector_chrome 씬에서만 실림 → 있을 때만 전달(baked
+        // disclosure는 이 필드가 없어 구성 옵션이 종전과 동일 = 하위호환).
+        const tb = new Textbox(o.text ?? "", { left: o.left, top: o.top, width: o.width, fontSize: o.fontSize ?? 48, fill: o.fill ?? "#0b1324",
+          ...(o.fontFamily ? { fontFamily: o.fontFamily } : {}),
+          ...(o.fontWeight ? { fontWeight: o.fontWeight } : {}),
+          ...(o.textAlign ? { textAlign: o.textAlign } : {}) });
         (tb as any).role = o.role; (tb as any).lang = o.lang; (tb as any).slotId = o.slotId;
         canvas.add(tb);
       }

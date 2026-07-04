@@ -45,7 +45,7 @@ def test_wrappers_forward_image_kwarg_to_inner():
         name = "fake"
         _model = "fake-1"
         def __init__(self): self.seen = {}
-        def generate_image(self, prompt, *, aspect="1:1", image=None):
+        def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
             self.seen = {"prompt": prompt, "aspect": aspect, "image": image}
             return b"PNG"
 

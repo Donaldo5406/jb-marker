@@ -93,8 +93,9 @@ export function ProcessBar({ stepStatus, active, onSelect, medium = "image" }: P
                   : "text-on-surface-variant hover:bg-surface-container",
                 // D8: blocked는 잠금 '시각 표현'만 — 흐림 처리하되 클릭은 막지 않음.
                 blocked && "opacity-60",
-                // 슬롯 A: 제작 슬롯 액센트 틴트(#eaddff) — 매체 토글로 스왑되는 셀임을 시각화.
-                isProduction && "bg-[#eaddff] text-on-surface hover:bg-[#e3d3ff]",
+                // 슬롯 A: 제작 슬롯은 모노크롬 시스템에 맞춰 중립 틴트+인셋 링으로 구분
+                // (이질적 보라 #eaddff 제거 — 매체 아이콘이 image↔video 식별자 역할).
+                isProduction && !isActive && "bg-surface-container-high text-on-surface ring-1 ring-inset ring-outline-variant hover:bg-surface-container-highest",
                 // M5: review 셀 색 매핑(active 토큰 위에 우선 적용).
                 reviewColor,
                 // M6 T22: deploy 셀 색 매핑(review와 동일 우선순위).

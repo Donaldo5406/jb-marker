@@ -90,10 +90,11 @@ def test_detect_stage_a_turn1_is_interactive_with_research():
     assert resp.citations[0]["url"].startswith("http")
 
 
-def test_detect_stage_a_turn3_returns_full_spec():
-    """T5: 충분한 대화(3턴) 후 전체 spec(ready)."""
+def test_detect_stage_a_turn4_returns_full_spec():
+    """D4: 충분한 대화(4턴 — 타겟·다국어·디렉션 선택) 후 전체 spec(ready)."""
     msgs = [("user", "정기예금 캠페인"), ("assistant", "타겟은?"),
-            ("user", "2030"), ("assistant", "다국어?"), ("user", "영어 포함")]
+            ("user", "2030"), ("assistant", "다국어?"), ("user", "영어 포함"),
+            ("assistant", "디렉션은?"), ("user", "A안 권장안으로")]
     r = json.loads(_complete_msgs(msgs, {"studio": "brainstorming",
                                          "step": "stage_a"}).text)
     assert r["ready"] is True and "goal:" in r["document"]

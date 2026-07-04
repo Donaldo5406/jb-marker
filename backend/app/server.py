@@ -1,10 +1,13 @@
 """FastAPI 앱 팩토리 — 조립 전용. 전 라우트는 routers/ (P4 §8.1 분해 완료)."""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger(__name__)
 
 from . import entitlement
 from .config import load_settings
@@ -26,8 +29,31 @@ from .session.store import SessionStore
 from .vfs.factory import get_vfs_store
 
 
+def _log_render_readiness() -> None:
+    """부팅 시 영상 렌더 환경(ffmpeg·CJK 폰트) 건강을 로그로 노출한다.
+
+    라이브 데모 전에 배포 로그만 보고 렌더 가능 여부를 알 수 있게 — 그러지 않으면
+    ffmpeg/폰트 부재를 렌더 순간에야 stub 폴백으로 알게 된다(조용한 실패). 로그 전용이라
+    부팅을 절대 막지 않는다(예외는 삼킴)."""
+    try:
+        from .gateway.video.render import _AUTO, _resolve_ffmpeg, _resolve_font
+        ff = _resolve_ffmpeg(_AUTO)
+        font = _resolve_font()
+        if not ff:
+            logger.warning("렌더 준비 경고: ffmpeg 미탐지 → 영상이 stub로 폴백됩니다. "
+                           "라이브 렌더에는 ffmpeg 설치가 필요합니다.")
+        elif not font:
+            logger.warning("렌더 준비: ffmpeg=%s, 그러나 CJK(한글) 폰트 미탐지 → "
+                           "자막 한글이 깨질 수 있습니다.", ff)
+        else:
+            logger.info("렌더 준비 OK: ffmpeg=%s, CJK폰트=%s", ff, font)
+    except Exception as e:                       # 헬스 로그는 부팅을 막지 않는다
+        logger.warning("렌더 준비 점검 실패(무시): %s", e)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    _log_render_readiness()                      # 부팅 시 렌더 환경 건강 로그(A3)
     yield
     # HF Spaces 컨테이너 종료 시 Langfuse 배치 유실 방지
     tracing.flush()

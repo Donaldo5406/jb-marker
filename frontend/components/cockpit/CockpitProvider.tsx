@@ -33,7 +33,6 @@ export type DeployStateLike = {
   step_status: string;
   selected_providers: string[];
   matrix: { channel: string; lang: string }[];
-  dev_pass: boolean;
 };
 export type EligibilityReason = { status: string; label: string; count: number };
 // 법령 인용 — 정책 yaml의 매핑(백엔드가 객체로 반환). 필드는 방어적으로 옵셔널.
@@ -48,8 +47,9 @@ export type EligibilityResult = {
   breakdown?: EligibilityBreakdownItem[];   // 정책별(§50/§15·§16) 제외 사유 분해
 };
 export type PackageInfo = { status: string; reason?: string };
-export type AdvisorResult = { text?: string; tool_results?: unknown[]; needsPayment?: boolean };
-export type DispatchResult = { needsPayment?: boolean; report_path?: string } & Record<string, unknown>;
+// 결제 표면 폐기(2026-07-04) — 402 등 비정상 응답은 needsPayment 대신 error 텍스트로 정직 표면.
+export type AdvisorResult = { text?: string; tool_results?: unknown[]; error?: string };
+export type DispatchResult = { error?: string; report_path?: string } & Record<string, unknown>;
 
 /** sessions[studio] UI 상태(camelCase) — wire(snake)에서 액션이 매핑. */
 export type SessionUiState = { status: SessionStatus; liveness: SessionLivenessName; warnAt: number; suspendAt: number; expiresAt: number | null };
@@ -77,6 +77,7 @@ export type CockpitContextValue = {
   designBypass: Record<string, boolean>;   // 단계별 confirm 게이트 bypass 선호
   setDesignBypass: (id: string, on: boolean) => void;
   designGate: DesignGate | null;          // confirm 봉투 매핑 — 현재 confirm 게이트 상태(critic/auto_advanced)
+  designRev: number;                  // 디자인 턴(runDesign·design 챗) 완료 카운터 — 시안 프리뷰 재fetch nonce
   // ---- video state (P3 §9) — design 표면 미러 ----
   videoStep: string;                  // "V0".."done"
   videoLang: string;
@@ -96,7 +97,6 @@ export type CockpitContextValue = {
   deployState: DeployStateLike | null;
   eligibility: EligibilityResult | null;
   packages: Record<string, PackageInfo>;
-  devPass: boolean;
   selectedProviders: string[];
   setSelectedProviders: (next: string[]) => void;
   // ---- session lifecycle (T2 P3 / O3) ----
@@ -140,7 +140,6 @@ export type CockpitContextValue = {
   runPackagingCell: (channel: string, lang: string, originalCopy: string, visualPath: string) => Promise<{ package_id: string; status: string; reason?: string } & Record<string, unknown>>;
   askAdvisor: (packageId: string, message: string) => Promise<AdvisorResult>;
   dispatchConfirm: () => Promise<DispatchResult>;
-  payDemo: () => Promise<{ dev_pass: boolean }>;
   // ---- session actions (T2 P3) ----
   heartbeatSession: (studio: string) => Promise<void>;
   resumeSession: (studio: string) => Promise<SessionResumeResult | null>;
@@ -197,6 +196,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [designLang, setDesignLang] = useState("ko");
   const [designBypass, setDesignBypassState] = useState<Record<string, boolean>>({});
   const [designGate, setDesignGate] = useState<DesignGate | null>(null);
+  // 디자인 턴 완료 nonce — 게이트 정지 중 regenerate/챗 교정은 백엔드가 preview.html을
+  // 재생성해도 designStep·designGate가 불변이라, 이 카운터가 시안 프리뷰 재fetch를 보증한다.
+  const [designRev, setDesignRev] = useState(0);
   // P3: video 표면 상태(design 미러). run 전환 시 리셋(openRun/startRun).
   const [videoStep, setVideoStep] = useState("V0");
   const [videoLang, setVideoLang] = useState("ko");
@@ -215,7 +217,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [deployState, setDeployState] = useState<DeployStateLike | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityResult | null>(null);
   const [packages, setPackages] = useState<Record<string, PackageInfo>>({});
-  const [devPass, setDevPass] = useState(false);
   // 발송 채널 선택 — DeployStudio 로컬 대신 provider 소유(리마운트 생존). run 전환 시에만 리셋.
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
   // T2 P3: 세션 수명주기 상태 — run 전환 시 리셋(openRun/startRun). 게이트 봉투와 별개 경로.
@@ -355,7 +356,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setDesignGate(null);   // 새로 연 run은 stale design 게이트 없이 시작.
       setVideoGate(null); setVideoStep("V0"); setVideoBypassState({}); setVideoMedium("image"); setVideoRendering(false);
       // M6 T19: deploy state 리셋(이전 run 잔여 차단).
-      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
+      setDeployState(null); setEligibility(null); setPackages({}); setSelectedProviders([]);
       setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(id);
       await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id), loadVideoState(id),
@@ -377,7 +378,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
       setVideoGate(null); setVideoStep("V0"); setVideoBypassState({}); setVideoMedium("image"); setVideoRendering(false);
-      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
+      setDeployState(null); setEligibility(null); setPackages({}); setSelectedProviders([]);
       setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(run_id);
     },
@@ -518,6 +519,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         });
         if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
         applyGate(res.gate);
+        // 디자인 챗 턴(게이트 내 카피 교정 등)은 preview.html을 재생성할 수 있다 —
+        // 시안 프리뷰 재fetch nonce. design 한정: 타 스튜디오 챗의 불필요 재fetch 방지.
+        if (activeStudio === "design") setDesignRev((v) => v + 1);
         // 디자인 챗 교정(remediated): 백엔드가 layout.spec copy를 정제 갱신 → main.scene 재조립
         // (리뷰 지적 반영 → 재검토 통과). design 스튜디오 done 상태에서만 발생.
         if (activeStudio === "design" && (res.meta as { remediated?: boolean } | undefined)?.remediated) {
@@ -589,6 +593,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     // default 분기(setPendingGate(null))가 무관한 brainstorming ask 토스트를 닫는 교차 오염 차단.
     // done 시 designGate 클리어는 아래 `if (st === "done")`이 담당.
     if (res.gate) applyGate(res.gate);
+    // 이 턴에서 백엔드가 preview.html을 재생성했을 수 있다(게이트 내 regenerate 포함 —
+    // 이때 meta.step·gate는 불변) → nonce 증가로 시안 프리뷰 재fetch를 강제.
+    setDesignRev((v) => v + 1);
     // S3→done: 백엔드 layout.spec 완성 → plan 전체 언어 scene 일괄 조립(R2 4언어 비교) +
     // 현재 언어 자동 open(C1). 언어는 design/_state.json(=plan frontmatter languages)이 정본.
     if (st === "done") {
@@ -916,7 +923,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       step_status: typeof data.step_status === "string" ? data.step_status : prev?.step_status ?? "in_progress",
       selected_providers: selected,
       matrix: Array.isArray(data.matrix) ? data.matrix : [],
-      dev_pass: prev?.dev_pass ?? false,
     }));
     return data;
   }, []);
@@ -954,40 +960,31 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const askAdvisor = useCallback(async (packageId: string, message: string): Promise<AdvisorResult> => {
     const id = runIdRef.current;
-    if (!id) return { needsPayment: false };
+    if (!id) return { error: "run 없음" };
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/advisor/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ package_id: packageId, message, mock: mockModeRef.current }),
     });
-    if (res.status === 402) {
-      return { needsPayment: true };
+    if (!res.ok) {
+      return { error: `어드바이저 요청 실패 (HTTP ${res.status})` };
     }
     return res.json();
   }, []);
 
   const dispatchConfirm = useCallback(async (): Promise<DispatchResult> => {
     const id = runIdRef.current;
-    if (!id) return { needsPayment: false };
+    if (!id) return { error: "run 없음" };
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/dispatch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // mock(시연)이면 결제 게이트 우회 — 데모에서 결제 없이 리포트까지 산출.
+      // mock(시연)이면 entitlement 게이트 우회 — 데모에서 리포트까지 산출.
       body: JSON.stringify({ confirmed: true, mock: mockModeRef.current }),
     });
-    if (res.status === 402) {
-      return { needsPayment: true };
+    if (!res.ok) {
+      return { error: `발송 요청 실패 (HTTP ${res.status})` };
     }
     return res.json();
-  }, []);
-
-  const payDemo = useCallback(async () => {
-    const id = runIdRef.current;
-    if (!id) return { dev_pass: false };
-    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/demo-payment`, { method: "POST" });
-    const data = await res.json();
-    setDevPass(!!data.dev_pass);
-    return data;
   }, []);
 
   // `?view=` 딥링크 복원 — ensureSession과 독립적으로 즉시 1회(예: /cockpit?view=history).
@@ -1073,6 +1070,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     designBypass,
     setDesignBypass,
     designGate,
+    designRev,
     videoStep,
     videoLang,
     switchVideoLang,
@@ -1089,7 +1087,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     deployState,
     eligibility,
     packages,
-    devPass,
     selectedProviders,
     setSelectedProviders,
     sessions,
@@ -1129,7 +1126,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     runPackagingCell,
     askAdvisor,
     dispatchConfirm,
-    payDemo,
     heartbeatSession,
     resumeSession,
     suspendSession,

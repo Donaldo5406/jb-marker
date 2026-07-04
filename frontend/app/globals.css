@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,7 +5,7 @@
 @layer base {
   body {
     @apply text-on-surface font-sans;
-    font-weight: 600;
+    font-weight: 400;
     background-color: #faf0ea;
     background-image:
       radial-gradient(ellipse 70% 55% at 18% 22%, #fde2cf 0%, rgba(253, 226, 207, 0) 60%),
@@ -50,3 +49,32 @@
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
 .hljs-deletion { color: #ba1a1a; }
+
+/* 번들 서체(재배포 허용) — CDN 로드. family 이름은 lib/design/fontStack.ts와 일치해야
+   Fabric fontFamily 매칭이 된다. CDN 미도달 시 font-display:swap으로 시스템 폰트 폴백. */
+@font-face {
+  font-family: "Pretendard";
+  /* gh 미러는 jsdelivr 50MB 제한으로 404(실측) — 공식 npm 배포 경로 사용(실측 200). */
+  src: url("https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
+  font-weight: 45 920; font-display: swap;
+}
+@font-face {
+  font-family: "GmarketSansBold";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/GmarketSansBold.woff") format("woff");
+  font-weight: 700; font-display: swap;
+}
+@font-face {
+  font-family: "NanumMyeongjo";
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@5.2.11/korean-400-normal.woff2") format("woff2");
+  font-weight: 400; font-display: swap;
+}
+@font-face {
+  font-family: "NanumMyeongjo";
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-myeongjo@5.2.11/korean-800-normal.woff2") format("woff2");
+  font-weight: 800; font-display: swap;
+}
+@font-face {
+  font-family: "NanumPenScript";
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/nanum-pen-script@5.2.7/korean-400-normal.woff2") format("woff2");
+  font-weight: 400; font-display: swap;
+}

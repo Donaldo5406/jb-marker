@@ -61,6 +61,14 @@ disclosures: [예금자보호법에 따라 5천만원까지 보호, 표시 금�
 
 ## 6. 핵심 수치(grounding)
 상품 마스터: 금리 **3.5%** · 만기 **12개월** · 최소 가입 **100만원**. 모든 카피는 이 수치와 일치한다.
+
+## 7. 디자인 디렉션 (브레인스토밍 확정)
+- **팔레트**: 신뢰 그린 `#00857C` 베이스 + 딥 네이비 `#0B2B5B` · 화이트. 헤드라인 강조 시
+  골드 포인트(`#FFD166`)를 티키타카로 승격 가능.
+- **타이포 3단 위계**: 굵은 디스플레이 헤드라인 > 금리 숫자(최대 강조) > 라벨·바디(가벼운 웨이트).
+- **아이콘**: 라인 픽토그램 세트(혜택 칩) — 일관된 스트로크.
+- **세이프존(safe zone)**: 좌상단 = 공식 로고 오버레이 자리(빈 배경 유지), 최하단 = 법령 고지
+  오버레이 밴드(무텍스트) — 로고·고지는 결정론 레이어가 담당한다.
 """
 
 PLAN_MD = """---
@@ -87,9 +95,16 @@ disclosures: [예금자보호법에 따라 5천만원까지 보호, 표시 금�
 확정된 spec을 **제작 가능한 소재 명세**로 변환한다. 4개 언어(ko/en/vi/zh) × 채널별 포맷.
 
 ## 1. 크리에이티브 디렉션
-- **팔레트**: JB 그린 `#00857C` · 딥 네이비 `#0B2B5B` · 화이트 `#FFFFFF`.
-- **타이포**: Pretendard(다국어 가독). **그리드**: 12컬럼. **비율**: 4:5 세로형(피드 최적).
-- **비주얼 컨셉**: 밝은 톤의 추상적 금융 성장 이미지(텍스트-free 배경 위 카피 레이어).
+- **팔레트**: JB 그린 `#00857C` · 딥 네이비 `#0B2B5B` · 화이트 `#FFFFFF`. 타이포 디렉션
+  채택 시 헤드라인 골드 포인트(`#FFD166`) — 프롬프트 슬롯 힌트로만 전달(팔레트 오염 금지).
+- **타이포 3단 위계**: 디스플레이 헤드라인(72px, 티키타카 시 88px 캘리그래피 질감) >
+  금리 숫자(카드 내 최대 강조) > 라벨·바디(가벼운 웨이트). Pretendard(다국어 가독).
+- **그리드**: 12컬럼. **비율**: 4:5 세로형(피드 최적). **베이크 해상도**: 2K(잔글씨 글리프
+  정밀도 — 1K에서 칩 라벨 깨짐 실측).
+- **비주얼 컨셉**: 밝은 톤의 추상적 금융 성장 이미지. 금리 하이라이트 카드(둥근 화이트
+  컨테이너) + 혜택 아이콘 칩 행(라인 픽토그램)을 풀베이크로 디렉팅.
+- **세이프존(safe zone)**: 좌상단 로고 자리·최하단 고지 밴드는 텍스트-free — 결정론
+  오버레이(S2c)가 담당.
 
 ## 2. 소재 매트릭스
 | 채널 | 포맷 | 비율 |
@@ -132,6 +147,22 @@ LAYOUT_SPEC = {
     ],
     "copy": {},
 }
+
+# 티키타카 v2 — S1 게이트 챗 "캘리/골드" 시그널의 결정론 응답(spec 2026-07-03 D3).
+# V1 대비 headline 88px 골드(#FFD166) + 붓펜 캘리그래피 디렉션. 시안 프리뷰
+# (build_layout_mock_html)가 font_px/color를 렌더하므로 게이트 화면에서 변화가 즉시 보이고,
+# 골드 hex는 S2a 프롬프트 힌트로 실려 poster_v2/violating_gold fixture 매칭 시그널이 된다.
+import copy as _copy_mod
+
+LAYOUT_SPEC_V2 = _copy_mod.deepcopy(LAYOUT_SPEC)
+LAYOUT_SPEC_V2["visual_concept"] = (
+    "밝은 톤의 추상적 금융 성장 이미지 — 헤드라인은 붓펜 캘리그래피 질감의 골드(#FFD166) "
+    "포인트, 나머지 텍스트는 단정한 산세리프 투톤 대비. 골드 가독성을 위해 헤드라인 뒤는 "
+    "짙은 톤 처리")
+for _s in LAYOUT_SPEC_V2["slots"]:
+    if _s["role"] == "headline":
+        _s["font_px"], _s["color"] = 88, "#FFD166"
+del _s
 
 # 모든 수치(3.5 / 12 / 100)는 FACTSHEET에 존재 → grounding 통과.
 # en/vi/zh는 한글 0(단위어 현지화: 개월→months/tháng/个月, 만원→vạn won/万韩元). 숫자만 유지.
@@ -398,6 +429,27 @@ def load_poster_bg() -> bytes:
             return f.read()
     except OSError:
         return placeholder_png()
+
+
+# 상태별 실생성 2K 포스터 fixture(spec 2026-07-03 D1) — 실 Gemini로 mock 카피 그대로
+# 사전 생성(scripts/gen_demo_posters.py). 실 Veo footage를 mock 영상 fixture로 박은 선례와
+# 동일 패턴. 파일 부재/미지 상태는 None → 호출부(demo.generate_image)가 PIL 폴백(완주 보장).
+_POSTER_DIR = os.path.join(os.path.dirname(__file__), "..", "references", "design")
+POSTER_STATES = ("violating", "violating_gold", "final", "v2")
+# 언어 변형 fixture(2026-07-04): 비ko는 poster_{state}_{lang}.png. 비ko 카피는 위반·교정
+# 모두 clean(COPY_VIOLATING가 COPY 복제)이라 골드 경로엔 v2 변형 3장이면 데모 전 구간 커버.
+POSTER_LANGS = ("ko", "en", "vi", "zh")
+
+
+def load_poster_fixture(state: str, lang: str = "ko") -> bytes | None:
+    if state not in POSTER_STATES or lang not in POSTER_LANGS:
+        return None
+    name = f"poster_{state}.png" if lang == "ko" else f"poster_{state}_{lang}.png"
+    try:
+        with open(os.path.join(_POSTER_DIR, name), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
 
 
 # 실 Veo 생성 광고 footage(텍스트-free 시네마틱) — 시연/Mock용 결정론 영상.

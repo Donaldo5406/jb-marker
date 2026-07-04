@@ -10,7 +10,7 @@ const config: Config = {
   theme: {
     container: { center: true, padding: "40px", screens: { "2xl": "1440px" } },
     extend: {
-      fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+      fontFamily: { sans: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"] },
       colors: {
         surface: {
           DEFAULT: "#fdf8f8",
@@ -64,7 +64,15 @@ const config: Config = {
       },
       spacing: { gutter: "24px", "margin-x": "40px", header: "72px" },
       maxWidth: { container: "1440px" },
-      boxShadow: { ambient: "0 0 40px rgba(0,0,0,0.02)" },
+      boxShadow: {
+        // 따뜻한 색조 그림자(브랜드 뉴트럴이 웜톤이라 순흑 대신 웜브라운 rgba 40,28,24).
+        // 2겹(접지 + 확산)으로 사실적 깊이. ambient는 레거시 소프트 글로우(보존).
+        ambient: "0 0 40px rgba(0,0,0,0.02)",
+        "elev-1": "0 1px 2px rgba(40,28,24,0.04), 0 2px 8px rgba(40,28,24,0.06)",
+        "elev-2": "0 2px 4px rgba(40,28,24,0.05), 0 8px 20px rgba(40,28,24,0.08)",
+        "elev-3": "0 4px 10px rgba(40,28,24,0.06), 0 14px 32px rgba(40,28,24,0.12)",
+        "elev-4": "0 10px 24px rgba(40,28,24,0.10), 0 28px 64px rgba(40,28,24,0.18)",
+      },
       backdropBlur: { glass: "20px" },
       keyframes: {
         "fade-in-up": { from: { opacity: "0", transform: "translateY(8px)" }, to: { opacity: "1", transform: "translateY(0)" } },

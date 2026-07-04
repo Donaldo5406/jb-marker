@@ -148,8 +148,8 @@ def test_gateway_run_mock_exact_keyset_and_gate_none_omission(local_client):
     """gateway 응답 정확 4키 + gate 봉투(P2 wire)는 None 필드 생략 보존 —
     brainstorming ask 봉투엔 confirm/status 계열 필드가 없어야 함."""
     rid = local_client.post("/runs", json={}).json()["run_id"]
-    # is_marker 게이트 통과용 dev_pass (entitlement choke)
-    local_client.post(f"/runs/{rid}/deploy/demo-payment")
+    # is_marker 게이트 통과용 dev_pass (entitlement choke) — demo-payment 폐기로 PUT /entitlement 사용
+    local_client.put("/entitlement", json={"marker": True})
     r = local_client.post("/gateway/run", json={
         "run_id": rid, "studio": "brainstorming",
         "prompt": "정기예금 캠페인", "provider": "anthropic",
@@ -208,5 +208,5 @@ def test_deploy_setup_and_state_exact_keysets(local_client):
     assert set(body["matrix"][0].keys()) == {"channel", "lang"}
     r = local_client.get(f"/runs/{rid}/deploy/_state")
     assert r.status_code == 200
-    assert set(r.json().keys()) == {
-        "step_status", "selected_providers", "matrix", "dev_pass"}
+    # dev_pass는 2026-07-04 결제 표면 폐기로 제거(spec payment-purge).
+    assert set(r.json().keys()) == {"step_status", "selected_providers", "matrix"}

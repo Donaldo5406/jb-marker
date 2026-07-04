@@ -24,9 +24,6 @@ describe("CockpitProvider deploy actions", () => {
       if (u.includes("/deploy/dispatch")) {
         return Promise.resolve({ ok: false, status: 402, json: async () => ({}) });
       }
-      if (u.includes("/deploy/demo-payment")) {
-        return Promise.resolve({ ok: true, status: 200, json: async () => ({ dev_pass: true }) });
-      }
       // entitlement init + runs list 등 다른 호출 무해 처리.
       return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
     });
@@ -44,20 +41,12 @@ describe("CockpitProvider deploy actions", () => {
     await waitFor(() => expect(result.current.eligibility?.total).toBe(512));
   });
 
-  it("dispatchConfirm returns needsPayment when 402", async () => {
+  it("dispatchConfirm은 402를 error 텍스트로 반환한다 (결제 표면 폐기 2026-07-04)", async () => {
     const { result } = renderHook(() => useCockpit(), { wrapper });
-    let out: { needsPayment?: boolean } = {};
+    let out: { error?: string } = {};
     await act(async () => {
       out = await result.current.dispatchConfirm();
     });
-    expect(out.needsPayment).toBe(true);
-  });
-
-  it("payDemo sets devPass true", async () => {
-    const { result } = renderHook(() => useCockpit(), { wrapper });
-    await act(async () => {
-      await result.current.payDemo();
-    });
-    await waitFor(() => expect(result.current.devPass).toBe(true));
+    expect(out.error).toContain("HTTP 402");
   });
 });

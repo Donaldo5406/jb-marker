@@ -9,6 +9,7 @@ import { PipelineRail } from "./PipelineRail";
 import { DesignSettings } from "./DesignSettings";
 import { ConfirmToastView } from "./ConfirmToast";
 import { AskUserToastView } from "./AskUserToast";
+import { LayoutPreview } from "./LayoutPreview";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, X } from "lucide-react";
@@ -64,7 +65,7 @@ function ReviewGuideCard() {
             </ul>
           )}
           <p className="mt-1.5 text-caption text-severity-warning-fg">
-            우측 챗에 <span className="font-semibold">“리뷰 결과대로 카피 수정해줘”</span>라고 입력하면 카피가 자동 교정되고 캔버스가 갱신됩니다.
+            우측 챗에 <span className="font-semibold">“리뷰 결과대로 카피 교정해줘”</span>라고 입력하면 카피가 자동 교정되고 캔버스가 갱신됩니다.
           </p>
         </div>
         <button type="button" onClick={() => setDismissed(true)} aria-label="가이드 닫기"
@@ -72,6 +73,19 @@ function ReviewGuideCard() {
           <X className="h-4 w-4" aria-hidden />
         </button>
       </div>
+    </div>
+  );
+}
+
+/** design-canvas 중앙 빈상태 안내 — 씬 미오픈 & 시안 프리뷰 부재(404) 시 표시.
+ *  LayoutPreview의 fallback으로도, runId 부재 시 직접 분기로도 재사용(문구 단일 출처). */
+function DesignCanvasPlaceholder() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
+      <p className="text-body-lg font-medium text-on-surface">디자인 캔버스</p>
+      <p className="max-w-sm text-body-sm text-on-surface-variant">
+        Final 단계에서 씬이 생성되면 여기서 직접 편집할 수 있습니다. 우측 챗으로 지시하거나 좌측 트리에서 main.scene을 선택하세요.
+      </p>
     </div>
   );
 }
@@ -94,7 +108,7 @@ export function DesignStudio() {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "cockpit-cols-design", storage: layoutStorage });
 
   return (
-    <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
       <PipelineRail step={c.designStep} gate={c.designGate} busy={busy}
         onAdvance={() => act("advance")} onRegenerate={() => act("regenerate")}
         settingsOpen={showSettings} onToggleSettings={() => setShowSettings((v) => !v)} />
@@ -114,13 +128,14 @@ export function DesignStudio() {
         <Panel id="design-canvas" defaultSize={60} minSize={36} className="min-h-0 overflow-hidden">
           {sceneOpen && c.openFile ? (
             <FileContent file={c.openFile} runId={c.runId} onChangeContent={c.setOpenFileContent} onSaveScene={c.saveSceneJson} />
+          ) : c.runId ? (
+            <LayoutPreview
+              runId={c.runId}
+              refreshKey={`${c.designStep}:${c.designGate?.step ?? ""}:${c.designRev}`}
+              fallback={<DesignCanvasPlaceholder />}
+            />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
-              <p className="text-body-lg font-medium text-on-surface">디자인 캔버스</p>
-              <p className="max-w-sm text-body-sm text-on-surface-variant">
-                Final 단계에서 씬이 생성되면 여기서 직접 편집할 수 있습니다. 우측 챗으로 지시하거나 좌측 트리에서 main.scene을 선택하세요.
-              </p>
-            </div>
+            <DesignCanvasPlaceholder />
           )}
         </Panel>
         <Separator className="w-px bg-outline-variant data-[separator=hover]:bg-on-surface-variant data-[separator=active]:bg-on-surface-variant" />
