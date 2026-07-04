@@ -189,7 +189,9 @@ def test_review_r3_returns_status_gate_envelope(tmp_path, make_scripted):
                                '"clause":"§X","official_source_url":"https://law.go.kr/x",'
                                '"severity":"warning","evidence":"x"}]}'), model="x")]),
         store=s)
-    h.handle_turn(req, provider=FakeProvider(), store=s)              # R2 (모노링구얼 스킵)
+    h.handle_turn(req, provider=FakeProvider(), store=s)              # R2 (모노링구얼 스킵) → RC
+    h.handle_turn(req, provider=make_scripted(complete_responses=[     # RC: 논란 0건
+        ProviderResponse(text='{"findings":[]}', model="x")]), store=s)
     res = h.handle_turn(req, provider=make_scripted(complete_responses=[
         ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
                          model="x")]), store=s)                        # R3 종단

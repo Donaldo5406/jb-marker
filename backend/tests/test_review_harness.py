@@ -3,7 +3,9 @@ import json
 import pytest
 
 from app.gateway.harness import HarnessRequest
-from app.gateway.harness_review import ReviewHarness, STEPS, PERSONA_A, PERSONA_B, PERSONA_C
+from app.gateway.harness_review import (
+    ReviewHarness, STEPS, PERSONA_A, PERSONA_B, PERSONA_C, PERSONA_RC,
+)
 from app.providers.base import ProviderResponse
 from app.providers.fake import FakeProvider
 from app.vfs.factory import make_local_store
@@ -39,13 +41,14 @@ def _setup_run(store, run_id="r1", languages=None):
 
 
 def test_steps_constant():
-    assert STEPS == ("R0", "R1", "R2", "R3", "done")
+    assert STEPS == ("R0", "R1", "R2", "RC", "R3", "done")
 
 
 def test_personas_defined():
     assert "법률 검토" in PERSONA_A or "법률" in PERSONA_A
     assert "동등성" in PERSONA_B
     assert "통합" in PERSONA_C or "reconciler" in PERSONA_C.lower()
+    assert "논란" in PERSONA_RC or "평판" in PERSONA_RC
 
 
 def test_review_harness_initial_state(tmp_path):
@@ -401,7 +404,7 @@ def test_r2_i18n_persists_findings(tmp_path, make_scripted):
     assert verdicts[0]["kind"] == "missing_disclosure"
     assert verdicts[0]["severity"] == "critical"
     state = json.loads(store.get("/r1/review/_state.json").content_text)
-    assert state["step"] == "R3"
+    assert state["step"] == "RC"
 
 
 def test_r2_keyword_safety_net_adds_missing(tmp_path, make_scripted):
@@ -455,7 +458,7 @@ def test_r2_skipped_mono_lingual(tmp_path):
     h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 → 스킵
     state = json.loads(store.get("/r1/review/_state.json").content_text)
     assert state["r2_skipped"] == "mono-lingual"
-    assert state["step"] == "R3"
+    assert state["step"] == "RC"
     # i18n/ 비어 있음
     nodes = store.list("/r1/review/i18n/")
     assert [n for n in nodes if n.path.endswith("verdict.json")] == []
@@ -642,15 +645,17 @@ def test_action_ack_sets_acknowledged_only_on_warn(tmp_path, make_scripted):
     text_provider = make_scripted(complete_responses=[
         ProviderResponse(text='{"findings":[{"location":{"slot":"headline","lang":"ko"},'
                                '"clause":"§X","official_source_url":"https://law.go.kr/x",'
-                               '"severity":"warning","evidence":"x"}]}', model="x"),
-        ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}', model="x"),
+                               '"severity":"warning","evidence":"x"}]}', model="x"),  # R1
+        ProviderResponse(text='{"findings":[]}', model="x"),  # RC (LLM 경로)
+        ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}', model="x"),  # R3
     ])
     h = ReviewHarness(vision_provider=FakeProvider())
     req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
                           provider="fake", is_marker=True)
     h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
     h.handle_turn(req, provider=text_provider, store=store)  # R1 (warning 1건)
-    h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 (mono-lingual skip)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 (mono-lingual skip) → RC
+    h.handle_turn(req, provider=text_provider, store=store)  # RC → R3
     h.handle_turn(req, provider=text_provider, store=store)  # R3 reconcile → WARN
     m = store.get_manifest("r1")
     assert m.step_status.get("review") == "WARN"
@@ -805,13 +810,15 @@ def test_golden_path_blocked(tmp_path, make_scripted):
                 '"clause":"§3","official_source_url":"https://law.go.kr/x",'
                 '"severity":"critical","evidence":"x"}]}'), model="x"),
             ProviderResponse(text='{"findings":[]}', model="x"),  # R2 i18n
+            ProviderResponse(text='{"findings":[]}', model="x"),  # RC 논란
             ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
                               model="x"),  # R3 reconciler
         ],
         vision_responses=[
-            ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
-            ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
-            ProviderResponse(text='{"findings":[]}', model="g"),  # en composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 v1.png
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 ko composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 en composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # RC v1.png
         ])
     m = store.get_manifest("r1")
     assert m.step_status["review"] == "BLOCKED"
@@ -840,13 +847,15 @@ def test_golden_path_warn(tmp_path, make_scripted):
                 '"clause":"§X","official_source_url":"https://law.go.kr/x",'
                 '"severity":"warning","evidence":"x"}]}'), model="x"),
             ProviderResponse(text='{"findings":[]}', model="x"),  # R2 i18n
+            ProviderResponse(text='{"findings":[]}', model="x"),  # RC 논란
             ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
                               model="x"),  # R3 reconciler
         ],
         vision_responses=[
-            ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
-            ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
-            ProviderResponse(text='{"findings":[]}', model="g"),  # en composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 v1.png
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 ko composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 en composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # RC v1.png
         ])
     m = store.get_manifest("r1")
     assert m.step_status["review"] == "WARN"
@@ -871,13 +880,108 @@ def test_golden_path_pass(tmp_path, make_scripted):
         text_responses=[
             ProviderResponse(text='{"findings":[]}', model="x"),  # R1 text
             ProviderResponse(text='{"findings":[]}', model="x"),  # R2 i18n
+            ProviderResponse(text='{"findings":[]}', model="x"),  # RC 논란
             ProviderResponse(text='{"recommendations":[],"conflicts_resolved":[]}',
                               model="x"),  # R3 reconciler
         ],
         vision_responses=[
-            ProviderResponse(text='{"findings":[]}', model="g"),  # v1.png
-            ProviderResponse(text='{"findings":[]}', model="g"),  # ko composite
-            ProviderResponse(text='{"findings":[]}', model="g"),  # en composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 v1.png
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 ko composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # R1 en composite
+            ProviderResponse(text='{"findings":[]}', model="g"),  # RC v1.png
         ])
     m = store.get_manifest("r1")
     assert m.step_status["review"] == "PASS"
+
+
+# ===== RC 논란 검토 노드 =====
+
+
+def test_rc_transition_r2_to_rc_to_r3(tmp_path):
+    """R2 → RC → R3 전이(mono-lingual도 RC는 실행)."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 (mono skip) → RC
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "RC"
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # RC → R3
+    state = json.loads(store.get("/r1/review/_state.json").content_text)
+    assert state["step"] == "R3"
+
+
+def test_rc_deterministic_persists_controversy_verdict(tmp_path):
+    """블랙리스트 신호가 있는 카피 → node=controversy verdict를 결정론으로 영속(provider 무관)."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    # ko main.scene 카피에 Tier-1 신호(욱일기) 주입
+    store.put("/r1/design/final/ko/main.scene",
+              json.dumps({"copy": {"ko": {"headline": "욱일기 느낌 배경", "cta": "가입"}}}),
+              source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    for _ in range(4):  # R0,R1,R2,RC
+        h.handle_turn(req, provider=FakeProvider(), store=store)
+    verdicts = h._load_all_verdicts(store, "r1")
+    cx = [v for v in verdicts if v.get("node") == "controversy"]
+    assert cx, f"controversy verdict 미검출: {verdicts}"
+    assert cx[0]["severity"] == "critical"
+    # controversy/ 폴더에 risk_ 프리픽스로 영속
+    paths = [n.path for n in store.list("/r1/review/controversy/")]
+    assert any("/controversy/risk_" in p for p in paths)
+
+
+def test_rc_controversy_joins_gate_blocked(tmp_path, make_scripted):
+    """controversy critical → R3 게이트 BLOCKED."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    store.put("/r1/design/final/ko/main.scene",
+              json.dumps({"copy": {"ko": {"headline": "1488 캠페인"}}}),
+              source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    for _ in range(4):  # R0,R1,R2,RC
+        h.handle_turn(req, provider=FakeProvider(), store=store)
+    # R3 reconcile
+    text_provider = make_scripted(complete_responses=[ProviderResponse(
+        text='{"recommendations":[],"conflicts_resolved":[]}', model="x")])
+    h.handle_turn(req, provider=text_provider, store=store)  # RC done → R3
+    m = store.get_manifest("r1")
+    assert m.step_status.get("review") == "BLOCKED"
+
+
+def test_rc_clean_copy_no_findings(tmp_path):
+    """clean 카피 → controversy verdict 0(중립성·오탐 가드)."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])  # 기본 카피 '쉽고 빠르게'는 clean
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    for _ in range(4):
+        h.handle_turn(req, provider=FakeProvider(), store=store)
+    cx = [v for v in h._load_all_verdicts(store, "r1") if v.get("node") == "controversy"]
+    assert cx == []
+
+
+def test_rc_system_is_persona_rc_and_meta_passed(tmp_path, make_scripted):
+    """RC LLM 경로: system=PERSONA_RC, meta={"studio":"review","step":"RC"}."""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R0
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R1
+    h.handle_turn(req, provider=FakeProvider(), store=store)  # R2 → RC
+    sp = make_scripted(complete_responses=[ProviderResponse(
+        text='{"findings":[]}', model="x")])
+    h.handle_turn(req, provider=sp, store=store)  # RC
+    call = sp.calls_complete[0]
+    assert call["system"] == PERSONA_RC
+    assert call["kw"].get("meta") == {"studio": "review", "step": "RC", "medium": "image"}
