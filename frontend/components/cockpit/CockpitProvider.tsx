@@ -27,7 +27,7 @@ export function viewFromSearch(search: string): CockpitView {
 export type OpenFile = { path: string; content: string; mime: string | null; dirty: boolean };
 export type Entitlement = { marker: boolean; deploy: boolean };
 export type ChatMessage = { role: "user" | "assistant"; content: string };
-export type ReviewStage = "R0" | "R1" | "R2" | "R3" | "done";
+export type ReviewStage = "R0" | "R1" | "R2" | "RC" | "R3" | "done";
 // M6 T19 deploy 상태 타입.
 export type DeployStateLike = {
   step_status: string;
@@ -710,10 +710,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     } catch { /* vfsList 실패 → 빈 scenes로 진입(백엔드는 vision_skipped로 흡수) */ }
     // 2) composite PNG 업로드 (lib/sceneRender — base64 round-trip, /api/vfs/.../review/_render/{lang}.png).
     await renderAndUploadAll(id, scenes);
-    // 3) R0→R3 순차 구동. STEP_GUARD = 정상 4단계 + 여유(무한루프 방지 안전캡).
-    const STEP_GUARD = 6;
+    // 3) R0→R3 순차 구동(R0→R1→R2→RC→R3). STEP_GUARD = 정상 5단계 + 여유(무한루프 방지 안전캡).
+    const STEP_GUARD = 7;
     const nextStage = (st: string): ReviewStage =>
-      st === "R0" ? "R1" : st === "R1" ? "R2" : "R3";
+      st === "R0" ? "R1" : st === "R1" ? "R2" : st === "R2" ? "RC" : st === "RC" ? "R3" : "R3";
     let lastText = "";
     let gate: GateEnvelope | null = null;
     for (let i = 0; i < STEP_GUARD; i++) {

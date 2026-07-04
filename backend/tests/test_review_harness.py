@@ -997,3 +997,52 @@ def test_rc_demo_provider_deterministic_catch(tmp_path):
     resp = p.complete([Message("user", payload)], meta={"studio": "review", "step": "RC"})
     data = json.loads(resp.text)
     assert data["findings"] and data["findings"][0]["severity"] == "critical"
+
+
+def test_rc_verdict_id_collision_preserves_critical(tmp_path):
+    """회귀 가드(verdict_id 충돌): 같은 (category, lang)의 서로 다른 두 controversy finding이
+    동일 verdict 경로로 충돌해 나중 것이 앞 것을 덮어써 Tier-1 critical이 강등되던 결함.
+
+    '욱일기 배경의 전라도 홍어 축제'는 symbol_rising_sun(critical, other_sensitive)과
+    ctx_region_hongeo(warning, other_sensitive)를 동시 트리거한다 — 둘 다 category=
+    other_sensitive·lang=ko라, id 기반 식별이 없으면 한 경로로 충돌해 warning(나중 것)만
+    남고 critical이 사라진다. id 식별 후엔 두 verdict가 모두 보존되고 critical이 살아남아야
+    한다. (FakeProvider text+vision이라 경로2(LLM)·경로3(비전)은 무탐 → 경로1만 검증.)"""
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    store.put("/r1/design/final/ko/main.scene",
+              json.dumps({"copy": {"ko": {"headline": "욱일기 배경의 전라도 홍어 축제"}}}),
+              source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="fake", is_marker=True)
+    for _ in range(4):  # R0, R1, R2(mono skip), RC
+        h.handle_turn(req, provider=FakeProvider(), store=store)
+    cx = [v for v in h._load_all_verdicts(store, "r1") if v.get("node") == "controversy"]
+    assert len(cx) == 2, f"두 controversy verdict가 모두 보존돼야 함(충돌 방지): {cx}"
+    assert any(v["severity"] == "critical" for v in cx), \
+        f"rising-sun critical이 보존돼야 함(강등 방지): {cx}"
+
+
+def test_rc_demo_path2_shares_id_with_path1_idempotent(tmp_path):
+    """회귀 가드(멱등): DemoProvider(mock LLM) RC 경로2 finding이 id를 실어 경로1(결정론)과
+    동일 verdict_id로 수렴 → 같은 finding이 두 경로에서 중복 파일이 되지 않는다.
+
+    2신호 카피는 경로1·경로2 각각 2건이나 id가 겹쳐 총 2개 verdict 파일만 남아야 한다(demo.py가
+    id를 안 실으면 경로2가 category로 뭉쳐 별도 파일을 만들어 3개가 됨)."""
+    from app.providers.demo import DemoProvider
+    store = make_local_store(tmp_path)
+    _setup_run(store, languages=["ko"])
+    store.put("/r1/design/final/ko/main.scene",
+              json.dumps({"copy": {"ko": {"headline": "욱일기 배경의 전라도 홍어 축제"}}}),
+              source="marker", mime="application/json")
+    h = ReviewHarness(vision_provider=FakeProvider())
+    req = HarnessRequest(run_id="r1", studio="review", user_prompt="",
+                          provider="demo", is_marker=True)
+    for _ in range(4):  # R0, R1, R2(mono skip), RC
+        h.handle_turn(req, provider=DemoProvider(), store=store)
+    files = [n.path for n in store.list("/r1/review/controversy/")
+             if n.path.endswith("verdict.json")]
+    assert len(files) == 2, f"경로1·경로2가 id로 수렴해 2개만 남아야 함(중복 방지): {files}"
+    cx = [v for v in h._load_all_verdicts(store, "r1") if v.get("node") == "controversy"]
+    assert any(v["severity"] == "critical" for v in cx)

@@ -115,10 +115,13 @@ def controversy_findings(scene_copy: dict) -> list[dict]:
     clean 카피면 빈 리스트.
     """
     from ..core.controversy_rules import evaluate as _cx_evaluate
+    # id를 함께 실어 하네스 경로 2(LLM)가 경로 1(결정론)과 동일 verdict_id로 영속하게 한다
+    # → 같은 finding이 두 경로에서 중복 파일이 되지 않고 동일 경로 덮어쓰기(멱등)로 수렴.
     return [{"location": f["location"], "category": f.get("category"),
              "severity": f.get("severity", "warning"),
              "evidence": f.get("evidence", ""),
-             "source": f.get("official_source_url", "")}
+             "source": f.get("official_source_url", ""),
+             "id": f.get("id")}
             for f in _cx_evaluate(scene_copy)]
 
 

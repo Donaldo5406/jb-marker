@@ -20,9 +20,14 @@ _BLACKLIST_PATH = os.path.join(_HERE, "..", "references", "controversy", "blackl
 
 
 def load_blacklist() -> list[dict]:
-    with open(_BLACKLIST_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    return data.get("entries", []) or []
+    """블랙리스트 entries 로드. 파일 부재·손상(YAML 파싱 오류 등)이면 빈 리스트로 graceful
+    폴백 — RC 논란 검토가 500으로 죽지 않고 '무탐'으로 열화한다(데모 크리티컬 경로 보호)."""
+    try:
+        with open(_BLACKLIST_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("entries", []) or []
+    except Exception:
+        return []
 
 
 def _norm(text: str) -> str:

@@ -196,14 +196,21 @@ class ReviewHarness(Harness):
                           evidence: str, clause: str | None = None,
                           official_source_url: str | None = None,
                           kind: str | None = None,
-                          disclosure: str | None = None) -> str:
+                          disclosure: str | None = None,
+                          identity: str | None = None) -> str:
         """verdict 봉투 영속 → verdict_id 반환.
 
-        R1(legal)·R2(i18n) 공용. envelope 필수 필드: verdict_id·node·asset_id·
-        lang·severity·location·evidence·audit_trace_id·created_at.
+        R1(legal)·R2(i18n)·RC(controversy) 공용. envelope 필수 필드: verdict_id·node·
+        asset_id·lang·severity·location·evidence·audit_trace_id·created_at.
         선택: clause·official_source_url·kind·disclosure.
+
+        identity: verdict_id 유도용 명시 키(RC 논란 전용). controversy는 clause가 없고
+        slot이 상수 "controversy"라 (category, lang)만으로는 같은 카테고리·언어의 서로 다른
+        finding이 동일 verdict 경로로 충돌해 나중 것이 앞 것을 덮어쓴다(critical 강등). 블랙리스트
+        entry의 고유 id를 identity로 넘겨 finding별 고유 경로를 보장한다. 미전달(legal/i18n)이면
+        기존 clause/kind 유도라 동작 byte-identical.
         """
-        key = clause if clause else (kind or "")
+        key = identity or clause or (kind or "")
         slot = location.get("slot", "")
         vid = _verdict_id(node, key, slot, lang or "")
         envelope = {
@@ -511,7 +518,7 @@ class ReviewHarness(Harness):
                 lang=loc.get("lang"), severity=f.get("severity", "warning"),
                 location=loc, evidence=f.get("evidence", ""),
                 official_source_url=f.get("official_source_url") or None,
-                kind=f.get("category"))
+                kind=f.get("category"), identity=f.get("id"))
 
         # 경로 2: LLM 맥락 판정 — 블랙리스트 카테고리 grounding. mock=DemoProvider 콘텐츠 기반.
         categories = sorted({e.get("category", "") for e in load_blacklist() if e.get("category")})
@@ -535,7 +542,7 @@ class ReviewHarness(Harness):
                 lang=loc.get("lang"), severity=f.get("severity", "warning"),
                 location=loc, evidence=f.get("evidence", ""),
                 official_source_url=f.get("source") or f.get("official_source_url"),
-                kind=f.get("category"))
+                kind=f.get("category"), identity=f.get("id"))
 
         # 경로 3: 라이브 비전 — v1.png에서 시각 심볼 + 박힌 텍스트(OCR 역할) 대조. mock/fake=빈.
         v1 = store.get(f"/{req.run_id}/design/design-system/components/visual/v1.png")
