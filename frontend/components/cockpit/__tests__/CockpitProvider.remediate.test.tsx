@@ -69,4 +69,23 @@ describe("CockpitProvider — remediateFromReview(D4)", () => {
     // 3) gateway/run이 {studio:"design", action:"remediate"}로 호출됨.
     expect(lastGatewayBody).toMatchObject({ studio: "design", action: "remediate" });
   });
+
+  it("remediateFromReview 더블클릭 시 gatewayRun은 1회만 호출된다(재진입 가드, 중복 과금 방지)", async () => {
+    let gatewayCalls = 0;
+    gatewayResponder = () => {
+      gatewayCalls += 1;
+      return jsonRes(200, {
+        text: "리뷰 권장수정을 반영해 카피·고지를 교정했습니다.",
+        meta: { step: "done", remediated: true },
+      }) as any;
+    };
+    render(<CockpitProvider runId="r1"><RemediateProbe /></CockpitProvider>);
+
+    // 동일 틱에서 연타 — 첫 호출의 동기 구간(ref set)이 두 번째 호출을 즉시 막는지 검증.
+    fireEvent.click(screen.getByTestId("remediate"));
+    fireEvent.click(screen.getByTestId("remediate"));
+
+    await waitFor(() => expect(screen.getByText(/리뷰 권장수정을 반영/)).toBeTruthy());
+    expect(gatewayCalls).toBe(1);
+  });
 });

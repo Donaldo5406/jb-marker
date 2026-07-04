@@ -618,11 +618,21 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
    *  응답 text(적용한 권장수정 출처증빙)를 챗에 노출해 "리뷰 산출물이 소비됐다"를 보여준다.
    *  setStudio는 이 지점보다 아래에서 선언되지만, 클로저 참조는 실제 호출(클릭) 시점에
    *  평가되므로 문제 없다(선언 시점이 아니라 호출 시점에 스코프를 조회하는 JS 클로저 의미론 —
-   *  resumeSessionRef처럼 ref를 거칠 필요 없는 경우: deps 배열에 넣지 않아 즉시평가를 피함). */
+   *  resumeSessionRef처럼 ref를 거칠 필요 없는 경우: deps 배열에 넣지 않아 즉시평가를 피함).
+   *  remediateInFlightRef: 더블클릭 재진입 가드 — mockModeRef 등과 동일한 ref 관례(동기
+   *  플래그, state는 재렌더 지연으로 연타를 못 막음). remediate 내부가 image-edit(과금)까지
+   *  호출하므로 라이브에서 중복 과금을 막는다. */
+  const remediateInFlightRef = useRef(false);
   const remediateFromReview = useCallback(async () => {
-    setStudio("design");
-    const res = await runDesign("remediate");
-    if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+    if (remediateInFlightRef.current) return;
+    remediateInFlightRef.current = true;
+    try {
+      setStudio("design");
+      const res = await runDesign("remediate");
+      if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+    } finally {
+      remediateInFlightRef.current = false;
+    }
   }, [runDesign]);
 
   const setDesignBypass = useCallback(
@@ -995,7 +1005,16 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       body: JSON.stringify({ confirmed: true, mock: mockModeRef.current }),
     });
     if (!res.ok) {
-      return { error: `발송 요청 실패 (HTTP ${res.status})` };
+      // 백엔드 detail(예: "review gate: not_run — 심의(PASS)를 통과해야 발송할 수 있습니다")을
+      // 우선 노출 — 게이트 사유를 사용자가 알 수 있도록. 파싱 실패/detail 부재 시 기존 폴백 문구.
+      let detail: string | undefined;
+      try {
+        const body = await res.json();
+        if (body && typeof body.detail === "string") detail = body.detail;
+      } catch {
+        /* JSON 아닌 응답 등 — 폴백 문구 사용 */
+      }
+      return { error: detail || `발송 요청 실패 (HTTP ${res.status})` };
     }
     return res.json();
   }, []);

@@ -134,6 +134,38 @@ def test_remediate_malformed_recs_no_crash(tmp_path, make_scripted):
     assert res.meta["remediated"] is True
 
 
+_UPLOAD_REC = {"rec_id": "rec_upload9999", "asset_id": "review/uploads/violation-poster.png",
+                "lang": None, "target": "image",
+                "instruction": "업로드 포스터에 과장 문구가 있습니다.", "priority": 1,
+                "related_verdict_ids": ["vU"]}
+
+
+def test_remediate_excludes_upload_recs_from_applied(tmp_path, make_scripted):
+    """업로드 소재(review/uploads/*) rec은 카피 교정 대상이 아니므로 힌트·applied_recs에서
+    제외되고, 일반 rec만 반영된다."""
+    store = _setup(tmp_path, [_UPLOAD_REC, _RECS[1]])
+    sp = make_scripted(complete_responses=[_COPY])
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="remediate"), provider=sp, store=store)
+    applied = res.meta["applied_recs"]
+    assert [a["rec_id"] for a in applied] == ["rec_bbbb2222"]
+    user_msg = sp.calls_complete[0]["messages"][0].content
+    assert "rec_upload9999" not in user_msg
+    assert "rec_bbbb2222" in user_msg
+
+
+def test_remediate_upload_only_recs_falls_back(tmp_path, make_scripted):
+    """rec이 업로드 소재뿐이면 전량 제외되어 ordered가 비고, recs 부재와 동일한 폴백
+    경로(고정 힌트·전 언어 고지·applied_recs 없음)로 처리된다."""
+    store = _setup(tmp_path, [_UPLOAD_REC])
+    sp = make_scripted(complete_responses=[_COPY])
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="remediate"), provider=sp, store=store)
+    assert "[리뷰 지적을 반영해 카피를 교정하세요]" in sp.calls_complete[0]["messages"][0].content
+    assert "applied_recs" not in res.meta
+    assert res.meta["remediated"] is True
+
+
 def test_remediate_applied_recs_capped_at_six(tmp_path, make_scripted):
     """recs 8건 시드 → applied_recs는 힌트에 실제 주입된 상위 6건과 동일해야 한다."""
     recs8 = [{"rec_id": f"rec_{i:04d}", "lang": "ko", "instruction": f"지적 {i}",

@@ -154,6 +154,9 @@ class DesignHarness(Harness):
         """
         base = self._base(req.run_id)
         recs = _load_review_recs(store, req.run_id)
+        # 업로드 소재(review/uploads/*)에 대한 지적은 외부 이미지라 카피 교정으로 고칠 수
+        # 없다 — 힌트·applied_recs·disc_langs 산정에서 제외(로더는 범용 유지, 필터는 여기서만).
+        recs = [r for r in recs if not str(r.get("asset_id", "")).startswith("review/uploads/")]
         if recs:
             ordered = sorted(recs, key=_rec_priority)
             # 힌트에 실제 주입되는 상위 6건 — applied_recs(출처증빙)도 이 슬라이스를 공유해
