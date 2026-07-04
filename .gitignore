@@ -12,3 +12,8 @@ data/runs/
 *.log
 .superpowers/
 .worktrees/
+
+# superpowers 산출물(내부 프로세스 문서) — 제출 저장소에서 제외
+docs/specs/
+docs/plans/
+docs/superpowers/
