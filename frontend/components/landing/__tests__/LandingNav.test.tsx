@@ -22,6 +22,12 @@ describe("LandingNav 와이어링", () => {
     expect(container.querySelector('a[href="/cockpit"]')).not.toBeNull();
   });
 
+  it("동작 원리 링크(/architecture)가 있다", () => {
+    const { container } = render(<LandingNav />);
+    expect(container.querySelector('a[href="/architecture"]')).not.toBeNull();
+    expect(screen.getByText("동작 원리")).toBeInTheDocument();
+  });
+
   it("파이프라인 소개 드롭다운 서브항목이 각 단계 앵커로 연결된다(hover)", async () => {
     const { container } = render(<LandingNav />);
     // 드롭다운은 hover 시에만 마운트된다 → 부모 래퍼에 mouseEnter.

@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
  * 렌더하고 top-level 항목에 실제 링크를 연결하지 않으므로(서브메뉴 anchor는 href="#"
  * 하드코딩), 헤더 바로 직접 사용할 수 없다. 대신 그 `navItems` 타입 형태(id/label/
  * subMenus/link)를 그대로 따르되, sticky 글래스 헤더 + 실제 next/link 네비게이션으로
- * 재구성한다. 메뉴: 파이프라인 소개(드롭다운) / 작업 내역(History 딥링크) + CTA 체험해보기
- * (결제 메뉴는 2026-07-04 결제 표면 폐기로 제거).
+ * 재구성한다. 메뉴: 파이프라인 소개(드롭다운) / 동작 원리(/architecture) / 작업 내역
+ * (History 딥링크) + CTA 체험해보기 (결제 메뉴는 2026-07-04 결제 표면 폐기로 제거).
  */
 
 type SubItem = { label: string; description: string; icon: React.ElementType; link?: string };
@@ -41,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
+  { id: 2, label: "동작 원리", link: "/architecture" },
   { id: 4, label: "작업 내역", link: "/cockpit?view=history" },
 ];
 
