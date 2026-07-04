@@ -63,6 +63,16 @@ def _actions_for(status: str) -> list[str]:
     return []
 
 
+def _controversy_categories() -> frozenset:
+    """블랙리스트 category 집합 — 업로드 심의 finding의 논란/법률 라우팅 단일 기준.
+
+    ControversyCard.CATEGORY_KR와 동일 계약(other_sensitive·community_* 등). 업로드
+    finding이 이 category를 달면 법률(§clause) 아닌 논란(RC)으로 취급해 controversy 노드로.
+    """
+    from ..core.controversy_rules import load_blacklist
+    return frozenset(e.get("category", "") for e in load_blacklist() if e.get("category"))
+
+
 STEPS = ("R0", "R1", "R2", "RC", "R3", "done")
 
 PERSONA_A = (
@@ -449,7 +459,15 @@ class ReviewHarness(Harness):
                 uresp = self._vision_provider.review_image(
                     ubytes, uprompt, mime=unode.mime or "image/png")
                 udata = _parse_json(uresp.text)
-                ukept, udropped = apply_whitelist(udata.get("findings") or [], whitelist)
+                raw = udata.get("findings") or []
+                # 논란(RC) 카테고리 finding은 법률 도메인 화이트리스트 비대상(RC 경로 2·3과
+                # 동일 — 논란은 법령 인용이 아니라 평판 리스크) → controversy 노드로 직접
+                # 영속해 ControversyCard에 합류. 나머지는 종전대로 법률 화이트리스트(공식
+                # 법령 출처만) 통과 후 legal 노드. 업로드 욱일기 포스터 시연이 대표 경로.
+                cx_cats = _controversy_categories()
+                cx_findings = [f for f in raw if f.get("category") in cx_cats]
+                ukept, udropped = apply_whitelist(
+                    [f for f in raw if f.get("category") not in cx_cats], whitelist)
                 state["dropped_findings_count"] += udropped
                 for f in ukept:
                     self._persist_verdict(
@@ -462,6 +480,16 @@ class ReviewHarness(Harness):
                         clause=f.get("clause"),
                         official_source_url=f.get("official_source_url"),
                         kind="uploaded")
+                for f in cx_findings:
+                    self._persist_verdict(
+                        store, req.run_id, node="controversy",
+                        asset_id=f"review/uploads/{uname}", lang=None,
+                        severity=f.get("severity", "warning"),
+                        # legal 루프와 동일 — slot에 파일명 + finding bbox 보존(라이브 하이라이트)
+                        location=_uploaded_location(uname, f),
+                        evidence=f.get("evidence", ""),
+                        official_source_url=f.get("official_source_url"),
+                        kind=f.get("category"), identity=f.get("id"))
             except Exception:
                 state["vision_failed"] = True
                 state["vision_skipped"].append(f"uploads/{uname}")
