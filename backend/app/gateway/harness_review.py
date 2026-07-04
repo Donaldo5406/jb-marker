@@ -42,6 +42,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _uploaded_location(uname: str, finding: dict) -> dict:
+    """업로드 verdict location — slot에 파일명(verdict_id 유일성), finding의 bbox 있으면 보존.
+
+    비전/mock finding이 location.bbox를 실어 오면 하이라이트로 이어진다(없으면 카드만).
+    """
+    loc = {"slot": f"uploaded:{uname}", "lang": None}
+    bbox = (finding.get("location") or {}).get("bbox")
+    if bbox:
+        loc["bbox"] = bbox
+    return loc
+
+
 def _actions_for(status: str) -> list[str]:
     """게이트 status별 허용 후속 액션 (spec §4.2). 프론트 버튼 노출 계약."""
     if status == "WARN":
@@ -426,7 +438,9 @@ class ReviewHarness(Harness):
                 "다음을 평가하세요: ① 과장·단정(수익 보장 등) 표현 ② 필수고지 누락 "
                 "③ 오해 유발 비주얼·사회적 논란 소지 ④ 상표·저작권 침해 신호. "
                 "공식 법령 출처(law.go.kr 등)만 인용. "
-                'JSON: {"findings":[{"location":{"slot":"uploaded","lang":null},'
+                "bbox는 위반 문구가 이미지에서 차지하는 정규화 위치(좌상단 x·y, 폭 w·높이 h, 0~1). "
+                'JSON: {"findings":[{"location":{"slot":"uploaded","lang":null,'
+                '"bbox":{"x":0.0,"y":0.0,"w":0.0,"h":0.0}},'
                 '"clause":"...","official_source_url":"https://law.go.kr/...",'
                 '"severity":"critical|warning","evidence":"..."}, ...]}'
             )
@@ -442,8 +456,8 @@ class ReviewHarness(Harness):
                         store, req.run_id, node="legal",
                         asset_id=f"review/uploads/{uname}", lang=None,
                         severity=f.get("severity", "warning"),
-                        # slot에 파일명 포함 — verdict_id 유일성 + 리포트 자기서술
-                        location={"slot": f"uploaded:{uname}", "lang": None},
+                        # slot에 파일명 포함 + finding bbox 보존(하이라이트)
+                        location=_uploaded_location(uname, f),
                         evidence=f.get("evidence", ""),
                         clause=f.get("clause"),
                         official_source_url=f.get("official_source_url"),

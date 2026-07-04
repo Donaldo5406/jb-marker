@@ -478,3 +478,9 @@ HIGHLIGHT_BBOX_FIXTURES = {
         "x": 0.03, "y": 0.085, "w": 0.66, "h": 0.145,   # "업계 최고 금리"(실측 poster_violating_gold 1856x2304)
     },
 }
+
+# 업로드 데모 소재 authored bbox(정규화). 키=업로드 파일명(소문자). Phase 2a.
+# external-deposit-promo.png의 '원금 100% 보장' 영역(make_poster.py와 동일 좌표).
+UPLOAD_HIGHLIGHT_BBOX = {
+    "external-deposit-promo.png": {"x": 0.08, "y": 0.34, "w": 0.84, "h": 0.11},
+}

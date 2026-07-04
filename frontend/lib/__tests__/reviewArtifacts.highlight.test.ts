@@ -42,3 +42,19 @@ describe("highlight helpers", () => {
     expect(map.has("legal_9f0e1d2c_footer_ko")).toBe(false);
   });
 });
+
+// Phase 2a — 업로드 이미지 verdict가 Phase 1 헬퍼를 그대로 타는지 회귀 고정(코드 변경 불필요 입증).
+const up = (id: string): ReviewVerdict => ({
+  verdict_id: id, node: "legal", severity: "critical",
+  location: { slot: "uploaded:external-deposit-promo.png", image: "review/uploads/external-deposit-promo.png", bbox: { x: 0.08, y: 0.34, w: 0.84, h: 0.11 } },
+});
+
+describe("upload highlight path", () => {
+  it("uploaded verdict image is a highlight image", () => {
+    expect(highlightImages([up("legal_aaaa1111_uploaded_")])).toEqual(["review/uploads/external-deposit-promo.png"]);
+  });
+  it("uploaded verdict gets a pin number for its image", () => {
+    const m = numberedForImage([up("legal_aaaa1111_uploaded_")], "review/uploads/external-deposit-promo.png");
+    expect(m.get("legal_aaaa1111_uploaded_")).toBe(1);
+  });
+});
