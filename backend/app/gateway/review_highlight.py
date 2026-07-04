@@ -96,6 +96,28 @@ def _rect_div(r: dict) -> str:
     return f'<div class="hl {cls}" style="{style}"><span class="pin">{pin}</span></div>'
 
 
+def resolve_location(location: dict, *, asset_id: str, lang: str | None,
+                     layout_spec: dict, fixtures: dict) -> dict:
+    """location에 image·bbox를 부착한 새 dict 반환(원본 불변).
+
+    우선순위: 기존 bbox(live 비전) > authored fixture > slot 폴백 > 없음.
+    """
+    out = dict(location)
+    image = reviewed_image_for(asset_id, lang)
+    out["image"] = image
+    if out.get("bbox"):                       # ① live 비전이 이미 채움
+        return out
+    slot = out.get("slot") or ""
+    fx = fixtures.get((image, slot, lang))    # ② authored 구절-tight
+    if fx:
+        out["bbox"] = dict(fx)
+        return out
+    sb = slot_to_bbox_norm(slot, layout_spec)  # ③ 슬롯 폴백
+    if sb:
+        out["bbox"] = sb
+    return out                                 # ④ 미해결 → bbox 없음
+
+
 def build_highlight_html(image_bytes: bytes, mime: str, rects: list[dict]) -> str:
     """포스터 base64 인라인 + rect 오버레이 self-contained HTML."""
     b64 = base64.b64encode(image_bytes or b"").decode("ascii")

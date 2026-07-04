@@ -63,3 +63,33 @@ def test_build_html_renders_pins():
 def test_build_html_empty_rects_shows_image_only():
     out = build_highlight_html(b"x", "image/png", [])
     assert "class=\"hl" not in out and "data:image/png;base64," in out
+
+
+from app.gateway.review_highlight import resolve_location
+
+FIX = {("design/design-system/components/visual/v1.png", "headline", "ko"):
+       {"x": 0.074, "y": 0.12, "w": 0.62, "h": 0.075}}
+
+def test_resolve_uses_authored_fixture_first():
+    loc = {"slot": "headline", "lang": "ko"}
+    out = resolve_location(loc, asset_id="design/final/ko/main.scene", lang="ko",
+                           layout_spec=LAYOUT, fixtures=FIX)
+    assert out["image"] == "design/design-system/components/visual/v1.png"
+    assert out["bbox"] == {"x": 0.074, "y": 0.12, "w": 0.62, "h": 0.075}
+
+def test_resolve_falls_back_to_slot_bbox():
+    loc = {"slot": "disclosure", "lang": "ko"}
+    out = resolve_location(loc, asset_id="design/final/ko/main.scene", lang="ko",
+                           layout_spec=LAYOUT, fixtures={})
+    assert out["bbox"] == slot_to_bbox_norm("disclosure", LAYOUT)
+
+def test_resolve_keeps_existing_bbox_from_vision():
+    loc = {"slot": "visual", "lang": None, "bbox": {"x": .1, "y": .1, "w": .2, "h": .2}}
+    out = resolve_location(loc, asset_id="x.png", lang=None, layout_spec={}, fixtures={})
+    assert out["bbox"] == {"x": .1, "y": .1, "w": .2, "h": .2}
+
+def test_resolve_no_bbox_when_unresolvable():
+    loc = {"slot": "nope", "lang": "ko"}
+    out = resolve_location(loc, asset_id="design/final/ko/main.scene", lang="ko",
+                           layout_spec=LAYOUT, fixtures={})
+    assert "bbox" not in out and out["image"] == "design/design-system/components/visual/v1.png"

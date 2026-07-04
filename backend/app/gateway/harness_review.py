@@ -24,8 +24,10 @@ from ..core.severity import (  # T7: import-only, 사용은 T11/T14
 )
 from ..core.visual_rules import evaluate_visual_compliance
 from ..providers.base import Message, Provider
+from ..providers.demo_fixtures import HIGHLIGHT_BBOX_FIXTURES
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
+from .review_highlight import resolve_location
 from .state import load_state, save_state
 from .uploads import list_upload_images
 
@@ -195,6 +197,16 @@ class ReviewHarness(Harness):
         """
         key = clause if clause else (kind or "")
         slot = location.get("slot", "")
+        # 하이라이트 좌표 부착(비파괴) — layout.spec + authored fixture로 image·bbox 해결.
+        _ls = store.get(f"/{run_id}/design/rough/layout.spec.json")
+        _layout = {}
+        if _ls and _ls.content_text:
+            try:
+                _layout = json.loads(_ls.content_text)
+            except Exception:
+                _layout = {}
+        location = resolve_location(location, asset_id=asset_id, lang=lang,
+                                    layout_spec=_layout, fixtures=HIGHLIGHT_BBOX_FIXTURES)
         vid = _verdict_id(node, key, slot, lang or "")
         envelope = {
             "verdict_id": vid, "node": node, "asset_id": asset_id, "lang": lang,
