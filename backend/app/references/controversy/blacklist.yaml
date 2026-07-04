@@ -210,3 +210,32 @@ entries:
     why_risky: "이태원 참사를 연상시켜 유가족·대중 반감을 부를 수 있음"
     severity_default: warning
     source: "이태원 참사 관련 마케팅 자제 선례"
+
+# ── 시각 심볼·제스처 (라이브 비전 전용) ───────────────────────────────────────
+#   entries의 signals는 텍스트 문자열 매칭(OCR·카피)이라 그림·손동작을 못 잡는다.
+#   visual_symbols는 문자열이 아니라 "도안·제스처"를 vision LLM(RC 경로3, v1.png)이
+#   판별하도록 name+description을 프롬프트에 주입하는 참조 목록 — 결정론 매칭 대상이
+#   아니다. mock/테스트는 FakeProvider.review_image가 항상 빈 findings를 반환하므로
+#   이 목록은 라이브 비전에서만 영향을 준다(best-effort, 과잉 판정 방지 위해
+#   제스처류는 severity_hint=warning).
+visual_symbols:
+  - name: 욱일기 도안
+    description: 붉은 태양에서 방사형 햇살이 뻗는 일본 군국주의 욱일승천기 문양(글자 아님, 그림/깃발).
+    category: other_sensitive
+    severity_hint: critical
+  - name: 전범기·군국주의 도안
+    description: 욱일기 변형이나 일본 제국 군기 등 군국주의 상징 도안.
+    category: other_sensitive
+    severity_hint: critical
+  - name: 나치·네오나치 상징
+    description: 하켄크로이츠(스와스티카)·SS 룬·나치 독수리 등 나치 시각 상징.
+    category: community_lingo
+    severity_hint: critical
+  - name: 집게손 제스처
+    description: 엄지와 검지로 아주 작은 것을 집는 손 모양. 특정 커뮤니티(메갈 연관) 남성 비하 제스처로 읽혀 논란(다수 브랜드 실제 피해). 정상적 손동작과 혼동 주의 — 확실치 않으면 warning.
+    category: community_signal
+    severity_hint: warning
+  - name: 일베 손가락 제스처
+    description: 일간베스트 연관 손동작·손표식. 주관적 신호라 과잉 판정 금지 — 확실치 않으면 warning.
+    category: community_signal
+    severity_hint: warning

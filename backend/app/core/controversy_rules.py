@@ -30,6 +30,20 @@ def load_blacklist() -> list[dict]:
         return []
 
 
+def load_visual_symbols() -> list[dict]:
+    """블랙리스트 visual_symbols(시각 심볼·제스처: 욱일기 도안·집게손 등) 로드.
+
+    entries와 달리 텍스트 신호가 아니라 RC 경로3(라이브 비전, v1.png)의 Gemini
+    프롬프트에 주입할 '도안·제스처' 참조 목록이다 — 결정론 매칭에는 쓰이지 않는다.
+    파일 부재·손상 시 빈 리스트로 graceful 폴백(load_blacklist와 동일 패턴)."""
+    try:
+        with open(_BLACKLIST_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("visual_symbols", []) or []
+    except Exception:
+        return []
+
+
 def _norm(text: str) -> str:
     """정규화 — 소문자 + 중점·공백 제거(신호 부분문자열 매칭 안정화)."""
     return (text or "").lower().replace("·", ".").replace(" ", "")

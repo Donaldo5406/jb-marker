@@ -504,7 +504,9 @@ class ReviewHarness(Harness):
     def _rc_controversy(self, req: HarnessRequest, provider, store, state: dict
                          ) -> HarnessResult:
         """RC 논란 검토 — 3경로(결정론 안전망 / LLM 맥락 / 라이브 비전)로 controversy verdict 발행."""
-        from ..core.controversy_rules import evaluate as _cx_evaluate, load_blacklist
+        from ..core.controversy_rules import (
+            evaluate as _cx_evaluate, load_blacklist, load_visual_symbols,
+        )
         base = self._base(req.run_id)
         languages = state["languages"]
         scene_copy = self._collect_scene_copy(store, req.run_id, languages)
@@ -544,16 +546,26 @@ class ReviewHarness(Harness):
                 official_source_url=f.get("source") or f.get("official_source_url"),
                 kind=f.get("category"), identity=f.get("id"))
 
-        # 경로 3: 라이브 비전 — v1.png에서 시각 심볼 + 박힌 텍스트(OCR 역할) 대조. mock/fake=빈.
+        # 경로 3: 라이브 비전 — v1.png에서 시각 심볼(도안·제스처) + 박힌 텍스트(OCR 역할)
+        # + 그림/손동작(OCR·텍스트로는 못 잡는 영역) 대조. mock/fake=빈(FakeProvider.review_image
+        # 는 프롬프트와 무관하게 항상 findings=[]) — 라이브 전용, best-effort.
         v1 = store.get(f"/{req.run_id}/design/design-system/components/visual/v1.png")
         if v1 is None:
             state["vision_skipped"].append("controversy/visual/v1.png")
         else:
+            visual_symbols = load_visual_symbols()
+            symbols_desc = "; ".join(
+                f"{s.get('name', '')}({s.get('description', '')})" for s in visual_symbols
+                if s.get("name"))
             vprompt = (
                 "이 이미지는 금융 마케팅 비주얼입니다. 다음 블랙리스트 카테고리에 근거해 "
                 f"사회 논란·평판 리스크를 판정하세요: {categories}. "
                 "이미지에 박힌 텍스트(은어·숫자·문구)도 읽어 대조하세요. "
-                "정치 판단 말고 '논란과 연관돼 오해·물의를 부를 수 있음'만 근거와 함께. "
+                f"이미지에 다음 시각 심볼·제스처(글자 아님, 도안·손동작)가 있는지도 판정하세요: "
+                f"{symbols_desc}. 명확한 전범·극단주의 도안(욱일기·나치)은 severity=critical, "
+                "주관적 커뮤니티 제스처(집게손·일베 손가락)는 warning. 정상적 손동작·유사 문양을 "
+                "과잉 판정하지 말 것(확실치 않으면 무시하거나 warning). 정치 판단이 아니라 "
+                "'이 요소가 논란과 연관돼 오해·물의를 부를 수 있다'는 평판 리스크만 근거와 함께. "
                 'JSON: {"findings":[{"location":{"slot":"visual","lang":null},'
                 '"category":"...","severity":"critical|warning","evidence":"...","source":"..."}, ...]}'
             )

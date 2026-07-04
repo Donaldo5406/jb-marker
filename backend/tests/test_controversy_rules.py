@@ -1,11 +1,27 @@
 """controversy_rules — 블랙리스트 2티어 결정론 감지."""
-from app.core.controversy_rules import load_blacklist, evaluate
+from app.core.controversy_rules import load_blacklist, load_visual_symbols, evaluate
 
 
 def test_load_blacklist_returns_entries():
     entries = load_blacklist()
     assert isinstance(entries, list) and len(entries) >= 15
     assert all("id" in e and "tier" in e and "signals" in e for e in entries)
+
+
+def test_load_visual_symbols_returns_entries():
+    """visual_symbols — RC 경로3(라이브 비전) 프롬프트에 주입되는 도안·제스처 참조 목록.
+
+    텍스트/OCR로 못 잡는 욱일기 '도안'·집게손 '제스처'를 vision LLM이 판별하도록
+    name+description+category+severity_hint를 실어야 한다(라이브 전용, 결정론
+    매칭 대상 아님 — 여기서는 데이터+로더만 검증한다)."""
+    symbols = load_visual_symbols()
+    assert isinstance(symbols, list) and len(symbols) > 0
+    assert all(
+        "name" in s and "description" in s and "category" in s and "severity_hint" in s
+        for s in symbols)
+    names = [s["name"] for s in symbols]
+    assert any("욱일기" in n or "도안" in n for n in names)
+    assert any("집게손" in n for n in names)
 
 
 def test_tier1_slur_alone_is_critical():
