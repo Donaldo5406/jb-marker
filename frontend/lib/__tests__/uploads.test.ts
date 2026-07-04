@@ -17,6 +17,11 @@ describe("lib/uploads", () => {
     expect(sanitizeFilename("논란 포스터(1).png")).toBe("논란_포스터_1_.png");
     expect(sanitizeFilename("../evil.md")).toBe(".._evil.md");
   });
+  it("sanitizeFilename — 선행 _ 제거(FileTree가 _접두 세그먼트를 숨기므로)", () => {
+    expect(sanitizeFilename("(final) 포스터.png")).toBe("final__포스터.png");
+    expect(sanitizeFilename("(final) 포스터.png")).not.toMatch(/^_/);
+    expect(sanitizeFilename("!!!")).toBe("file");
+  });
   it("uploadTargetPath — {studio}/uploads/{파일명}", () => {
     expect(uploadTargetPath("review", "poster.png")).toBe("review/uploads/poster.png");
   });

@@ -19,9 +19,13 @@ export function uploadKind(name: string): "text" | "image" | null {
   return null;
 }
 
-/** 경로 구분자·특수문자를 _로 — VFS 경로 세그먼트 안전화(한글·영숫자·._- 보존). */
+/** 경로 구분자·특수문자를 _로 — VFS 경로 세그먼트 안전화(한글·영숫자·._- 보존).
+ *  치환 결과가 _로 시작하면 제거한다 — FileTree가 _ 접두 세그먼트를 내부용으로
+ *  간주해 숨기므로, 업로드는 성공했는데 트리에 안 보이는 상태를 막는다.
+ *  전부 제거돼 빈 문자열이 되면 안전 기본값 "file"을 쓴다. */
 export function sanitizeFilename(name: string): string {
-  return name.replace(/[^\w.\-가-힣]/g, "_");
+  const sanitized = name.replace(/[^\w.\-가-힣]/g, "_").replace(/^_+/, "");
+  return sanitized || "file";
 }
 
 export function uploadTargetPath(studio: string, filename: string): string {
