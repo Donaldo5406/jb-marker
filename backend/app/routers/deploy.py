@@ -232,12 +232,27 @@ def deploy_advisor_chat(run_id: str, body: AdvisorChatBody, request: Request,
 @router.post("/runs/{run_id}/deploy/dispatch", response_model=DispatchOut,
              summary="발송 시뮬레이션 디스패치(확인 필수)",
              responses={**OWNER_RESPONSES, 400: {"model": ErrorOut},
-                        402: {"model": ErrorOut}})
+                        402: {"model": ErrorOut}, 409: {"model": ErrorOut}})
 def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
                     user_id: str = Depends(get_user_id)) -> dict:
     m = require_owner(request, run_id, user_id)
     if not body.confirmed:
         raise HTTPException(400, "user confirm required")
+    # 내부통제 게이트(폐루프 D3): 심의(PASS 또는 ack된 WARN)를 통과해야만 발송.
+    # UI 버튼 숨김뿐이던 게이팅을 백엔드가 강제 — mock 시연 경로에도 동일 적용(내부통제 서사).
+    review_status = m.step_status.get("review")
+    if review_status == "WARN":
+        raw = request.app.state.store.get_text(f"/{run_id}/review/_state.json") or "{}"
+        try:
+            acked = bool(json.loads(raw).get("acknowledged"))
+        except Exception:
+            acked = False
+        if not acked:
+            raise HTTPException(
+                409, "review gate: WARN 미확인 — 심의 경고를 확인(ack)한 뒤 발송할 수 있습니다")
+    elif review_status != "PASS":
+        raise HTTPException(
+            409, f"review gate: {review_status or 'not_run'} — 심의(PASS)를 통과해야 발송할 수 있습니다")
     # mock(시연)은 Pro+ 결제 게이트를 우회 — 데모에서 결제 단계 없이도 리포트까지 산출.
     # 실사용(mock=false)은 기존대로 entitlement 필수(402).
     if not body.mock and not entitlement.is_entitled(user_id):

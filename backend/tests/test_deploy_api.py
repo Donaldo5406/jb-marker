@@ -106,6 +106,7 @@ def test_dispatch_requires_confirm(client, run_id):
 
 def test_dispatch_requires_dev_pass(client, run_id):
     entitlement.reset()
+    client.app.state.store.set_step_status(run_id, "review", "PASS")
     res = client.post(f"/runs/{run_id}/deploy/dispatch", json={"confirmed": True})
     assert res.status_code == 402
 
@@ -121,6 +122,7 @@ def test_dispatch_happy_writes_report(client, run_id):
         f"/runs/{run_id}/deploy/packages",
         json={"channel": "email", "lang": "ko", "original_copy": "짧은 카피", "visual_path": "/x.png"},
     )
+    client.app.state.store.set_step_status(run_id, "review", "PASS")
     res = client.post(f"/runs/{run_id}/deploy/dispatch", json={"confirmed": True})
     assert res.status_code == 200
     assert res.json()["step_status"] == "PASS"

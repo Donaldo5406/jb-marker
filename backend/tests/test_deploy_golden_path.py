@@ -39,6 +39,7 @@ def test_golden_path_end_to_end(client):
     assert p.json()["status"] == "ok"
 
     # 4. dispatch w/o entitlement = 402 (게이트 유지 — 결제 표면만 폐기, spec 2026-07-04)
+    client.app.state.store.set_step_status(rid, "review", "PASS")
     d_fail = client.post(f"/runs/{rid}/deploy/dispatch", json={"confirmed": True})
     assert d_fail.status_code == 402
 

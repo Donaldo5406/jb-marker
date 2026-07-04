@@ -74,6 +74,7 @@ def test_dispatch_respects_env_override(monkeypatch, tmp_path):
     """dispatch도 동일 choke — override=true면 402가 아니라 다음 가드(400)로 진행."""
     c = _client(monkeypatch, tmp_path, "true")
     rid = c.post("/runs", json={"title": "t"}).json()["run_id"]
+    c.app.state.store.set_step_status(rid, "review", "PASS")
     r = c.post(f"/runs/{rid}/deploy/dispatch", json={"confirmed": True})
     # 수신자/채널 미준비라 400이 정상 — 402(entitlement)가 아니어야 한다.
     assert r.status_code == 400
