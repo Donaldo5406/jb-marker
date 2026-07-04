@@ -2,17 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* JB Blue 라이트 팔레트 — RGB 트리플릿(bg-primary/30 등 오퍼시티 변형 지원).
+     원색 출처: JB 심볼마크 패싯 실측(#0098D7~#092C86) + 로고타입 네이비(#051D49).
+     다크모드는 이 세트를 교체해 추가한다. */
+  --color-surface: 247 249 252;
+  --color-surface-dim: 221 227 236;
+  --color-surface-bright: 251 252 254;
+  --color-surface-container-lowest: 255 255 255;
+  --color-surface-container-low: 242 245 250;
+  --color-surface-container: 236 241 248;
+  --color-surface-container-high: 228 234 243;
+  --color-surface-container-highest: 220 228 239;
+  --color-on-surface: 5 29 73;
+  --color-on-surface-variant: 71 83 107;
+  --color-outline: 107 120 145;
+  --color-outline-variant: 195 204 218;
+  --color-primary: 0 84 167;
+  --color-primary-container: 0 72 152;
+  --color-on-primary: 255 255 255;
+  --color-secondary: 71 83 107;
+  --color-secondary-container: 220 228 239;
+  --color-on-secondary: 255 255 255;
+  --color-accent: 0 152 215;
+  --color-accent-container: 229 244 251;
+  --color-error: 186 26 26;
+  --color-error-container: 255 218 214;
+  --color-on-error: 255 255 255;
+  --color-background: 247 249 252;
+}
+
 @layer base {
   body {
     @apply text-on-surface font-sans;
     font-weight: 400;
-    background-color: #faf0ea;
+    background-color: #f4f8fc;
     background-image:
-      radial-gradient(ellipse 70% 55% at 18% 22%, #fde2cf 0%, rgba(253, 226, 207, 0) 60%),
-      radial-gradient(ellipse 65% 55% at 82% 18%, #dccaec 0%, rgba(220, 202, 236, 0) 62%),
-      radial-gradient(ellipse 85% 60% at 50% 92%, #f5d9e0 0%, rgba(245, 217, 224, 0) 60%),
-      radial-gradient(ellipse 60% 55% at 92% 82%, #e4dfee 0%, rgba(228, 223, 238, 0) 60%),
-      radial-gradient(ellipse 55% 50% at 8% 75%, #f7e4d6 0%, rgba(247, 228, 214, 0) 60%);
+      radial-gradient(ellipse 70% 55% at 18% 22%, #d7edf9 0%, rgba(215, 237, 249, 0) 60%),
+      radial-gradient(ellipse 65% 55% at 82% 18%, #dce4f7 0%, rgba(220, 228, 247, 0) 62%),
+      radial-gradient(ellipse 85% 60% at 50% 92%, #e3f0fa 0%, rgba(227, 240, 250, 0) 60%),
+      radial-gradient(ellipse 60% 55% at 92% 82%, #d9e6f6 0%, rgba(217, 230, 246, 0) 60%),
+      radial-gradient(ellipse 55% 50% at 8% 75%, #e8f4fb 0%, rgba(232, 244, 251, 0) 60%);
     background-attachment: fixed;
     background-repeat: no-repeat;
     -webkit-font-smoothing: antialiased;
