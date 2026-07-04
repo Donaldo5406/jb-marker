@@ -117,7 +117,28 @@ export function LandingHero() {
           initial={{ opacity: 0, y: 20 }}
           transition={{ duration: 0.3, ease: "easeOut", delay: 0.3 }}
         >
-          <span>Marker와 함께</span>
+          <span className="flex items-center justify-center gap-2">
+            {/* 워드마크: PNG를 mask로 쓰고 광택 그라데이션으로 채워 '윤기(글로시)' 표현 */}
+            <span
+              role="img"
+              aria-label="JB Marker"
+              className="inline-block h-[2em] aspect-[756/284]"
+              style={{
+                WebkitMaskImage: "url(/landing/jb-marker-wordmark.png)",
+                maskImage: "url(/landing/jb-marker-wordmark.png)",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+                backgroundImage:
+                  "linear-gradient(178deg,#0a0a0a 0%,#000 32%,#6e6e6e 50%,#000 68%,#0a0a0a 100%)",
+                filter: "drop-shadow(0 2px 5px rgba(0,0,0,0.22))",
+              }}
+            />
+            <span>와 함께</span>
+          </span>
           <LayoutGroup>
             <motion.span layout className="flex whitespace-pre">
               <TextRotate

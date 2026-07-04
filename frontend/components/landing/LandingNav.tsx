@@ -52,9 +52,12 @@ export function LandingNav() {
     <header className="sticky top-0 z-[60] w-full">
       <div className="mx-auto flex h-header max-w-container items-center justify-between gap-6 border-b border-outline-variant/50 bg-surface/70 px-margin-x backdrop-blur-glass">
         {/* 로고 */}
-        <Link href="/" className="group flex items-center gap-2.5">
-          <img src="/brand/jb-symbol.png" alt="JB 금융그룹 심볼" className="h-8 w-8 rounded-md" />
-          <span className="text-body-lg font-semibold tracking-tight text-on-surface">JB Marker</span>
+        <Link href="/" className="group flex items-center">
+          <motion.img
+            src="/landing/jb-marker-wordmark.png"
+            alt="JB Marker"
+            className="h-[52px] w-auto [filter:brightness(0)]"
+          />
         </Link>
 
         {/* 중앙 메뉴 */}
