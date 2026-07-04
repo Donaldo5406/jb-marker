@@ -8,7 +8,8 @@ import { ViolationCard } from "./review/ViolationCard";
 import { EquivalenceCard } from "./review/EquivalenceCard";
 import { ReconcilerSummary } from "./review/ReconcilerSummary";
 import { VerdictPanel } from "./review/VerdictPanel";
-import { loadReviewVerdicts, loadReviewReport, type ReviewVerdict } from "@/lib/reviewArtifacts";
+import { HighlightFrame } from "./HighlightFrame";
+import { loadReviewVerdicts, loadReviewReport, highlightImages, numberedForImage, type ReviewVerdict } from "@/lib/reviewArtifacts";
 
 const STEPS: Step[] = [
   { id: "R0", label: "셋업" },
@@ -76,6 +77,13 @@ export function ReviewStudio() {
   // 위반·경고 0으로 종료 = 깔끔한 통과. 보고서 빈 섹션 대신 '없음' 카드를 보여준다.
   const clean = stage === "done" && !!c.reviewGate && c.reviewGate.critical === 0 && c.reviewGate.warning === 0;
 
+  // 배치 C: 좌열 상단 sticky 하이라이트 포스터(bbox 있는 첫 이미지) + 카드/시각 뷰 토글.
+  // bbox verdict가 없으면 hlImages가 비어 패널이 렌더되지 않는다(현행 카드 전용 레이아웃으로 축퇴).
+  const [view, setView] = React.useState<"visual" | "cards">("visual");
+  const hlImages = highlightImages(verdicts);
+  const primaryImage = hlImages[0] ?? null;
+  const pins = primaryImage ? numberedForImage(verdicts, primaryImage) : new Map<string, number>();
+
   return (
     <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface">
       <div className="border-b border-outline-variant bg-surface-container-low px-6 py-3">
@@ -113,16 +121,28 @@ export function ReviewStudio() {
             </div>
           ) : (
             <>
+              {c.runId && primaryImage && view === "visual" && (
+                <div className="sticky top-0 z-10 -mx-1 mb-2 bg-surface pb-2">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">시각 근거</h3>
+                    <button onClick={() => setView("cards")} className="text-caption text-primary underline">카드 뷰</button>
+                  </div>
+                  <HighlightFrame runId={c.runId} image={primaryImage} />
+                </div>
+              )}
+              {primaryImage && view === "cards" && (
+                <button onClick={() => setView("visual")} className="mb-1 self-start text-caption text-primary underline">← 시각 뷰</button>
+              )}
               {legal.length > 0 && (
                 <section className="space-y-2" aria-label="법률 검토">
                   <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">법률 검토 (R1)</h3>
-                  {legal.map((v, i) => <ViolationCard key={v.verdict_id ?? i} v={v} />)}
+                  {legal.map((v, i) => <ViolationCard key={v.verdict_id ?? i} v={v} pin={v.verdict_id ? pins.get(v.verdict_id) : undefined} />)}
                 </section>
               )}
               {i18n.length > 0 && (
                 <section className="space-y-2" aria-label="동등성 검토">
                   <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">동등성 검토 (R2)</h3>
-                  {i18n.map((v, i) => <EquivalenceCard key={v.verdict_id ?? i} v={v} />)}
+                  {i18n.map((v, i) => <EquivalenceCard key={v.verdict_id ?? i} v={v} pin={v.verdict_id ? pins.get(v.verdict_id) : undefined} />)}
                 </section>
               )}
               <ReconcilerSummary report={report} />
