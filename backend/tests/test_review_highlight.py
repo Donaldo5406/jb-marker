@@ -118,3 +118,76 @@ def test_collect_rects_filters_by_image_and_bbox_and_numbers():
     assert len(rects) == 1
     assert rects[0]["pin"] == 1 and rects[0]["severity"] == "critical"
     assert rects[0]["x"] == .1
+
+
+# --- 라우트 통합(TestClient) — GET /runs/{run_id}/review-highlight ---------
+# 리뷰 Minor 후속: 헬퍼 단위 테스트만 있고 라우트 자체 테스트가 없던 갭을 메운다.
+# test_history_preview.py의 형제 라우트(GET /runs/{run_id}/preview) 테스트와
+# 동일한 TestClient + app + store 셋업을 그대로 따른다.
+import base64
+import json as _json
+
+from fastapi.testclient import TestClient
+
+from app.server import create_app
+
+_VISUAL = "design/design-system/components/visual/v1.png"
+
+
+def _seed_visual(client, run_id, *, png=b"\x89PNG\r\n\x1a\nFAKE"):
+    client.put(f"/vfs/{run_id}/{_VISUAL}",
+               json={"content": base64.b64encode(png).decode("ascii"),
+                     "mime": "image/png", "content_encoding": "base64"})
+
+
+def _seed_verdict(client, run_id, *, verdict_id="legal_0a1b2c3d_headline_ko",
+                  severity="critical", image=_VISUAL):
+    verdict = {
+        "verdict_id": verdict_id, "node": "legal", "severity": severity,
+        "location": {"slot": "headline", "image": image,
+                     "bbox": {"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.15}},
+    }
+    client.put(f"/vfs/{run_id}/review/legal/headline/verdict.json",
+               json={"content": _json.dumps(verdict, ensure_ascii=False),
+                     "mime": "application/json"})
+
+
+def test_review_highlight_route_returns_overlay_html_for_owner():
+    c = TestClient(create_app())
+    run_id = c.post("/runs", json={"title": "n"}).json()["run_id"]
+    _seed_visual(c, run_id)
+    _seed_verdict(c, run_id)
+    r = c.get(f"/runs/{run_id}/review-highlight", params={"image": _VISUAL})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert 'class="hl' in r.text                # bbox 오버레이 존재
+    assert "data:image/png;base64," in r.text   # 포스터 인라인
+
+
+def test_review_highlight_route_missing_image_is_image_only_fallback():
+    c = TestClient(create_app())
+    run_id = c.post("/runs", json={"title": "n"}).json()["run_id"]
+    # 이미지 노드를 심지 않음 — node=None 폴백 경로(빈 rects)
+    r = c.get(f"/runs/{run_id}/review-highlight", params={"image": _VISUAL})
+    assert r.status_code == 200
+    assert 'class="hl' not in r.text
+    assert "data:image/png;base64," in r.text   # 빈 바이트라도 data URI 골격은 유지
+
+
+def test_review_highlight_route_404_for_missing_run():
+    c = TestClient(create_app())
+    r = c.get("/runs/nope/review-highlight", params={"image": _VISUAL})
+    assert r.status_code == 404
+
+
+def test_review_highlight_route_404_for_non_owner(monkeypatch, tmp_path):
+    """로컬 모드는 요청자 user_id가 항상 'demo' — 다른 소유자의 run을 요청하면
+    404(존재 자체를 노출하지 않음). test_owner_guard_sweep.py와 동일한 방식으로
+    스토어에 직접 타인 소유 run을 심어 owner-vs-non-owner를 구성한다."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("JBM_STORAGE_DIR", str(tmp_path))
+    app = create_app()
+    c = TestClient(app)
+    app.state.store.create_run("foreign_rh", user_id="alice", title=None, languages=[])
+    r = c.get("/runs/foreign_rh/review-highlight", params={"image": _VISUAL})
+    assert r.status_code == 404

@@ -75,7 +75,10 @@ export function numberedForImage(verdicts: ReviewVerdict[], image: string): Map<
     .sort((a, b) => {
       const [sa, ia] = pinSortKey(a);
       const [sb, ib] = pinSortKey(b);
-      return sa - sb || ia.localeCompare(ib);
+      // 코드포인트 비교(백엔드 pin_sort_key의 Python `<`와 동일 계약).
+      // localeCompare는 ICU 콜레이션이라 로케일에 따라 결과가 갈릴 수 있어
+      // 백엔드(코드포인트)와 프론트 핀 번호가 어긋날 위험이 있다 — 원시 비교로 고정.
+      return sa - sb || (ia < ib ? -1 : ia > ib ? 1 : 0);
     });
   const m = new Map<string, number>();
   hits.forEach((v, i) => {

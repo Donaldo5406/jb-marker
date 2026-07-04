@@ -35,6 +35,7 @@ ROUTES = [
     ("GET", "/runs/foreign1/usage", None),
     ("GET", "/runs/foreign1/gallery", None),
     ("GET", "/runs/foreign1/preview", None),
+    ("GET", "/runs/foreign1/review-highlight?image=x.png", None),
     ("POST", "/runs/foreign1/deploy/dispatch", {"confirmed": True}),
     ("GET", "/runs/foreign1/deploy/_state", None),
 ]

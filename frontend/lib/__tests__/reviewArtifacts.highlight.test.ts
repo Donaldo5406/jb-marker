@@ -20,4 +20,25 @@ describe("highlight helpers", () => {
     expect(map.get("m")).toBe(3);
     expect(map.has("x")).toBe(false);
   });
+
+  it("orders realistic legal/i18n verdict_ids: critical first, then verdict_id codepoint-ascending (백엔드 pin_sort_key 계약 동일성)", () => {
+    // 실제 verdict_id 형태: legal_<8hex>_<slot>_<lang> / i18n_<8hex>_<slot>_<lang>
+    const vs = [
+      V("i18n_1b2c3d4e_disclosure_vi", "warning", "p.png", true),
+      V("legal_0f3a9c21_headline_ko", "critical", "p.png", true),
+      V("legal_0a1b2c3d_body_ko", "critical", "p.png", true),
+      V("i18n_2a4f8b10_cta_th", "warning", "p.png", true),
+      V("legal_9f0e1d2c_footer_ko", "warning", "q.png", true), // 다른 image — 매핑에서 제외돼야 함
+    ];
+    const map = numberedForImage(vs, "p.png");
+    const byPin = [...map.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+    // critical 두 건이 먼저(코드포인트 순 'legal_0a...' < 'legal_0f...'), 그 다음 warning 두 건(코드포인트 순)
+    expect(byPin).toEqual([
+      "legal_0a1b2c3d_body_ko",
+      "legal_0f3a9c21_headline_ko",
+      "i18n_1b2c3d4e_disclosure_vi",
+      "i18n_2a4f8b10_cta_th",
+    ]);
+    expect(map.has("legal_9f0e1d2c_footer_ko")).toBe(false);
+  });
 });
