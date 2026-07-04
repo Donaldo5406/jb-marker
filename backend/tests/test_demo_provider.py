@@ -232,3 +232,30 @@ def test_demo_review_personas_route_correctly():
     assert r2["findings"] == []                           # R2 → 안전망 위임(빈손)
     r3 = call("R3", {"verdicts": []})
     assert "recommendations" in r3                        # R3 → reconcile
+
+
+# ===== 업로드 소재 결정론 적발(mock 데모) =====
+
+def test_review_image_upload_audit_trigger_returns_critical():
+    from app.providers.demo import DemoProvider
+    p = DemoProvider()
+    r = p.review_image(b"\x89PNG", "[uploaded-audit] file=starbucks-tankday-논란.png\n심의하세요")
+    findings = json.loads(r.text)["findings"]
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "critical"
+    assert findings[0]["location"]["slot"] == "uploaded"
+    assert findings[0]["official_source_url"].startswith("https://www.law.go.kr")
+
+
+def test_review_image_upload_audit_clean_returns_empty():
+    from app.providers.demo import DemoProvider
+    p = DemoProvider()
+    r = p.review_image(b"\x89PNG", "[uploaded-audit] file=clean-poster.png\n심의하세요")
+    assert json.loads(r.text)["findings"] == []
+
+
+def test_review_image_non_audit_prompt_unchanged():
+    from app.providers.demo import DemoProvider
+    p = DemoProvider()
+    r = p.review_image(b"\x89PNG", "이 이미지는 금융 마케팅 캠페인용 AI 생성 비주얼입니다")
+    assert json.loads(r.text)["findings"] == []

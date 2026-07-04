@@ -24,6 +24,7 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
+from ..uploads import uploads_block
 from .brand_context import load_brand_pack, render_brand_block
 from .directing import build_director_prompt
 from .layout_engine import DEFAULT_SEMANTIC, _dims, build_layout
@@ -255,6 +256,10 @@ class S1Rough(PipelineStep):
         brand_block = render_brand_block(load_brand_pack())
         if brand_block:
             references.append(f"\n{brand_block}")
+        # 사용자 업로드(브랜드 가이드 등)는 브랜드 팩보다 뒤 — 사용자 제공 자료 최우선 참조(가산적).
+        ub = uploads_block(ctx.store, ctx.req.run_id, "design")
+        if ub:
+            references.append(ub)
         pspec = PromptSpec(
             persona=PERSONA,
             constraints=[S1_INSTR],

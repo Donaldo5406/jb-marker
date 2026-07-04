@@ -384,6 +384,31 @@ def _reconcile_json(messages) -> str:
     return json.dumps(reconcile(payload.get("verdicts") or []), ensure_ascii=False)
 
 
+_UPLOAD_AUDIT_TRIGGERS = ("violation", "논란", "controversy", "tank", "탱크", "위반")
+
+
+def _upload_audit_findings(prompt: str) -> str | None:
+    """[uploaded-audit] 프롬프트에 한해 파일명 트리거 기반 결정론 적발(데모).
+
+    실 vision 없이도 mock 시연에서 '업로드 소재 적발'을 재현한다. 트리거 미포함
+    파일명은 빈 findings — 거짓 BLOCK 방지(FakeProvider spec §7.3과 동일 원칙).
+    비-audit 프롬프트는 None을 반환해 현행 경로(빈 findings)를 그대로 탄다.
+    """
+    if not prompt.startswith("[uploaded-audit]"):
+        return None
+    first = prompt.splitlines()[0]
+    fname = first.split("file=", 1)[1].strip().lower() if "file=" in first else ""
+    if any(t in fname for t in _UPLOAD_AUDIT_TRIGGERS):
+        return json.dumps({"findings": [{
+            "location": {"slot": "uploaded", "lang": None},
+            "clause": "표시·광고의 공정화에 관한 법률 §3(부당한 표시·광고 금지)",
+            "official_source_url": "https://www.law.go.kr/법령/표시·광고의공정화에관한법률",
+            "severity": "critical",
+            "evidence": "업로드 소재에서 과장·논란 신호 감지(데모 결정론 룰)",
+        }]}, ensure_ascii=False)
+    return _empty_findings()
+
+
 class DemoProvider(Provider):
     name = "demo"
 
@@ -472,4 +497,7 @@ class DemoProvider(Provider):
         return F.load_demo_video()
 
     def review_image(self, image_bytes, prompt, *, mime="image/png") -> ProviderResponse:
+        audited = _upload_audit_findings(prompt)
+        if audited is not None:
+            return ProviderResponse(text=audited, model="demo")
         return ProviderResponse(text=_empty_findings(), model="demo")

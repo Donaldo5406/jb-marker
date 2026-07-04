@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { FileTree, buildTree, flattenTree, allDirKeys } from "@/components/cockpit/FileTree";
 import * as ctx from "@/components/cockpit/CockpitProvider";
+import { api } from "@/lib/api";
+
+vi.mock("@/lib/api", () => ({
+  api: { vfsPut: vi.fn().mockResolvedValue({}) },
+}));
 
 const RUN = "run1";
 const NODES = [
@@ -20,7 +25,10 @@ function mockCockpit(over: Partial<ctx.CockpitContextValue> = {}) {
   } as unknown as ctx.CockpitContextValue);
 }
 
-beforeEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  vi.restoreAllMocks();
+  (api.vfsPut as ReturnType<typeof vi.fn>).mockClear();
+});
 
 describe("FileTree 트리 빌드/평탄화", () => {
   it("buildTree는 runId 접두를 제거하고 key를 누적경로로 부여", () => {
@@ -127,5 +135,32 @@ describe("FileTree 키보드 내비", () => {
     fireEvent.keyDown(tree, { key: "ArrowDown" });
     fireEvent.keyDown(tree, { key: "Enter" });
     expect(selectFile).toHaveBeenCalledWith("/run1/brainstorming/spec.md");
+  });
+});
+
+describe("FileTree 업로드", () => {
+  it("소비 스튜디오(review)에서 업로드 버튼 노출·vfsPut·refreshTree 호출", async () => {
+    const refreshTree = vi.fn().mockResolvedValue(undefined);
+    mockCockpit({ activeStudio: "review", refreshTree } as any);
+    render(<FileTree />);
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    const file = new File(["자료 본문"], "note.md", { type: "text/markdown" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(api.vfsPut).toHaveBeenCalledWith(
+      "run1", "review/uploads/note.md", "자료 본문", "text/markdown", undefined));
+    expect(refreshTree).toHaveBeenCalled();
+  });
+  it("비소비 스튜디오(deploy)에선 업로드 버튼 숨김", () => {
+    mockCockpit({ activeStudio: "deploy" } as any);
+    render(<FileTree />);
+    expect(screen.queryByTestId("upload-file")).toBeNull();
+  });
+  it("허용 외 확장자는 에러 캡션 표시·vfsPut 미호출", async () => {
+    mockCockpit({ activeStudio: "review", refreshTree: vi.fn() } as any);
+    render(<FileTree />);
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "evil.exe")] } });
+    await screen.findByText(/업로드할 수 있어요/);
+    expect(api.vfsPut).not.toHaveBeenCalled();
   });
 });
