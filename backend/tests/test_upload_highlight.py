@@ -34,3 +34,20 @@ def test_mock_stub_trigger_file_without_fixture_has_no_bbox():
 def test_mock_stub_non_trigger_non_fixture_empty():
     out = _upload_audit_findings("[uploaded-audit] file=평범한소재.png\n...")
     assert json.loads(out)["findings"] == []
+
+
+from app.gateway.harness_review import _uploaded_location
+
+
+def test_uploaded_location_preserves_bbox():
+    f = {"location": {"slot": "uploaded", "lang": None, "bbox": {"x": 0.08, "y": 0.34, "w": 0.84, "h": 0.11}}}
+    loc = _uploaded_location("external-deposit-promo.png", f)
+    assert loc["slot"] == "uploaded:external-deposit-promo.png"
+    assert loc["lang"] is None
+    assert loc["bbox"] == {"x": 0.08, "y": 0.34, "w": 0.84, "h": 0.11}
+
+
+def test_uploaded_location_no_bbox_when_absent():
+    loc = _uploaded_location("x.png", {"location": {"slot": "uploaded", "lang": None}})
+    assert loc == {"slot": "uploaded:x.png", "lang": None}
+    assert "bbox" not in loc
