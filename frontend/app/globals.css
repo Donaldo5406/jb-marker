@@ -36,13 +36,13 @@
   body {
     @apply text-on-surface font-sans;
     font-weight: 400;
-    background-color: #f4f8fc;
+    background-color: #eef4fb;
     background-image:
-      radial-gradient(ellipse 70% 55% at 18% 22%, #d7edf9 0%, rgba(215, 237, 249, 0) 60%),
-      radial-gradient(ellipse 65% 55% at 82% 18%, #dce4f7 0%, rgba(220, 228, 247, 0) 62%),
-      radial-gradient(ellipse 85% 60% at 50% 92%, #e3f0fa 0%, rgba(227, 240, 250, 0) 60%),
-      radial-gradient(ellipse 60% 55% at 92% 82%, #d9e6f6 0%, rgba(217, 230, 246, 0) 60%),
-      radial-gradient(ellipse 55% 50% at 8% 75%, #e8f4fb 0%, rgba(232, 244, 251, 0) 60%);
+      radial-gradient(ellipse 70% 55% at 18% 22%, #bfe0f6 0%, rgba(191, 224, 246, 0) 60%),
+      radial-gradient(ellipse 65% 55% at 82% 18%, #c9d2f2 0%, rgba(201, 210, 242, 0) 62%),
+      radial-gradient(ellipse 85% 60% at 50% 92%, #cfe6f8 0%, rgba(207, 230, 248, 0) 60%),
+      radial-gradient(ellipse 60% 55% at 92% 82%, #d3daf3 0%, rgba(211, 218, 243, 0) 60%),
+      radial-gradient(ellipse 55% 50% at 8% 75%, #cdeaf9 0%, rgba(205, 234, 249, 0) 60%);
     background-attachment: fixed;
     background-repeat: no-repeat;
     -webkit-font-smoothing: antialiased;
