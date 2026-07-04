@@ -2,15 +2,15 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
-/** AdvisorChat (M6 T21) — 패키지 단위 advisor 챗. needsPayment 응답 시 onPayDemo로 모달 트리거. */
+/** AdvisorChat (M6 T21) — 패키지 단위 advisor 챗. error 응답은 에러 말풍선으로 정직 표면
+ *  (결제 표면 폐기 2026-07-04 — needsPayment/모달 경로 제거). */
 type Message = { role: "user" | "assistant"; content: string };
 type Props = {
   packageId: string;
-  onSubmit: (message: string) => Promise<{ text?: string; tool_results?: unknown[]; needsPayment?: boolean }>;
-  onPayDemo: () => void;
+  onSubmit: (message: string) => Promise<{ text?: string; tool_results?: unknown[]; error?: string }>;
 };
 
-export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
+export function AdvisorChat({ packageId, onSubmit }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -23,11 +23,8 @@ export function AdvisorChat({ packageId, onSubmit, onPayDemo }: Props) {
     setSending(true);
     try {
       const res = await onSubmit(userMsg);
-      if (res.needsPayment) {
-        onPayDemo();
-        return;
-      }
-      setMessages((m) => [...m, { role: "assistant", content: res.text ?? "(도구 실행 완료)" }]);
+      const content = res.error ? `⚠ ${res.error}` : (res.text ?? "(도구 실행 완료)");
+      setMessages((m) => [...m, { role: "assistant", content }]);
     } finally {
       setSending(false);
     }

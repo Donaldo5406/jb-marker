@@ -33,7 +33,6 @@ export type DeployStateLike = {
   step_status: string;
   selected_providers: string[];
   matrix: { channel: string; lang: string }[];
-  dev_pass: boolean;
 };
 export type EligibilityReason = { status: string; label: string; count: number };
 // 법령 인용 — 정책 yaml의 매핑(백엔드가 객체로 반환). 필드는 방어적으로 옵셔널.
@@ -48,8 +47,9 @@ export type EligibilityResult = {
   breakdown?: EligibilityBreakdownItem[];   // 정책별(§50/§15·§16) 제외 사유 분해
 };
 export type PackageInfo = { status: string; reason?: string };
-export type AdvisorResult = { text?: string; tool_results?: unknown[]; needsPayment?: boolean };
-export type DispatchResult = { needsPayment?: boolean; report_path?: string } & Record<string, unknown>;
+// 결제 표면 폐기(2026-07-04) — 402 등 비정상 응답은 needsPayment 대신 error 텍스트로 정직 표면.
+export type AdvisorResult = { text?: string; tool_results?: unknown[]; error?: string };
+export type DispatchResult = { error?: string; report_path?: string } & Record<string, unknown>;
 
 /** sessions[studio] UI 상태(camelCase) — wire(snake)에서 액션이 매핑. */
 export type SessionUiState = { status: SessionStatus; liveness: SessionLivenessName; warnAt: number; suspendAt: number; expiresAt: number | null };
@@ -97,7 +97,6 @@ export type CockpitContextValue = {
   deployState: DeployStateLike | null;
   eligibility: EligibilityResult | null;
   packages: Record<string, PackageInfo>;
-  devPass: boolean;
   selectedProviders: string[];
   setSelectedProviders: (next: string[]) => void;
   // ---- session lifecycle (T2 P3 / O3) ----
@@ -141,7 +140,6 @@ export type CockpitContextValue = {
   runPackagingCell: (channel: string, lang: string, originalCopy: string, visualPath: string) => Promise<{ package_id: string; status: string; reason?: string } & Record<string, unknown>>;
   askAdvisor: (packageId: string, message: string) => Promise<AdvisorResult>;
   dispatchConfirm: () => Promise<DispatchResult>;
-  payDemo: () => Promise<{ dev_pass: boolean }>;
   // ---- session actions (T2 P3) ----
   heartbeatSession: (studio: string) => Promise<void>;
   resumeSession: (studio: string) => Promise<SessionResumeResult | null>;
@@ -219,7 +217,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [deployState, setDeployState] = useState<DeployStateLike | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityResult | null>(null);
   const [packages, setPackages] = useState<Record<string, PackageInfo>>({});
-  const [devPass, setDevPass] = useState(false);
   // 발송 채널 선택 — DeployStudio 로컬 대신 provider 소유(리마운트 생존). run 전환 시에만 리셋.
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
   // T2 P3: 세션 수명주기 상태 — run 전환 시 리셋(openRun/startRun). 게이트 봉투와 별개 경로.
@@ -359,7 +356,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setDesignGate(null);   // 새로 연 run은 stale design 게이트 없이 시작.
       setVideoGate(null); setVideoStep("V0"); setVideoBypassState({}); setVideoMedium("image"); setVideoRendering(false);
       // M6 T19: deploy state 리셋(이전 run 잔여 차단).
-      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
+      setDeployState(null); setEligibility(null); setPackages({}); setSelectedProviders([]);
       setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(id);
       await Promise.all([loadManifest(id), loadBrainState(id), loadDesignState(id), loadVideoState(id),
@@ -381,7 +378,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setReviewStage(null); setReviewGate(null); setReviewAcknowledged(false);
       setDesignGate(null);   // 새 run은 stale design 게이트 없이 시작.
       setVideoGate(null); setVideoStep("V0"); setVideoBypassState({}); setVideoMedium("image"); setVideoRendering(false);
-      setDeployState(null); setEligibility(null); setPackages({}); setDevPass(false); setSelectedProviders([]);
+      setDeployState(null); setEligibility(null); setPackages({}); setSelectedProviders([]);
       setSessions({}); setSessionList([]); setSessionRestoredStudio(null); setSessionExpiredNotice(null);
       syncRunQuery(run_id);
     },
@@ -926,7 +923,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       step_status: typeof data.step_status === "string" ? data.step_status : prev?.step_status ?? "in_progress",
       selected_providers: selected,
       matrix: Array.isArray(data.matrix) ? data.matrix : [],
-      dev_pass: prev?.dev_pass ?? false,
     }));
     return data;
   }, []);
@@ -964,40 +960,31 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
 
   const askAdvisor = useCallback(async (packageId: string, message: string): Promise<AdvisorResult> => {
     const id = runIdRef.current;
-    if (!id) return { needsPayment: false };
+    if (!id) return { error: "run 없음" };
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/advisor/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ package_id: packageId, message, mock: mockModeRef.current }),
     });
-    if (res.status === 402) {
-      return { needsPayment: true };
+    if (!res.ok) {
+      return { error: `어드바이저 요청 실패 (HTTP ${res.status})` };
     }
     return res.json();
   }, []);
 
   const dispatchConfirm = useCallback(async (): Promise<DispatchResult> => {
     const id = runIdRef.current;
-    if (!id) return { needsPayment: false };
+    if (!id) return { error: "run 없음" };
     const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/dispatch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // mock(시연)이면 결제 게이트 우회 — 데모에서 결제 없이 리포트까지 산출.
+      // mock(시연)이면 entitlement 게이트 우회 — 데모에서 리포트까지 산출.
       body: JSON.stringify({ confirmed: true, mock: mockModeRef.current }),
     });
-    if (res.status === 402) {
-      return { needsPayment: true };
+    if (!res.ok) {
+      return { error: `발송 요청 실패 (HTTP ${res.status})` };
     }
     return res.json();
-  }, []);
-
-  const payDemo = useCallback(async () => {
-    const id = runIdRef.current;
-    if (!id) return { dev_pass: false };
-    const res = await authedFetch(`${DEPLOY_BASE}/runs/${id}/deploy/demo-payment`, { method: "POST" });
-    const data = await res.json();
-    setDevPass(!!data.dev_pass);
-    return data;
   }, []);
 
   // `?view=` 딥링크 복원 — ensureSession과 독립적으로 즉시 1회(예: /cockpit?view=history).
@@ -1100,7 +1087,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     deployState,
     eligibility,
     packages,
-    devPass,
     selectedProviders,
     setSelectedProviders,
     sessions,
@@ -1140,7 +1126,6 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     runPackagingCell,
     askAdvisor,
     dispatchConfirm,
-    payDemo,
     heartbeatSession,
     resumeSession,
     suspendSession,

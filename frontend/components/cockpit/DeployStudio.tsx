@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { Lock, X, CheckCircle2, AlertTriangle, FileText, Loader2 } from "lucide-react";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { useCockpit } from "@/components/cockpit/CockpitProvider";
 import { StepProgress, type Step } from "@/components/cockpit/StepProgress";
@@ -14,7 +13,6 @@ import { EligibilityPanel } from "@/components/cockpit/deploy/EligibilityPanel";
 import { PackageMatrix } from "@/components/cockpit/deploy/PackageMatrix";
 import { AdvisorChat } from "@/components/cockpit/deploy/AdvisorChat";
 import { DispatchConfirm } from "@/components/cockpit/deploy/DispatchConfirm";
-import { DemoPaymentModal } from "@/components/cockpit/deploy/DemoPaymentModal";
 import { RecipientImport, type Recipient } from "@/components/cockpit/deploy/RecipientImport";
 import { loadReviewVerdicts, type ReviewVerdict } from "@/lib/reviewArtifacts";
 
@@ -42,11 +40,11 @@ export function DeployStudio() {
   const selected = c.selectedProviders;
   const setSelected = c.setSelectedProviders;
   const [activeAdvisor, setActiveAdvisor] = React.useState<{ channel: string; lang: string } | null>(null);
-  const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [calendar, setCalendar] = React.useState<{ hour: number; blocked: boolean }[]>([]);
   const [verdicts, setVerdicts] = React.useState<ReviewVerdict[]>([]);
   const [dispatch, setDispatch] = React.useState<DispatchSim | null>(null);
   const [dispatching, setDispatching] = React.useState(false);
+  const [dispatchError, setDispatchError] = React.useState<string | null>(null);
   // 업로드 발송 명단(없으면 백엔드 내장 동의대장 사용) + 버튼 로딩 상태.
   const [importedRecipients, setImportedRecipients] = React.useState<Recipient[] | null>(null);
   const [eligLoading, setEligLoading] = React.useState(false);
@@ -109,7 +107,7 @@ export function DeployStudio() {
   const currentStep = !c.eligibility ? "D0" : Object.keys(c.packages).length === 0 ? "D1" : "D2";
   const designDone = c.manifest?.step_status?.design === "done" || c.designStep === "done";
 
-  // ₩150,000 (Pro+) 게이트 — deploy 엔타이틀먼트 없으면 잠금 안내.
+  // Pro+ 엔타이틀먼트 게이트 — 없으면 잠금 안내(결제 표면 폐기 2026-07-04, Setting 토글로 해제).
   if (!c.entitlement.deploy) {
     return (
       <div className="col-span-2 flex min-h-0 flex-col items-center justify-center gap-4 bg-surface px-6 text-center" data-testid="deploy-locked">
@@ -118,11 +116,8 @@ export function DeployStudio() {
         </div>
         <div className="space-y-1">
           <h2 className="text-h3 text-on-surface">Deploy 스튜디오는 Pro+ 전용</h2>
-          <p className="max-w-sm text-body-sm text-on-surface-variant">채널 발송·§50 적법성·발송 어드바이저는 ₩150,000 Pro+ 플랜에서 제공됩니다.</p>
+          <p className="max-w-sm text-body-sm text-on-surface-variant">채널 발송·§50 적법성·발송 어드바이저는 Pro+ 엔타이틀먼트에서 제공됩니다.</p>
         </div>
-        <Link href="/pricing" className="rounded-full bg-primary px-4 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container">
-          요금제 보기
-        </Link>
         <p className="text-caption text-on-surface-variant">데모: 콕핏 Setting에서 Deploy 엔타이틀먼트를 켜면 체험할 수 있습니다.</p>
       </div>
     );
@@ -228,14 +223,14 @@ export function DeployStudio() {
             <DispatchConfirm
               eligibleCount={c.eligibility.eligible_count}
               selectedCount={selected.length}
-              devPass={c.devPass}
               busy={dispatching}
               onConfirm={async () => {
                 setDispatching(true);
+                setDispatchError(null);
                 try {
                   const res = await c.dispatchConfirm();
-                  if (res.needsPayment) {
-                    setPaymentOpen(true);
+                  if (res.error) {
+                    setDispatchError(String(res.error));
                     return;
                   }
                   setDispatch(res as DispatchSim);
@@ -243,8 +238,11 @@ export function DeployStudio() {
                   setDispatching(false);
                 }
               }}
-              onPayDemo={() => setPaymentOpen(true)}
             />
+
+            {dispatchError && (
+              <p className="mt-2 text-caption text-error" role="alert">{dispatchError}</p>
+            )}
 
             {dispatching && (
               <p className="mt-2 text-caption text-on-surface-variant" role="status" aria-live="polite">
@@ -310,14 +308,11 @@ export function DeployStudio() {
               <AdvisorChat
                 packageId={`${activeAdvisor.channel}_${activeAdvisor.lang}`}
                 onSubmit={(msg) => c.askAdvisor(`${activeAdvisor.channel}_${activeAdvisor.lang}`, msg)}
-                onPayDemo={() => setPaymentOpen(true)}
               />
             </div>
           </div>
         </div>
       )}
-
-      <DemoPaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} onPayDemo={() => c.payDemo()} />
     </div>
   );
 }

@@ -12,7 +12,6 @@ function makeCtx(overrides: Partial<any> = {}) {
     entitlement: { marker: true, deploy: true },
     eligibility: null,
     packages: {},
-    devPass: false,
     runId: "r",
     selectedProviders: [],
     setSelectedProviders: vi.fn(),
@@ -25,7 +24,6 @@ function makeCtx(overrides: Partial<any> = {}) {
     runPackagingCell: vi.fn(),
     askAdvisor: vi.fn(),
     dispatchConfirm: vi.fn(),
-    payDemo: vi.fn(),
     selectFile: vi.fn(),
     ...overrides,
   };
@@ -74,14 +72,15 @@ describe("DeployStudio", () => {
     expect(screen.getByText("Deploy Report 보기")).toBeTruthy();
   });
 
-  it("dispatchConfirm이 needsPayment면 결과 패널 대신 결제 모달을 연다", async () => {
+  it("dispatchConfirm이 error면 결과 패널 대신 에러 텍스트를 표기한다 (결제 표면 폐기)", async () => {
     ctx = makeCtx({
       selectedProviders: ["email"],
       eligibility: { total: 10, eligible_count: 8, excluded_count: 2 },
-      dispatchConfirm: vi.fn().mockResolvedValue({ needsPayment: true }),
+      dispatchConfirm: vi.fn().mockResolvedValue({ error: "발송 요청 실패 (HTTP 402)" }),
     });
     render(<DeployStudio />);
     await act(async () => { fireEvent.click(screen.getByText("발송 확정 (시뮬)")); });
     expect(screen.queryByTestId("dispatch-result")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("발송 요청 실패");
   });
 });
