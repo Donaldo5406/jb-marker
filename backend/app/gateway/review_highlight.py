@@ -118,6 +118,25 @@ def resolve_location(location: dict, *, asset_id: str, lang: str | None,
     return out                                 # ④ 미해결 → bbox 없음
 
 
+def pin_sort_key(v: dict):
+    """정규 정렬키 — critical 우선, 다음 verdict_id 사전순. 프론트(Task 5)와 동일 계약."""
+    sev = 0 if v.get("severity") == "critical" else 1
+    return (sev, v.get("verdict_id") or "")
+
+
+def collect_rects(verdicts: list[dict], image: str) -> list[dict]:
+    """image에 속하고 bbox 있는 verdict → 정렬·핀번호 부여한 rect 목록."""
+    hits = [v for v in verdicts
+            if (v.get("location") or {}).get("image") == image
+            and (v.get("location") or {}).get("bbox")]
+    hits.sort(key=pin_sort_key)
+    rects = []
+    for i, v in enumerate(hits, start=1):
+        b = v["location"]["bbox"]
+        rects.append({**b, "severity": v.get("severity", "warning"), "pin": i})
+    return rects
+
+
 def build_highlight_html(image_bytes: bytes, mime: str, rects: list[dict]) -> str:
     """포스터 base64 인라인 + rect 오버레이 self-contained HTML."""
     b64 = base64.b64encode(image_bytes or b"").decode("ascii")

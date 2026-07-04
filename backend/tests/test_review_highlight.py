@@ -93,3 +93,28 @@ def test_resolve_no_bbox_when_unresolvable():
     out = resolve_location(loc, asset_id="design/final/ko/main.scene", lang="ko",
                            layout_spec=LAYOUT, fixtures={})
     assert "bbox" not in out and out["image"] == "design/design-system/components/visual/v1.png"
+
+
+# --- Task 4: collect_rects / pin_sort_key — 라우트 헬퍼 단위 테스트 ---------
+from app.gateway.review_highlight import collect_rects, pin_sort_key
+
+def test_pin_sort_key_orders_critical_first():
+    vs = [{"severity": "warning", "verdict_id": "b"},
+          {"severity": "critical", "verdict_id": "z"},
+          {"severity": "critical", "verdict_id": "a"}]
+    ordered = sorted(vs, key=pin_sort_key)
+    assert [v["verdict_id"] for v in ordered] == ["a", "z", "b"]
+
+def test_collect_rects_filters_by_image_and_bbox_and_numbers():
+    verdicts = [
+        {"verdict_id": "v1", "severity": "critical",
+         "location": {"image": "p.png", "bbox": {"x": .1, "y": .1, "w": .2, "h": .1}}},
+        {"verdict_id": "v2", "severity": "warning",
+         "location": {"image": "p.png"}},                       # bbox 없음 → 제외
+        {"verdict_id": "v3", "severity": "warning",
+         "location": {"image": "other.png", "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}}},
+    ]
+    rects = collect_rects(verdicts, "p.png")
+    assert len(rects) == 1
+    assert rects[0]["pin"] == 1 and rects[0]["severity"] == "critical"
+    assert rects[0]["x"] == .1
