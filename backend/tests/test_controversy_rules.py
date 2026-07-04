@@ -72,3 +72,13 @@ def test_disaster_518_genuine_date_still_critical_after_boundary_fix():
     유지해야 한다(오탐 수정이 실제 탐지력을 훼손하지 않았는지 확인하는 회귀 가드)."""
     out = evaluate({"ko": {"headline": "5·18 탱크데이 기념 이벤트"}})
     assert out and any(o["severity"] == "critical" for o in out)
+
+
+def test_real_starbucks_tank_day_5slash18_is_caught():
+    """실제 스타벅스 '탱크데이 5/18' 논란 포스터(슬래시 날짜)를 잡는다 — 이 기능의 모티브 케이스."""
+    left = evaluate({"ko": {"headline": "책상에 탁! 탱크 데이 5/18",
+                            "body": "컬러풀 탱크 텀블러 세트", "cta": "오전 10시 오픈"}})
+    right = evaluate({"ko": {"headline": "Tank Day 5/18",
+                             "body": "탱크 시리즈 넉넉한 용량", "cta": "상품 보러가기"}})
+    assert any(f["severity"] == "critical" for f in left), left
+    assert any(f["severity"] == "critical" for f in right), right

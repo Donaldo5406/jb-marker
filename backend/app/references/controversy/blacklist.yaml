@@ -189,7 +189,7 @@ entries:
   - id: disaster_518
     category: disaster_memorial
     tier: 2
-    signals: ["5.18", "5·18", "오일팔", "광주민주화", "광주 5월"]
+    signals: ["5.18", "5·18", "5/18", "오일팔", "광주민주화", "광주 5월"]
     co_signals: ["탱크", "군용", "헬기", "폭동", "데이", "day", "축하", "기념 이벤트", "통구이"]
     why_risky: "5·18 광주민주화운동을 조롱·경시하는 것으로 읽힐 수 있음(스타벅스 탱크데이 선례)"
     severity_default: critical
@@ -197,7 +197,7 @@ entries:
   - id: disaster_sewol
     category: disaster_memorial
     tier: 2
-    signals: ["세월호", "0416", "4·16", "4.16"]
+    signals: ["세월호", "0416", "4·16", "4.16", "4/16"]
     co_signals: ["침몰", "노란리본", "이벤트", "할인", "데이", "축하", "가만히"]
     why_risky: "세월호 참사를 경시·상업적으로 소비하는 것으로 읽힐 수 있음"
     severity_default: warning
@@ -205,7 +205,7 @@ entries:
   - id: disaster_itaewon
     category: disaster_memorial
     tier: 2
-    signals: ["이태원", "10·29", "10.29"]
+    signals: ["이태원", "10·29", "10.29", "10/29"]
     co_signals: ["압사", "핼러윈", "할인", "이벤트", "축하", "참사"]
     why_risky: "이태원 참사를 연상시켜 유가족·대중 반감을 부를 수 있음"
     severity_default: warning
