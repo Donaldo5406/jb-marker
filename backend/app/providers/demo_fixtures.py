@@ -475,6 +475,6 @@ _VEO_DEMO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAABfYdXVpZNj+w9YbDkg
 # 값은 poster_violating_gold.png 기준 초기 근사 → Task 8 정렬 검증에서 보정.
 HIGHLIGHT_BBOX_FIXTURES = {
     ("design/design-system/components/visual/v1.png", "headline", "ko"): {
-        "x": 0.074, "y": 0.120, "w": 0.62, "h": 0.075,   # "업계 최고 금리"
+        "x": 0.03, "y": 0.085, "w": 0.66, "h": 0.145,   # "업계 최고 금리"(실측 poster_violating_gold 1856x2304)
     },
 }
