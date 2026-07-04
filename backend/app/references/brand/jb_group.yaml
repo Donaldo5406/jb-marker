@@ -1,0 +1,47 @@
+# JB금융그룹 브랜드 지식 팩 — 저변동 계층은 S1 참조 주입, products는 주입 금지(문서·시연용).
+# 신뢰등급: official(공식 페이지 원문) / measured(공식 로고 PNG 픽셀 실측) / approx(근사·보도).
+# 딥리서치 2026-07-04 (3중 적대검증 통과 claim만 수록).
+meta:
+  brand_id: jb_group
+  name: JB금융그룹
+  as_of: "2026-07-04"
+  refresh_policy: manual   # 본선 이후: 주기 크롤 → products diff → 사람 리뷰 (로드맵)
+
+identity:
+  ci_concept:              # grade: official — https://www.jbfg.com/ko/about/ci.do 원문
+    - "PEOPLE — 고객 중심의 소통의 장"
+    - "JB DIAMOND — 소매금융 중심 종합금융그룹의 성장·혁신 상징"
+    - "SPACE — 고객과의 신뢰로 만들어가는 금융공간"
+  slogan: "누구에게나 따뜻한 금융"   # grade: official — 전북은행 경영이념(광고 태그라인 아님)
+  positioning: "지방금융 한계를 핀테크 제휴·중금리·외국인 특화(BRAVO KOREA)로 우회하는 그룹"
+
+palette:
+  note: "공식 hex/Pantone 미공개(3사 CI 페이지 HTML 전수 확인) — 아래는 공식 로고 원본 실측"
+  wordmark_navy: { hex: "#051D49", grade: measured }   # 국문가로조합 시그니처 지배색 41.5%
+  symbol_blues:            # grade: measured — 심볼마크 모자이크, 밝은→어두운
+    ["#0098D7", "#008CCF", "#007AC6", "#0067B6", "#0054A7", "#004898", "#092C86"]
+  web_accent: { hex: "#0091D0", grade: approx }        # jbfg.com 인라인 SVG 추출 참고값
+
+logo:
+  bundled: references/design/jb-logo-signature-h.png   # 국문가로조합 시그니처(원본 동일 확인)
+  policy: "형태·색상 임의 변경 금지 — CD 매뉴얼 원본 데이터만 사용"   # grade: official, 3사 공통
+  architecture_note: "본 시스템은 로고를 AI 베이크에 맡기지 않고 결정론 오버레이(S2cBrand)로만 배치"
+
+products:                  # ⚠ 프롬프트 주입 금지 — 시연·발표 문서용 스냅샷. SSOT는 런타임 팩트시트.
+  active:                  # 2026-07-04 전북은행 메인 노출 확인 (grade: official)
+    - { name: "JB 주거래 플러스 예금·적금", bank: 전북은행 }
+    - { name: "씨드모아 통장", bank: 전북은행, type: 파킹통장 }
+    - { name: "JB 사잇돌 중금리 대출", bank: 전북은행 }
+  discontinued:
+    - { name: "청년도약계좌", ended: "2025-12-31", successor: "청년미래적금",
+        warning: "2026년 소재에 '신규가입 가능' 표기 시 표시광고 오류" }
+
+audience_channels:
+  bravo_korea: { center: "1588-2266", loan: "1522-3199" }   # grade: official
+  app: { name: 쏙뱅크, android: kr.co.jbbank.privatebank, ios: "1547903285" }  # grade: official
+  languages:
+    group_site: [ko, en, ru, zh, vi, th]    # JB우리캐피탈 공식 홈페이지 (grade: official)
+    jb_marker_current: [ko, en, vi, zh]
+
+tone_hints:
+  keywords: [신뢰, 따뜻함, 지역밀착, 혁신]
