@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { PreDeployReview } from "../PreDeployReview";
 import type { ReviewVerdict } from "@/lib/reviewArtifacts";
 
-const v = (node: "legal" | "i18n", severity: "critical" | "warning"): ReviewVerdict => ({ node, severity });
+const v = (node: "legal" | "i18n" | "controversy", severity: "critical" | "warning"): ReviewVerdict => ({ node, severity });
 
 describe("PreDeployReview", () => {
   it("shows neutral 검토 미실행 when no gate and no verdicts", () => {
@@ -23,5 +23,13 @@ describe("PreDeployReview", () => {
     expect(screen.getByTestId("violation-chips")).toBeInTheDocument();
     expect(screen.getByText("법령 critical 1")).toBeInTheDocument();
     expect(screen.getByText("i18n warning 2")).toBeInTheDocument();
+  });
+
+  it("reflects controversy-only verdicts in the 논란 badge, chip, and total", () => {
+    const verdicts = [v("controversy", "critical")];
+    render(<PreDeployReview designDone gate={null} verdicts={verdicts} />);
+    expect(screen.getByText("논란 위반 1")).toBeInTheDocument();
+    expect(screen.getByTestId("violation-chips")).toBeInTheDocument();
+    expect(screen.getByText("논란 critical 1")).toBeInTheDocument();
   });
 });

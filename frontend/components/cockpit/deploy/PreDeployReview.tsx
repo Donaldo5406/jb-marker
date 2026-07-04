@@ -16,14 +16,17 @@ const GATE_LEVEL: Record<string, SeverityLevel> = { PASS: "ok", WARN: "warning",
 export function PreDeployReview({ designDone, gate, verdicts }: PreDeployReviewProps) {
   const notReviewed = !gate && verdicts.length === 0;
 
-  const count = (node: "legal" | "i18n", sev: "critical" | "warning") =>
+  const count = (node: "legal" | "i18n" | "controversy", sev: "critical" | "warning") =>
     verdicts.filter((vd) => vd.node === node && vd.severity === sev).length;
   const legalCritical = count("legal", "critical");
   const legalWarning = count("legal", "warning");
   const i18nCritical = count("i18n", "critical");
   const i18nWarning = count("i18n", "warning");
   const i18nTotal = i18nCritical + i18nWarning;
-  const totalViolations = legalCritical + legalWarning + i18nTotal;
+  const controversyCritical = count("controversy", "critical");
+  const controversyWarning = count("controversy", "warning");
+  const controversyTotal = controversyCritical + controversyWarning;
+  const totalViolations = legalCritical + legalWarning + i18nTotal + controversyTotal;
 
   const gateLevel: SeverityLevel = (gate?.status && GATE_LEVEL[gate.status]) || "info";
 
@@ -48,6 +51,9 @@ export function PreDeployReview({ designDone, gate, verdicts }: PreDeployReviewP
         <SeverityBadge level={i18nCritical ? "critical" : i18nTotal ? "warning" : "ok"}>
           i18n {i18nTotal ? `위반 ${i18nTotal}` : "통과"}
         </SeverityBadge>
+        <SeverityBadge level={controversyCritical ? "critical" : controversyTotal ? "warning" : "ok"}>
+          논란 {controversyTotal ? `위반 ${controversyTotal}` : "통과"}
+        </SeverityBadge>
       </div>
 
       {totalViolations > 0 && (
@@ -56,6 +62,8 @@ export function PreDeployReview({ designDone, gate, verdicts }: PreDeployReviewP
           {legalWarning > 0 && <SeverityBadge level="warning">법령 warning {legalWarning}</SeverityBadge>}
           {i18nCritical > 0 && <SeverityBadge level="critical">i18n critical {i18nCritical}</SeverityBadge>}
           {i18nWarning > 0 && <SeverityBadge level="warning">i18n warning {i18nWarning}</SeverityBadge>}
+          {controversyCritical > 0 && <SeverityBadge level="critical">논란 critical {controversyCritical}</SeverityBadge>}
+          {controversyWarning > 0 && <SeverityBadge level="warning">논란 warning {controversyWarning}</SeverityBadge>}
         </div>
       )}
 

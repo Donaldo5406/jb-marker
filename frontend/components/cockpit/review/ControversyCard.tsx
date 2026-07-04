@@ -8,6 +8,7 @@ const CATEGORY_KR: Record<string, string> = {
   community_signal: "커뮤니티 심볼",
   community_lingo: "커뮤니티 은어",
   other_sensitive: "민감 상징",
+  weapon_violence: "무기·폭력",
 };
 
 /** RC 논란 리스크 근거 카드 (ViolationCard 패턴). 정치 판단이 아닌 평판 리스크 표면화. */
