@@ -232,6 +232,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
   // M7-B: history 목록 ↔ 상세 뷰 전환 — 선택된 run id(null=목록 표시).
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<string | null>(null);
+  // 교정(remediate) 직후 자동 재검토 훅 — restartReview+runReview는 이 지점보다 아래에서
+  // 선언되므로(순서 의존) ref에 담아 remediateFromReview·디자인챗 교정 경로에서 호출한다.
+  // ref는 렌더마다 최신 콜백으로 재바인딩(정의부 직후) → 스테일 클로저 없음.
+  const reReviewRef = useRef<(() => Promise<void>) | null>(null);
   // 시연용 Mock 모드 — 모든 백엔드 호출에 mock 플래그 동봉. ref로 콜백 재생성 없이 최신값 참조.
   const [mockMode, setMockModeState] = useState(false);
   const mockModeRef = useRef(false);
@@ -532,7 +536,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
           setReviewGateStale(true);   // 디자인 변경 → 기존 심의 판정은 현행 아님(GAP8)
         }
         // 디자인 챗 교정(remediated): 백엔드가 layout.spec copy를 정제 갱신 → main.scene 재조립
-        // (리뷰 지적 반영 → 재검토 통과). design 스튜디오 done 상태에서만 발생.
+        // (리뷰 지적 반영). design 스튜디오 done 상태에서만 발생.
         if (activeStudio === "design" && (res.meta as { remediated?: boolean } | undefined)?.remediated) {
           let langs: string[] = [];
           try {
@@ -542,6 +546,11 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
           } catch { /* _state 없음 → 단일 언어 폴백 */ }
           if (!langs.length) langs = [designLang];
           await assembleScenes(langs, designLang);
+          // 교정 후 자동 재검토 — 사용자가 Review로 돌아가 '재검토'를 수동으로 누르지 않아도
+          // 교정 결과가 곧바로 재심의돼 새 판정(통과)이 뜬다. 돌아가서 프롬프트만 먹여도
+          // 통과하는 흐름(발표자 피드백 2026-07-05). stale 배지는 이 재검토가 즉시 해제한다.
+          setStudio("review");
+          await reReviewRef.current?.();
         }
         // loadManifest: step_status 변경(D8 done→design 활성)을 ProcessBar에 세션 내 반영.
         // _messages.json 복원은 brainstorming만 — design/video 챗은 방금 추가한 대화를
@@ -638,6 +647,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       setStudio("design");
       const res = await runDesign("remediate");
       if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+      // 교정 후 자동 재검토 — 원클릭 교정이 재심의까지 이어져 새 판정(통과)이 곧바로 뜬다
+      // (사용자가 Review에서 '재검토'를 다시 누를 필요 없음, 발표자 피드백 2026-07-05).
+      setStudio("review");
+      await reReviewRef.current?.();
     } finally {
       remediateInFlightRef.current = false;
     }
@@ -792,6 +805,14 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     setReviewAcknowledged(false);
     await Promise.all([refreshTree(), loadManifest(id)]);
   }, [refreshTree, loadManifest]);
+
+  // 교정 후 자동 재검토 = restart(R0 재구축) → runReview(R0→R3 완주). 정의부 직후 ref에
+  // 최신 콜백으로 재바인딩해, 위에서 선언된 remediateFromReview·디자인챗 교정 경로가
+  // 순서 의존(TDZ) 없이 호출한다(재검토 버튼의 restart+run과 동일 동작).
+  reReviewRef.current = async () => {
+    await restartReview();
+    await runReview();
+  };
 
   /** 언어 전환(I4): 현재 언어를 바꾸고 해당 언어 scene을 재조립/열기(spec 없으면 no-op). */
   const switchDesignLang = useCallback(async (lang: string) => {
