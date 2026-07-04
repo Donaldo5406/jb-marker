@@ -67,7 +67,7 @@ export function LandingNav() {
             >
               <Link
                 href={item.link ?? "#"}
-                className="group relative flex items-center gap-1 rounded-full px-4 py-1.5 text-body-sm text-on-surface-variant transition-colors hover:text-on-surface"
+                className="group relative flex items-center gap-1 rounded-full px-4 py-1.5 text-body-sm font-medium text-on-surface/70 transition-colors hover:bg-surface-container-lowest/70 hover:text-on-surface"
               >
                 <span>{item.label}</span>
                 {item.subMenus && (
