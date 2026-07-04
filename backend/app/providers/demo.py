@@ -36,10 +36,15 @@ def _latency_base_ms() -> int:
 
 
 def _pace(resp: ProviderResponse) -> ProviderResponse:
-    """응답 길이에 비례한 지연(기저 + len/4000초, 상한 2.5s) 후 그대로 반환."""
+    """응답 길이에 비례한 지연(기저 + len/8000초, 상한 1.2s) 후 그대로 반환.
+
+    2026-07-04(2차): 라이브 발표에서 지연이 과했다는 발표자 피드백 → 상한 2.5→1.2s,
+    길이 기여 4000→8000(절반)으로 낮춰 '자연스럽되 빠릿'하게. env가 높게 잡혀 있어도
+    상한이 체감을 확실히 bound한다.
+    """
     base_ms = _latency_base_ms()
     if base_ms > 0:
-        time.sleep(min(base_ms / 1000 + len(resp.text or "") / 4000, 2.5))
+        time.sleep(min(base_ms / 1000 + len(resp.text or "") / 8000, 1.2))
     return resp
 
 # JB 정기예금 캠페인 마스터 금리(grounding 진실값). 이와 다른 금리 표기는 허위표시 위반.
@@ -522,8 +527,10 @@ class DemoProvider(Provider):
            라이브 수정으로 카피가 바뀌어도 mock은 반드시 완주한다(회귀 보험).
         """
         base_ms = _latency_base_ms()
-        if base_ms > 0:   # 베이크 즉답의 부자연 제거(스펙 D3) — 텍스트보다 긴 고정 지연.
-            time.sleep(min(base_ms * 3 / 1000, 3.0))
+        if base_ms > 0:   # 베이크 즉답의 부자연 제거 — 텍스트보다 살짝 긴 고정 지연.
+            # 2026-07-04(2차): 포스터 베이크마다 최대 3s는 발표에서 과했다(발표자 피드백).
+            # 배율 3→1.5, 상한 3.0→1.6s로 축소 — 이미지 대기가 데모의 주 지연원이었다.
+            time.sleep(min(base_ms * 1.5 / 1000, 1.6))
         copy = _copy_from_prompt(prompt)
         state = _poster_state(copy, prompt)
         if state:
