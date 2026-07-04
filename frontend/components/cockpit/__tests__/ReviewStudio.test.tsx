@@ -17,6 +17,7 @@ const mockCtx: any = {
   ackReview: vi.fn(async () => {}),
   restartReview: vi.fn(async () => {}),
   setStudio: vi.fn(),
+  remediateFromReview: vi.fn(async () => {}),
 };
 vi.mock("../CockpitProvider", () => ({
   useCockpit: () => mockCtx,
@@ -44,6 +45,7 @@ describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
     mockCtx.ackReview.mockClear();
     mockCtx.restartReview.mockClear();
     mockCtx.setStudio.mockClear();
+    mockCtx.remediateFromReview.mockClear();
   });
 
   it("R0 단계에서 '검토 시작' 버튼이 runReview를 호출한다", () => {
@@ -78,16 +80,16 @@ describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
     expect(screen.getByTestId("step-seg-R1").dataset.state).toBe("active");
   });
 
-  it("BLOCKED 상태에서 ack 버튼이 노출되지 않고 Design 복귀 CTA가 표시된다", () => {
+  it("BLOCKED 상태에서 ack 버튼이 노출되지 않고 '리뷰 지적 반영해 재생성' CTA가 표시된다", () => {
     mockCtx.reviewStage = "done";
     mockCtx.manifest = { ...mockCtx.manifest, step_status: { review: "BLOCKED" } };
     mockCtx.reviewGate = { status: "BLOCKED", critical: 2, warning: 0, actions: ["regenerate", "restart"] };
     render(<ReviewStudio />);
     expect(screen.queryByTestId("gate-action-ack")).toBeNull();
     expect(screen.getByText(/critical 위반으로 배포가 차단/)).toBeInTheDocument();
-    // Design 복귀 클릭 → setStudio('design')
-    fireEvent.click(screen.getByText(/Design으로/));
-    expect(mockCtx.setStudio).toHaveBeenCalledWith("design");
+    // remediate 클릭 → remediateFromReview 원클릭(D4)
+    fireEvent.click(screen.getByText(/리뷰 지적 반영해 재생성/));
+    expect(mockCtx.remediateFromReview).toHaveBeenCalledTimes(1);
   });
 
   it("done+WARN + ack 미클릭 상태에서 ack 버튼이 활성, 클릭 시 ackReview 호출", () => {

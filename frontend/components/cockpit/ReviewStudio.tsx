@@ -172,7 +172,7 @@ export function ReviewStudio() {
             onRun={run}
             onAck={ack}
             onRestart={restart}
-            onBackToDesign={() => c.setStudio("design")}
+            onBackToDesign={() => void c.remediateFromReview()}
             onProceedDeploy={() => c.setStudio("deploy")}
           />
         </div>

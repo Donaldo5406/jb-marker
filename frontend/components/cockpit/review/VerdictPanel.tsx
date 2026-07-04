@@ -29,7 +29,7 @@ export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy,
   // 액션 식별자 → review 컨텍스트 핸들러/라벨/스타일. regenerate=디자인으로 복귀해 재생성.
   const ACTION: Record<string, { label: string; on: () => void; primary?: boolean }> = {
     ack: { label: "경고 확인 후 진행", on: onAck, primary: true },
-    regenerate: { label: "Design으로 돌아가 수정", on: onBackToDesign },
+    regenerate: { label: "리뷰 지적 반영해 재생성", on: onBackToDesign },
     restart: { label: "재검토", on: onRestart },
   };
   // ack은 실제 경고(effStatus==="WARN")가 남아 있고 미확인일 때만 — PASS(0/0)면 숨긴다.

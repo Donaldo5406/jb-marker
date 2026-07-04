@@ -115,6 +115,8 @@ export type CockpitContextValue = {
   sendChat: (p: { prompt: string; provider: Provider; isMarker: boolean })
     => Promise<{ text?: string; gate?: GateEnvelope | null } | null>;
   runDesign: (action: string, prompt?: string) => Promise<{ text: string }>;
+  /** Review 게이트 '리뷰 지적 반영해 재생성' 원클릭(폐루프 D4) — Design 전환 + remediate 실행 + 증빙 챗 append. */
+  remediateFromReview: () => Promise<void>;
   runVideo: (action: string, prompt?: string) => Promise<{ text: string }>;
   renderVideo: () => Promise<void>;
   runReview: () => Promise<{ text: string }>;
@@ -612,6 +614,17 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     return { text: res.text };
   }, [refreshTree, designBypass, designStep, assembleScenes, designLang, applyGate]);
 
+  /** Review 게이트 '리뷰 지적 반영해 재생성' — Design 전환 + remediate 원클릭(폐루프 D4).
+   *  응답 text(적용한 권장수정 출처증빙)를 챗에 노출해 "리뷰 산출물이 소비됐다"를 보여준다.
+   *  setStudio는 이 지점보다 아래에서 선언되지만, 클로저 참조는 실제 호출(클릭) 시점에
+   *  평가되므로 문제 없다(선언 시점이 아니라 호출 시점에 스코프를 조회하는 JS 클로저 의미론 —
+   *  resumeSessionRef처럼 ref를 거칠 필요 없는 경우: deps 배열에 넣지 않아 즉시평가를 피함). */
+  const remediateFromReview = useCallback(async () => {
+    setStudio("design");
+    const res = await runDesign("remediate");
+    if (res.text) setMessages((m) => [...m, { role: "assistant", content: res.text }]);
+  }, [runDesign]);
+
   const setDesignBypass = useCallback(
     (id: string, on: boolean) => setDesignBypassState((m) => ({ ...m, [id]: on })),
     [],
@@ -1102,6 +1115,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     saveFile,
     sendChat,
     runDesign,
+    remediateFromReview,
     runVideo,
     renderVideo,
     runReview,

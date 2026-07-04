@@ -26,10 +26,10 @@ describe("VerdictPanel", () => {
     fireEvent.click(screen.getByText(/경고 확인/));
     expect(onAck).toHaveBeenCalled();
   });
-  it("BLOCKED면 Design 복귀 CTA, 클릭 시 onBackToDesign", () => {
+  it("BLOCKED면 리뷰 지적 반영해 재생성 CTA, 클릭 시 onBackToDesign", () => {
     const back = vi.fn();
     render(<VerdictPanel status="BLOCKED" gate={{ critical: 1, warning: 0 }} actions={["regenerate", "restart"]} acknowledged={false} stage="done" onRun={() => {}} onAck={() => {}} onRestart={() => {}} onBackToDesign={back} onProceedDeploy={() => {}} />);
-    fireEvent.click(screen.getByText(/Design으로/));
+    fireEvent.click(screen.getByText(/리뷰 지적 반영해 재생성/));
     expect(back).toHaveBeenCalled();
   });
 });
