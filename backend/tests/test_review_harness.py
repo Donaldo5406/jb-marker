@@ -985,3 +985,15 @@ def test_rc_system_is_persona_rc_and_meta_passed(tmp_path, make_scripted):
     call = sp.calls_complete[0]
     assert call["system"] == PERSONA_RC
     assert call["kw"].get("meta") == {"studio": "review", "step": "RC", "medium": "image"}
+
+
+def test_rc_demo_provider_deterministic_catch(tmp_path):
+    """DemoProvider RC 라우트: 논란 신호 카피 → 콘텐츠 기반 결정론 finding(라이브 키 불요)."""
+    from app.providers.demo import DemoProvider
+    from app.providers.base import Message
+    p = DemoProvider()
+    payload = json.dumps({"scene_copy": {"ko": {"headline": "욱일기 배경"}},
+                          "blacklist_categories": []}, ensure_ascii=False)
+    resp = p.complete([Message("user", payload)], meta={"studio": "review", "step": "RC"})
+    data = json.loads(resp.text)
+    assert data["findings"] and data["findings"][0]["severity"] == "critical"

@@ -107,6 +107,21 @@ def legal_findings(scene_copy: dict) -> list[dict]:
     return findings
 
 
+def controversy_findings(scene_copy: dict) -> list[dict]:
+    """scene_copy에서 블랙리스트 신호를 검출 → RC controversy findings(콘텐츠 기반 결정론).
+
+    controversy_rules.evaluate를 재사용해 라이브 LLM 없이 RC를 완주시킨다(mock 결정론).
+    하네스 경로 1(결정론 안전망)과 동일 evaluate라 verdict_id가 겹쳐 idempotent(중복 없음).
+    clean 카피면 빈 리스트.
+    """
+    from ..core.controversy_rules import evaluate as _cx_evaluate
+    return [{"location": f["location"], "category": f.get("category"),
+             "severity": f.get("severity", "warning"),
+             "evidence": f.get("evidence", ""),
+             "source": f.get("official_source_url", "")}
+            for f in _cx_evaluate(scene_copy)]
+
+
 def reconcile(verdicts: list[dict]) -> dict:
     """R1/R2 verdict를 통합 → 우선순위 권장(recommendations) + 충돌조정 요약.
 
@@ -384,6 +399,13 @@ def _reconcile_json(messages) -> str:
     return json.dumps(reconcile(payload.get("verdicts") or []), ensure_ascii=False)
 
 
+def _controversy_findings_json(messages) -> str:
+    """RC: user payload의 scene_copy를 검사해 논란 findings(콘텐츠 기반)."""
+    payload = _parse_user(messages)
+    return json.dumps({"findings": controversy_findings(payload.get("scene_copy") or {})},
+                      ensure_ascii=False)
+
+
 class DemoProvider(Provider):
     name = "demo"
 
@@ -427,6 +449,9 @@ class DemoProvider(Provider):
                                     model="demo", raw=None)
         if key == ("review", "R2"):               # 다국어 — 안전망이 고지 누락 처리
             return ProviderResponse(text=_empty_findings(), model="demo", raw=None)
+        if key == ("review", "RC"):               # 논란 — 콘텐츠 기반 적발
+            return ProviderResponse(text=_controversy_findings_json(messages),
+                                    model="demo", raw=None)
         if key == ("review", "R3"):               # 통합 — 콘텐츠 기반 reconcile
             return ProviderResponse(text=_reconcile_json(messages),
                                     model="demo", raw=None)
