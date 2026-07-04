@@ -726,7 +726,9 @@ class ReviewHarness(Harness):
         recommendations = data.get("recommendations") or []
         conflicts = data.get("conflicts_resolved") or []
 
-        # 권장 영속 — rec_id = sha1(rec JSON)[:8] (결정론)
+        # 권장 영속 — rec_id = sha1(rec JSON)[:8] (결정론). 사람용 .md + 기계용 단일 JSON(폐루프
+        # D1: Design remediate가 소비. R0 멱등 cleanup이 revise/ 전체를 지워 stale 없음).
+        recs_json: list[dict] = []
         for rec in recommendations:
             rec_id = "rec_" + hashlib.sha1(
                 json.dumps(rec, sort_keys=True, ensure_ascii=False).encode()
@@ -743,6 +745,11 @@ class ReviewHarness(Harness):
             )
             store.put(f"{base}/revise/{target}/{rec_id}.md", body,
                       source="marker", mime="text/markdown")
+            recs_json.append({"rec_id": rec_id, **rec})
+        if recs_json:
+            store.put(f"{base}/revise/recommendations.json",
+                      json.dumps(recs_json, ensure_ascii=False),
+                      source="marker", mime="application/json")
 
         # 게이트 산정 (5트리거 flags 반영)
         gate = compute_gate(verdicts, flags={

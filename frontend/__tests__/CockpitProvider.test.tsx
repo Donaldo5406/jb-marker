@@ -49,4 +49,26 @@ describe("CockpitProvider deploy actions", () => {
     });
     expect(out.error).toContain("HTTP 402");
   });
+
+  it("dispatchConfirm은 409 detail을 사용자 메시지로 표면화한다", async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.includes("/deploy/dispatch")) {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({
+            detail: "review gate: not_run — 심의(PASS)를 통과해야 발송할 수 있습니다",
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+    });
+    const { result } = renderHook(() => useCockpit(), { wrapper });
+    let out: { error?: string } = {};
+    await act(async () => {
+      out = await result.current.dispatchConfirm();
+    });
+    expect(out.error).toBe("review gate: not_run — 심의(PASS)를 통과해야 발송할 수 있습니다");
+  });
 });

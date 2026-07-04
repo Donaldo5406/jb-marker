@@ -33,11 +33,12 @@ class GatewayRun(BaseModel):
     provider: Literal["fake", "demo", "anthropic", "openai", "google"] = "fake"
     is_marker: bool = False
     answer: str | None = None
-    # action 어휘 = 하네스 소비 전수 — design: advance·confirm·regenerate
-    # (gateway/pipeline.py — confirm 게이트가 GATE_ACTIONS=["confirm","regenerate"]를 선언),
+    # action 어휘 = 하네스 소비 전수 — design: advance·confirm·regenerate·remediate
+    # (gateway/pipeline.py — confirm 게이트가 GATE_ACTIONS=["confirm","regenerate"]를 선언;
+    #  remediate는 done 전용 D2 폐루프 트리거 — harness_design.py._remediate_copy),
     # review: restart·ack·regenerate (harness_review.py)
     # ask 게이트의 actions=["answer"]는 action이 아니라 answer 필드로 응답(wire 관례).
-    action: Literal["advance", "confirm", "regenerate", "restart", "ack", "render"] | None = None
+    action: Literal["advance", "confirm", "regenerate", "restart", "ack", "render", "remediate"] | None = None
     bypass_map: dict | None = None
     # 프론트 advance/confirm 등은 medium을 미지정 → lib/api가 `medium ?? null`로 null 전송.
     # Literal 기본값은 '키 부재'에만 먹으므로 명시적 null도 허용하고 아래서 'image'로 정규화.
