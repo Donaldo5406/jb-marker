@@ -45,6 +45,7 @@ describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
     // R0 셀이 active(StepProgress 세그먼트)
     expect(screen.getByTestId("step-seg-R0").dataset.state).toBe("active");
     expect(screen.getByTestId("step-seg-R1").dataset.state).toBe("pending");
+    expect(screen.getByTestId("step-seg-RC")).toBeInTheDocument();
     // 검토 시작 버튼(VerdictPanel)
     const btn = screen.getByTestId("run-review");
     fireEvent.click(btn);

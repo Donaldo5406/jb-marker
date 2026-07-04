@@ -5,6 +5,7 @@ import { Loader2, CheckCircle2 } from "lucide-react";
 import { useCockpit } from "./CockpitProvider";
 import { StepProgress, type Step } from "./StepProgress";
 import { ViolationCard } from "./review/ViolationCard";
+import { ControversyCard } from "./review/ControversyCard";
 import { EquivalenceCard } from "./review/EquivalenceCard";
 import { ReconcilerSummary } from "./review/ReconcilerSummary";
 import { VerdictPanel } from "./review/VerdictPanel";
@@ -14,6 +15,7 @@ const STEPS: Step[] = [
   { id: "R0", label: "셋업" },
   { id: "R1", label: "법률" },
   { id: "R2", label: "동등성" },
+  { id: "RC", label: "논란" },
   { id: "R3", label: "통합" },
   { id: "done", label: "완료" },
 ];
@@ -23,6 +25,7 @@ const PROGRESS_MSG: Record<string, string> = {
   R0: "검토 환경을 준비하고 있습니다…",
   R1: "AI가 표시광고법·금융소비자보호법 위반을 검토 중입니다…",
   R2: "다국어 자산의 필수고지 동등성을 검토 중입니다…",
+  RC: "AI가 사회 논란·평판 리스크를 검토 중입니다…",
   R3: "검토 결과를 통합하고 우선순위를 매기는 중입니다…",
   done: "검토 결과를 정리하고 있습니다…",
 };
@@ -72,6 +75,7 @@ export function ReviewStudio() {
   };
   const legal = verdicts.filter((v) => v.node === "legal");
   const i18n = verdicts.filter((v) => v.node === "i18n");
+  const controversy = verdicts.filter((v) => v.node === "controversy");
   const empty = verdicts.length === 0 && !report;
   // 위반·경고 0으로 종료 = 깔끔한 통과. 보고서 빈 섹션 대신 '없음' 카드를 보여준다.
   const clean = stage === "done" && !!c.reviewGate && c.reviewGate.critical === 0 && c.reviewGate.warning === 0;
@@ -123,6 +127,12 @@ export function ReviewStudio() {
                 <section className="space-y-2" aria-label="동등성 검토">
                   <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">동등성 검토 (R2)</h3>
                   {i18n.map((v, i) => <EquivalenceCard key={v.verdict_id ?? i} v={v} />)}
+                </section>
+              )}
+              {controversy.length > 0 && (
+                <section className="space-y-2" aria-label="논란 검토">
+                  <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">논란 검토 (RC)</h3>
+                  {controversy.map((v, i) => <ControversyCard key={v.verdict_id ?? i} v={v} />)}
                 </section>
               )}
               <ReconcilerSummary report={report} />
