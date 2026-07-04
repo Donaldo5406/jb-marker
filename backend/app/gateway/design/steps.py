@@ -24,6 +24,8 @@ from ..critic import CriticVerdict
 from ..harness import HarnessResult
 from ..pipeline import DONE, GateCheck, PipelineStep, StepContext
 from ..prompt import PromptSpec
+from ..uploads import uploads_block
+from .brand_context import load_brand_pack, render_brand_block
 from .directing import build_director_prompt
 from .layout_engine import DEFAULT_SEMANTIC, _dims, build_layout
 from .layout_preview import build_layout_mock_html
@@ -247,11 +249,21 @@ class S1Rough(PipelineStep):
         tokens = ctx.store.get(f"{base}/design-system/tokens.json")
         refs = load_references()
         # 조립 순서(D6): persona → [S1 Rough] 지시 → [tokens] → [references] — 인라인 시절과 동일.
+        # 브랜드 컨텍스트(JB 지식 팩)는 말미에만 append — 사용자 지시·tokens가 항상 우선(팩 렌더
+        # 헤더에 명시). 팩 부재·파싱 실패 시 None → 블록 생략(기존 제네릭 동작).
+        references = [f"\n[tokens]\n{tokens.content_text if tokens else '{}'}",
+                      f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}"]
+        brand_block = render_brand_block(load_brand_pack())
+        if brand_block:
+            references.append(f"\n{brand_block}")
+        # 사용자 업로드(브랜드 가이드 등)는 브랜드 팩보다 뒤 — 사용자 제공 자료 최우선 참조(가산적).
+        ub = uploads_block(ctx.store, ctx.req.run_id, "design")
+        if ub:
+            references.append(ub)
         pspec = PromptSpec(
             persona=PERSONA,
             constraints=[S1_INSTR],
-            references=[f"\n[tokens]\n{tokens.content_text if tokens else '{}'}",
-                        f"\n[references]\n{json.dumps(refs, ensure_ascii=False)}"],
+            references=references,
             studio="design", step=self.name)
         resp = ctx.provider.complete([Message("user", ctx.req.user_prompt or "러프 시작")],
                                      system=pspec.assemble(), meta=pspec.meta)

@@ -27,6 +27,7 @@ from ..providers.base import Message, Provider
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
 from .state import load_state, save_state
+from .uploads import list_upload_images
 
 
 def _verdict_id(node: str, clause_or_kind: str, slot: str, lang: str | None) -> str:
@@ -172,6 +173,8 @@ class ReviewHarness(Harness):
         if store.get(f"/{run_id}/design/design-system/components/visual/v1.png"):
             components.append("visual/v1.png")
         matrix["components"] = components
+        matrix["uploads"] = [p.rsplit("/", 1)[-1]
+                             for p in list_upload_images(store, run_id, "review")]
 
         # state 영속 — 5트리거 flags 모두 초기화
         state.update({
@@ -396,6 +399,46 @@ class ReviewHarness(Harness):
             except Exception:
                 state["vision_failed"] = True
                 state["vision_skipped"].append(f"composite/{lang}")
+
+        # 호출 4: 사용자 업로드 소재 심의(있을 때만 — 가산적, mock 계약 불변).
+        # 외부/기존 포스터를 같은 법률 기준으로 심의해 verdict → 게이트에 합류시킨다.
+        for upath in list_upload_images(store, req.run_id, "review"):
+            uname = upath.rsplit("/", 1)[-1]
+            unode = store.get(upath)
+            if unode is None:
+                state["vision_skipped"].append(f"uploads/{uname}")
+                continue
+            uprompt = (
+                f"[uploaded-audit] file={uname}\n"
+                "이 이미지는 사용자가 심의를 위해 업로드한 마케팅 소재입니다. "
+                "다음을 평가하세요: ① 과장·단정(수익 보장 등) 표현 ② 필수고지 누락 "
+                "③ 오해 유발 비주얼·사회적 논란 소지 ④ 상표·저작권 침해 신호. "
+                "공식 법령 출처(law.go.kr 등)만 인용. "
+                'JSON: {"findings":[{"location":{"slot":"uploaded","lang":null},'
+                '"clause":"...","official_source_url":"https://law.go.kr/...",'
+                '"severity":"critical|warning","evidence":"..."}, ...]}'
+            )
+            try:
+                ubytes = unode.blob if unode.blob else (unode.content_text or "").encode("utf-8")
+                uresp = self._vision_provider.review_image(
+                    ubytes, uprompt, mime=unode.mime or "image/png")
+                udata = _parse_json(uresp.text)
+                ukept, udropped = apply_whitelist(udata.get("findings") or [], whitelist)
+                state["dropped_findings_count"] += udropped
+                for f in ukept:
+                    self._persist_verdict(
+                        store, req.run_id, node="legal",
+                        asset_id=f"review/uploads/{uname}", lang=None,
+                        severity=f.get("severity", "warning"),
+                        # slot에 파일명 포함 — verdict_id 유일성 + 리포트 자기서술
+                        location={"slot": f"uploaded:{uname}", "lang": None},
+                        evidence=f.get("evidence", ""),
+                        clause=f.get("clause"),
+                        official_source_url=f.get("official_source_url"),
+                        kind="uploaded")
+            except Exception:
+                state["vision_failed"] = True
+                state["vision_skipped"].append(f"uploads/{uname}")
 
         state["step"] = "R2"
         self._save_state(store, req.run_id, state)
@@ -679,11 +722,21 @@ class ReviewHarness(Harness):
             "",
             "## R1 법률 검토 (요약)",
         ]
-        for v in [x for x in verdicts if x.get("node") == "legal"]:
+        def _is_uploaded(x: dict) -> bool:
+            return str((x.get("location") or {}).get("slot", "")).startswith("uploaded")
+
+        for v in [x for x in verdicts if x.get("node") == "legal" and not _is_uploaded(x)]:
             report_lines.append(
                 f"- [{v.get('severity')}] {v.get('location',{}).get('slot')} · "
                 f"{v.get('lang') or '-'} · {v.get('clause','-')} — "
                 f"{v.get('evidence','')[:80]}")
+        up_verdicts = [x for x in verdicts if x.get("node") == "legal" and _is_uploaded(x)]
+        if up_verdicts:
+            report_lines += ["", "## 업로드 소재 심의"]
+            for v in up_verdicts:
+                report_lines.append(
+                    f"- [{v.get('severity')}] {v.get('asset_id', '-')} · "
+                    f"{v.get('clause', '-')} — {v.get('evidence', '')[:80]}")
         report_lines += ["", "## R2 동등성 검토 (요약)"]
         for v in [x for x in verdicts if x.get("node") == "i18n"]:
             report_lines.append(

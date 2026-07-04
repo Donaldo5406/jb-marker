@@ -12,6 +12,7 @@ from .critic import CriticVerdict
 from .harness import GateEnvelope, Harness, HarnessRequest, HarnessResult
 from .prompt import PromptSpec
 from .state import load_state, save_state
+from .uploads import uploads_block
 from ..core.parsing import parse_json_block as _parse_json
 
 # O4 compaction (spec: docs/specs/2026-06-02-messages-compaction-o4-design.md)
@@ -277,10 +278,14 @@ class BrainstormingHarness(Harness):
         spec_node = store.get(f"{base}/spec.md")
         cur = spec_node.content_text if spec_node else ""
         # 조립 순서(D6): persona → [Stage A] 지시 → _PROTOCOL → [현재 spec.md] — 인라인 시절과 동일.
+        refs = [f"\n\n[현재 spec.md]\n{cur}"]
+        ub = uploads_block(store, req.run_id, "brainstorming")
+        if ub:
+            refs.append(ub)   # 사용자 업로드 자료 — 있을 때만(가산적, mock 계약 불변)
         pspec = PromptSpec(persona=self.system_prompt(),
                            constraints=[STAGE_A_INSTR],
                            output_schema=_PROTOCOL,
-                           references=[f"\n\n[현재 spec.md]\n{cur}"],
+                           references=refs,
                            studio="brainstorming", step="stage_a",
                            medium=(req.medium or _medium_of(cur)))
         # 웹서치 ON(Stage A): 모델 자율 검색(WEB_SEARCH_TOOL). citations는 _save_research로 영속.
@@ -365,6 +370,11 @@ class BrainstormingHarness(Harness):
         cur_plan = plan_node.content_text if plan_node else ""
         # 조립 순서(D6): persona → [Stage B] 지시 → _PROTOCOL → [확정 spec.md] → [현재 plan.md] — 인라인 시절과 동일.
         # 지시 블록은 sorted(REQUIRED_PLAN_FIELDS) 동적 결합이라 상수 추출 대신 함수 내 f-string 유지.
+        refs = [f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}",
+                f"\n\n[현재 plan.md]\n{cur_plan}"]
+        ub = uploads_block(store, req.run_id, "brainstorming")
+        if ub:
+            refs.append(ub)   # 사용자 업로드 자료 — 있을 때만(가산적)
         pspec = PromptSpec(
             persona=self.system_prompt(),
             constraints=[
@@ -375,8 +385,7 @@ class BrainstormingHarness(Harness):
                     "scene_beats(훅·혜택·신뢰·CTA)·footage_concept을 채우세요. "
                     if _medium_of(spec.content_text if spec else "") == "video" else ""))],
             output_schema=_PROTOCOL,
-            references=[f"\n\n[확정 spec.md]\n{spec.content_text if spec else ''}",
-                        f"\n\n[현재 plan.md]\n{cur_plan}"],
+            references=refs,
             studio="brainstorming", step="stage_b",
             medium=(_medium_of(spec.content_text if spec else "") or req.medium))
         resp = provider.complete(self._window_for_provider(msgs, state, provider),

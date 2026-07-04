@@ -28,11 +28,11 @@ const stepLabel = (key: string) => STEP_LABEL[key] ?? key;
 /** 시연(Mock) 모드 작업 내역 — 백엔드 run이 없어도 History를 그럴듯하게 채운다.
  *  created_at은 고정 ISO(결정적). 실제 run과 함께 목록 상단에 표시(표시 전용 샘플). */
 const MOCK_RUNS: Manifest[] = [
-  { run_id: "demo-jb-youth", title: "전북은행 청년 적금 캠페인", created_at: "2026-06-12T09:00:00Z",
+  { run_id: "demo-jb-youth", title: "JB 주거래 플러스 적금 캠페인", created_at: "2026-06-12T09:00:00Z",
     step_status: { brainstorming: "done", design: "done", review: "done", deploy: "done" } },
-  { run_id: "demo-jb-fx-card", title: "외환 카드 다국어 프로모션 (ko·en·vi·zh)", created_at: "2026-06-10T14:30:00Z",
+  { run_id: "demo-jb-fx-card", title: "BRAVO KOREA 외화 송금 다국어 안내 (ko·en·vi·zh)", created_at: "2026-06-10T14:30:00Z",
     step_status: { brainstorming: "done", design: "done", review: "done" } },
-  { run_id: "demo-jb-loan", title: "봄맞이 주택담보대출 안내", created_at: "2026-06-07T11:15:00Z",
+  { run_id: "demo-jb-loan", title: "씨드모아 파킹통장 프로모션", created_at: "2026-06-07T11:15:00Z",
     step_status: { brainstorming: "done", design: "active" } },
 ];
 
