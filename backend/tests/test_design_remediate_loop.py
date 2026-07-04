@@ -1,0 +1,95 @@
+"""폐루프 D2 — _remediate_copy가 recommendations.json을 실소비(힌트·고지 언어·출처증빙)."""
+import json
+
+from app.gateway.harness import HarnessRequest
+from app.gateway.harness_design import _REMEDIATED_DISCLOSURE, DesignHarness
+from app.gateway.state import save_state
+from app.providers.base import ProviderResponse
+from app.providers.fake import FakeProvider
+from app.vfs.factory import make_local_store
+
+_COPY = ProviderResponse(text=json.dumps(
+    {"copy": {"ko": {"headline": "안전한 카피"}}}, ensure_ascii=False), model="x")
+
+_RECS = [
+    {"rec_id": "rec_aaaa1111", "asset_id": "design/final/vi/main.scene", "lang": "vi",
+     "target": "text", "instruction": "[missing_disclosure] 예금자보호 고지 누락 — 카피를 교정하세요.",
+     "priority": 1, "related_verdict_ids": ["v1"]},
+    {"rec_id": "rec_bbbb2222", "asset_id": "design/final/ko/main.scene", "lang": "ko",
+     "target": "text", "instruction": "[표시광고법] '업계 최고' 과장 표현 제거",
+     "priority": 2, "related_verdict_ids": ["v2"]},
+]
+
+_KO_DISC = "가입 전 상품설명서 확인"
+
+
+def _setup(tmp_path, recs):
+    s = make_local_store(tmp_path)
+    s.create_run("r1", languages=["ko", "vi"])
+    s.put("/r1/brainstorming/plan.md",
+          "---\nlanguages: [ko, vi]\nfactsheet:\n  rate: 3.5\n---\n# P",
+          source="marker", mime="text/markdown")
+    spec = {"slots": [], "aspect": "1:1",
+            "copy": {"ko": {"headline": "쉽게", "disclosure": _KO_DISC},
+                     "vi": {"headline": "de"}}}
+    s.put("/r1/design/rough/layout.spec.json", json.dumps(spec, ensure_ascii=False),
+          source="marker", mime="application/json")
+    save_state(s, "r1", "design", {"step": "done", "gate": None, "confirmed": {},
+                                   "bypass": {}, "languages": ["ko", "vi"]})
+    if recs is not None:
+        s.put("/r1/review/revise/recommendations.json",
+              json.dumps(recs, ensure_ascii=False),
+              source="marker", mime="application/json")
+    return s
+
+
+def _req(action=None, prompt=""):
+    return HarnessRequest(run_id="r1", studio="design", user_prompt=prompt,
+                          provider="anthropic", is_marker=True, action=action)
+
+
+def _spec(store):
+    return json.loads(store.get("/r1/design/rough/layout.spec.json").content_text)
+
+
+def test_remediate_action_consumes_recs(tmp_path, make_scripted):
+    store = _setup(tmp_path, _RECS)
+    sp = make_scripted(complete_responses=[_COPY])
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="remediate"), provider=sp, store=store)
+    # (1) 힌트에 실제 지적이 priority순으로 주입됨 — S2b user 메시지로 전달
+    user_msg = sp.calls_complete[0]["messages"][0].content
+    assert "rec_aaaa1111" in user_msg and "예금자보호 고지 누락" in user_msg
+    assert "업계 최고" in user_msg          # 2순위 지적도 포함
+    # (2) 고지 주입 언어가 리뷰 지목 언어(vi)로 좁혀짐 — ko는 기존 고지 보존
+    spec = _spec(store)
+    assert spec["copy"]["vi"]["disclosure"] == _REMEDIATED_DISCLOSURE["vi"]
+    assert spec["copy"]["ko"]["disclosure"] == _KO_DISC
+    # (3) 출처증빙 — meta.applied_recs + 응답 텍스트
+    applied = res.meta["applied_recs"]
+    assert [a["rec_id"] for a in applied] == ["rec_aaaa1111", "rec_bbbb2222"]
+    assert res.meta["remediated"] is True
+    assert "rec_aaaa1111" in res.text and "2건" in res.text
+
+
+def test_remediate_without_recs_falls_back(tmp_path, make_scripted):
+    """recs 부재 → 현행 동작 보존(고정 힌트·전 언어 고지·기존 문구·applied_recs 없음)."""
+    store = _setup(tmp_path, None)
+    sp = make_scripted(complete_responses=[_COPY])
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(prompt="리뷰 지적 반영해 수정해줘"), provider=sp, store=store)
+    assert "[리뷰 지적을 반영해 카피를 교정하세요]" in sp.calls_complete[0]["messages"][0].content
+    spec = _spec(store)
+    for lang, disc in _REMEDIATED_DISCLOSURE.items():
+        assert spec["copy"].get(lang, {}).get("disclosure") == disc   # 전 언어 폴백
+    assert res.meta["remediated"] is True and "applied_recs" not in res.meta
+
+
+def test_remediate_action_guard_when_not_done(tmp_path, make_scripted):
+    store = _setup(tmp_path, _RECS)
+    save_state(store, "r1", "design", {"step": "S1", "gate": None, "confirmed": {},
+                                       "bypass": {}, "languages": ["ko", "vi"]})
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="remediate"), provider=make_scripted(), store=store)
+    assert res.meta.get("remediated") is not True
+    assert "확정" in res.text                 # 안내 no-op

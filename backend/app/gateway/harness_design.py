@@ -66,6 +66,18 @@ _REMEDIATED_DISCLOSURE = {
 }
 
 
+def _load_review_recs(store, run_id: str) -> list[dict]:
+    """R3 기계용 계약(revise/recommendations.json) 로드 — 부재/파싱실패는 [] (현행 폴백)."""
+    node = store.get(f"/{run_id}/review/revise/recommendations.json")
+    if node is None or not node.content_text:
+        return []
+    try:
+        recs = json.loads(node.content_text)
+        return recs if isinstance(recs, list) else []
+    except Exception:
+        return []
+
+
 class DesignHarness(Harness):
     # 호환 별칭 — 단일 출처는 design/ 패키지(테스트 표면: DesignHarness.RUBRIC 등).
     RUBRIC = _SCORING_RUBRIC
@@ -105,6 +117,14 @@ class DesignHarness(Harness):
 
     def handle_turn(self, req: HarnessRequest, *, provider, store) -> HarnessResult:
         state = self._load_state(store, req.run_id)
+        # 폐루프 D2 명시 트리거: Review 게이트 버튼 → action="remediate" (done 전용 no-op 가드).
+        if req.action == "remediate":
+            if state.get("step") == DONE:
+                return self._remediate_copy(req, provider, store, state)
+            return HarnessResult(
+                text="디자인 확정(done) 후에 리뷰 교정을 적용할 수 있어요.",
+                output_path=f"{self._base(req.run_id)}/rough/layout.spec.json",
+                meta={"source": "marker", "step": state.get("step", "S0")})
         # 리뷰 후 done 복귀 디자인 챗의 자유 교정 지시(action 없음 + 교정 토큰) → S2b 카피 재교정.
         if (state.get("step") == DONE and not req.action and req.user_prompt
                 and any(t in req.user_prompt for t in _REMEDIATE_TOKENS)):
@@ -123,7 +143,16 @@ class DesignHarness(Harness):
         step은 done 유지 — 프론트가 meta.remediated 신호로 main.scene만 재조립한다.
         """
         base = self._base(req.run_id)
-        hinted = (req.user_prompt or "") + "\n[리뷰 지적을 반영해 카피를 교정하세요]"
+        recs = _load_review_recs(store, req.run_id)
+        if recs:
+            ordered = sorted(recs, key=lambda r: r.get("priority", 99))
+            lines = [f"- ({r.get('rec_id', '')}) [{r.get('lang') or '전체'}] "
+                     f"{str(r.get('instruction', ''))[:200]}" for r in ordered[:6]]
+            hinted = ((req.user_prompt or "") +
+                      "\n[리뷰 권장수정을 반영해 카피를 교정하세요]\n" + "\n".join(lines))
+        else:
+            ordered = []
+            hinted = (req.user_prompt or "") + "\n[리뷰 지적을 반영해 카피를 교정하세요]"
         ctx = StepContext(req=replace(req, user_prompt=hinted), provider=provider,
                           store=store, state=state, base=base)
         res = S2bCopy().run(ctx)   # layout.spec.json copy 정제 병합 + 컴포넌트 txt 갱신
@@ -132,9 +161,15 @@ class DesignHarness(Harness):
         # 반영 → R2 scene_copy에 고지 보존 → 재검토 PASS.
         spec = read_json_node(store, f"{base}/rough/layout.spec.json")
         spec.setdefault("copy", {})
-        for lang, disc in _REMEDIATED_DISCLOSURE.items():
+        # 고지 주입 언어: 리뷰가 지목한 언어(disclosure/고지 지적 + 테이블 보유 언어)로 좁힌다.
+        # 지목이 없으면 전 언어(현행 폴백 — recs 부재·비고지 지적만 있는 경우 안전 기본).
+        disc_langs = {r.get("lang") for r in ordered
+                      if r.get("lang") in _REMEDIATED_DISCLOSURE
+                      and ("disclosure" in str(r.get("instruction", "")).lower()
+                           or "고지" in str(r.get("instruction", "")))}
+        for lang in (disc_langs or set(_REMEDIATED_DISCLOSURE)):
             spec["copy"].setdefault(lang, {})
-            spec["copy"][lang]["disclosure"] = disc
+            spec["copy"][lang]["disclosure"] = _REMEDIATED_DISCLOSURE[lang]
         store.put(f"{base}/rough/layout.spec.json",
                   json.dumps(spec, ensure_ascii=False), source="marker",
                   mime="application/json")
@@ -159,17 +194,26 @@ class DesignHarness(Harness):
             except Exception:
                 pass
         self._save_state(store, req.run_id, state)   # step=done 유지
-        text = ("리뷰에서 지적된 예금자보호 고지 누락(베트남어·중국어)과 과장광고 표현을 반영해 "
-                "카피를 교정하고 4개 언어에 예금자보호 고지를 보강했습니다. 캔버스를 갱신했어요 — "
-                "검토(review)를 다시 실행하면 통과합니다.")
+        if ordered:
+            applied = [{"rec_id": r.get("rec_id", ""), "lang": r.get("lang"),
+                        "instruction": str(r.get("instruction", ""))[:120]} for r in ordered]
+            summary = " · ".join(f"{a['rec_id']}({a['lang'] or '전체'})" for a in applied[:4])
+            text = (f"리뷰 권장수정 {len(applied)}건을 반영해 카피·고지를 교정했습니다: {summary}. "
+                    "캔버스를 갱신했어요 — 검토(review)를 다시 실행하면 반영 여부를 재검증합니다.")
+            meta = {"source": "marker", "step": DONE, "remediated": True,
+                    "applied_recs": applied}
+        else:
+            text = ("리뷰에서 지적된 예금자보호 고지 누락(베트남어·중국어)과 과장광고 표현을 반영해 "
+                    "카피를 교정하고 4개 언어에 예금자보호 고지를 보강했습니다. 캔버스를 갱신했어요 — "
+                    "검토(review)를 다시 실행하면 통과합니다.")
+            meta = {"source": "marker", "step": DONE, "remediated": True}
         events = list(res.events) + [
             {"type": "artifact", "path": f"{base}/rough/layout.spec.json"},
             {"type": "artifact",
              "path": f"{base}/design-system/components/visual/v1.png"}]
         return HarnessResult(text=text,
                              output_path=f"{base}/rough/layout.spec.json",
-                             meta={"source": "marker", "step": DONE,
-                                   "remediated": True},
+                             meta=meta,
                              events=events)
 
     def _parse_json(self, text: str) -> dict:
