@@ -423,13 +423,17 @@ def _upload_audit_findings(prompt: str) -> str | None:
         return None
     first = prompt.splitlines()[0]
     fname = first.split("file=", 1)[1].strip().lower() if "file=" in first else ""
-    if any(t in fname for t in _UPLOAD_AUDIT_TRIGGERS):
+    is_fixture = fname in F.UPLOAD_HIGHLIGHT_BBOX   # 지정 데모 소재(상단 F=demo_fixtures)
+    if any(t in fname for t in _UPLOAD_AUDIT_TRIGGERS) or is_fixture:
+        location = {"slot": "uploaded", "lang": None}
+        if is_fixture:  # 지정 데모 소재 → 구절-tight bbox(하이라이트)
+            location["bbox"] = dict(F.UPLOAD_HIGHLIGHT_BBOX[fname])
         return json.dumps({"findings": [{
-            "location": {"slot": "uploaded", "lang": None},
+            "location": location,
             "clause": "표시·광고의 공정화에 관한 법률 §3(부당한 표시·광고 금지)",
             "official_source_url": "https://www.law.go.kr/법령/표시·광고의공정화에관한법률",
             "severity": "critical",
-            "evidence": "업로드 소재에서 과장·논란 신호 감지(데모 결정론 룰)",
+            "evidence": "원금·수익 보장 단정 표현 감지 — '원금 100% 보장'은 오인 유발(데모 결정론 룰)",
         }]}, ensure_ascii=False)
     return _empty_findings()
 
