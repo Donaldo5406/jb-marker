@@ -61,3 +61,48 @@ def reviewed_image_for(asset_id: str, lang: str | None) -> str:
     if a.endswith(".png") or a.endswith(".jpg") or a.endswith(".jpeg"):
         return a
     return _BAKED_VISUAL
+
+
+# --- HTML 조립기 -----------------------------------------------------------
+# 포스터(base64 인라인) + rect 오버레이(정규화 0~1 → % 절대배치)를 self-contained
+# HTML 문서로 조립한다. 외부 http/https 요청 없음(PreviewFrame과 동일 관례).
+
+_STYLE = """
+html,body{margin:0;height:100%;background:#0b0f14}
+.stage{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:8px;box-sizing:border-box}
+.frame{position:relative;display:inline-block;line-height:0}
+.frame img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;border-radius:8px}
+.hl{position:absolute;box-sizing:border-box;border-radius:6px;animation:sweep .7s ease-out both}
+.hl.crit{background:rgba(255,64,64,.30);box-shadow:inset 0 0 0 2px rgba(255,64,64,.9),0 0 14px 2px rgba(255,64,64,.4)}
+.hl.warn{background:rgba(255,214,64,.42);box-shadow:inset 0 0 0 2px rgba(240,180,0,.95)}
+.pin{position:absolute;top:-11px;left:-11px;width:22px;height:22px;border-radius:50%;color:#fff;font:700 12px/22px sans-serif;text-align:center;box-shadow:0 2px 5px rgba(0,0,0,.35)}
+.hl.crit>.pin{background:#e0322f}.hl.warn>.pin{background:#c98a00}
+@keyframes sweep{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@media(prefers-reduced-motion:reduce){.hl{animation:none}}
+"""
+
+
+def _pct(v: float) -> str:
+    """정규화 값 → 퍼센트 문자열(불필요한 0 제거)."""
+    s = f"{clamp01(v) * 100:.4f}".rstrip("0").rstrip(".")
+    return s or "0"
+
+
+def _rect_div(r: dict) -> str:
+    cls = "crit" if r.get("severity") == "critical" else "warn"
+    style = (f"left:{_pct(r['x'])}%;top:{_pct(r['y'])}%;"
+             f"width:{_pct(r['w'])}%;height:{_pct(r['h'])}%")
+    pin = _html.escape(str(r.get("pin", "")))
+    return f'<div class="hl {cls}" style="{style}"><span class="pin">{pin}</span></div>'
+
+
+def build_highlight_html(image_bytes: bytes, mime: str, rects: list[dict]) -> str:
+    """포스터 base64 인라인 + rect 오버레이 self-contained HTML."""
+    b64 = base64.b64encode(image_bytes or b"").decode("ascii")
+    overlays = "".join(_rect_div(r) for r in (rects or []))
+    return (
+        "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
+        f"<style>{_STYLE}</style></head><body><div class='stage'><div class='frame'>"
+        f"<img alt='review' src='data:{_html.escape(mime or 'image/png')};base64,{b64}'>"
+        f"{overlays}</div></div></body></html>"
+    )

@@ -34,3 +34,32 @@ def test_reviewed_image_for_png_passthrough():
 
 def test_clamp01():
     assert clamp01(-0.2) == 0.0 and clamp01(1.4) == 1.0 and clamp01(0.5) == 0.5
+
+
+from app.gateway.review_highlight import build_highlight_html
+
+def _rects():
+    return [
+        {"x": 0.074, "y": 0.118, "w": 0.5, "h": 0.15, "severity": "critical", "pin": 1},
+        {"x": 0.074, "y": 0.945, "w": 0.85, "h": 0.043, "severity": "warning", "pin": 2, "label": "고지"},
+    ]
+
+def test_build_html_is_self_contained_data_uri():
+    out = build_highlight_html(b"\x89PNG\r\n", "image/png", _rects())
+    assert out.startswith("<!doctype html>")
+    assert "data:image/png;base64," in out
+    # 외부 리소스 금지(네트워크 요청 0)
+    assert "http://" not in out and "https://" not in out
+
+def test_build_html_places_each_rect_percent():
+    out = build_highlight_html(b"x", "image/png", _rects())
+    assert "left:7.4%" in out and "top:11.8%" in out and "width:50%" in out
+    assert "class=\"hl crit\"" in out and "class=\"hl warn\"" in out
+
+def test_build_html_renders_pins():
+    out = build_highlight_html(b"x", "image/png", _rects())
+    assert ">1<" in out and ">2<" in out
+
+def test_build_html_empty_rects_shows_image_only():
+    out = build_highlight_html(b"x", "image/png", [])
+    assert "class=\"hl" not in out and "data:image/png;base64," in out
