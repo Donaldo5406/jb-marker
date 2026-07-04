@@ -21,10 +21,16 @@ const mockCtx: any = {
 vi.mock("../CockpitProvider", () => ({
   useCockpit: () => mockCtx,
 }));
-vi.mock("@/lib/reviewArtifacts", () => ({
-  loadReviewVerdicts: vi.fn(async () => []),
-  loadReviewReport: vi.fn(async () => null),
-}));
+// highlightImages/numberedForImage(Task 5, 순수함수)는 실제 구현을 유지하고
+// 비동기 로더만 mock — 그래야 ReviewStudio의 파생값 계산(hlImages 등)이 깨지지 않는다.
+vi.mock("@/lib/reviewArtifacts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reviewArtifacts")>();
+  return {
+    ...actual,
+    loadReviewVerdicts: vi.fn(async () => []),
+    loadReviewReport: vi.fn(async () => null),
+  };
+});
 
 describe("ReviewStudio (M5 §8.1 · 2-col evidence)", () => {
   beforeEach(() => {
