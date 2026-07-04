@@ -46,3 +46,41 @@ def test_render_partial_pack_renders_available_sections():
 def test_render_none_or_empty_returns_none():
     assert render_brand_block(None) is None
     assert render_brand_block({}) is None
+
+
+def test_s1_system_prompt_includes_brand_block(tmp_path):
+    """S1Rough가 브랜드 블록을 레퍼런스 말미에 포함해 조립하는지 — 기존 순서(D6) 불변."""
+    import json
+    from app.gateway.design.steps import S1Rough
+    from app.gateway.harness import HarnessRequest
+    from app.gateway.pipeline import StepContext
+    from app.providers.fake import FakeProvider
+    from app.vfs.local import LocalVfsStore
+
+    class _CapturingProvider(FakeProvider):
+        def __init__(self):
+            self.systems = []
+
+        def complete(self, messages, *, model=None, system=None, tools=None, **kw):
+            self.systems.append(system or "")
+            return super().complete(messages, model=model, system=system,
+                                    tools=tools, **kw)
+
+    store = LocalVfsStore(storage_dir=str(tmp_path))
+    store.create_run("r1", languages=["ko"])
+    store.put("/r1/design/design-system/tokens.json",
+              json.dumps({"palette": []}), source="marker", mime="application/json")
+    provider = _CapturingProvider()
+    req = HarnessRequest(run_id="r1", studio="design", user_prompt="",
+                         provider="fake", is_marker=True, action="advance")
+    ctx = StepContext(req=req, provider=provider, store=store,
+                      state={"step": "S1", "gate": None, "confirmed": {},
+                             "bypass": {}, "languages": ["ko"]},
+                      base="/r1/design")
+    S1Rough().run(ctx)
+    sys_prompt = provider.systems[0]
+    assert "[brand_context" in sys_prompt
+    assert "우선" in sys_prompt                       # 사용자 우선 문구 도달 확인
+    # 기존 조립 순서 불변: tokens → references → brand_context
+    assert sys_prompt.index("[tokens]") < sys_prompt.index("[references]") \
+        < sys_prompt.index("[brand_context")
