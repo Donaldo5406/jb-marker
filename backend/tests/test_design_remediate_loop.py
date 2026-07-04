@@ -93,3 +93,56 @@ def test_remediate_action_guard_when_not_done(tmp_path, make_scripted):
     res = h.handle_turn(_req(action="remediate"), provider=make_scripted(), store=store)
     assert res.meta.get("remediated") is not True
     assert "확정" in res.text                 # 안내 no-op
+
+
+def test_remediate_action_accepted_over_http(monkeypatch):
+    """게이트웨이 Literal에 remediate 개통 — 422가 아니어야 한다(비-done이면 안내 no-op 200)."""
+    monkeypatch.setenv("VFS_BACKEND", "local")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    from fastapi.testclient import TestClient
+    from app.server import create_app
+    client = TestClient(create_app())
+    rid = client.post("/runs", json={}).json()["run_id"]
+    r = client.post("/gateway/run", json={
+        "run_id": rid, "studio": "design", "prompt": "",
+        "provider": "anthropic", "is_marker": True, "mock": True,
+        "action": "remediate"})
+    assert r.status_code == 200
+    assert "확정" in r.json()["text"]          # done 아님 → 안내 no-op
+
+
+_MALFORMED_RECS = [
+    "not-a-dict-entry",
+    {"rec_id": "rec_cccc3333", "asset_id": "design/final/ko/main.scene", "lang": "ko",
+     "target": "text", "instruction": "우선순위가 문자열로 오염됨", "priority": "high",
+     "related_verdict_ids": ["v3"]},
+    {"rec_id": "rec_dddd4444", "asset_id": "design/final/vi/main.scene", "lang": "vi",
+     "target": "text", "instruction": "[missing_disclosure] 예금자보호 고지 누락",
+     "priority": 1, "related_verdict_ids": ["v4"]},
+]
+
+
+def test_remediate_malformed_recs_no_crash(tmp_path, make_scripted):
+    """recs에 비-dict 원소·비-숫자 priority가 섞여도 크래시 없이 dict 항목만 반영."""
+    store = _setup(tmp_path, _MALFORMED_RECS)
+    sp = make_scripted(complete_responses=[_COPY])
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="remediate"), provider=sp, store=store)
+    applied = res.meta["applied_recs"]
+    # 문자열 원소는 걸러지고(dict만), priority="high"는 99로 폴백해 priority=1보다 뒤로 정렬됨.
+    assert [a["rec_id"] for a in applied] == ["rec_dddd4444", "rec_cccc3333"]
+    assert res.meta["remediated"] is True
+
+
+def test_remediate_applied_recs_capped_at_six(tmp_path, make_scripted):
+    """recs 8건 시드 → applied_recs는 힌트에 실제 주입된 상위 6건과 동일해야 한다."""
+    recs8 = [{"rec_id": f"rec_{i:04d}", "lang": "ko", "instruction": f"지적 {i}",
+              "priority": i} for i in range(1, 9)]
+    store = _setup(tmp_path, recs8)
+    sp = make_scripted(complete_responses=[_COPY])
+    h = DesignHarness(image_provider=FakeProvider())
+    res = h.handle_turn(_req(action="remediate"), provider=sp, store=store)
+    applied = res.meta["applied_recs"]
+    assert len(applied) == 6
+    assert [a["rec_id"] for a in applied] == [f"rec_{i:04d}" for i in range(1, 7)]
+    assert "8건 중" in res.text

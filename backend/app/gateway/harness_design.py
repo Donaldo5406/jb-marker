@@ -67,15 +67,25 @@ _REMEDIATED_DISCLOSURE = {
 
 
 def _load_review_recs(store, run_id: str) -> list[dict]:
-    """R3 기계용 계약(revise/recommendations.json) 로드 — 부재/파싱실패는 [] (현행 폴백)."""
+    """R3 기계용 계약(revise/recommendations.json) 로드 — 부재/파싱실패는 [] (현행 폴백).
+
+    list 원소 중 dict가 아닌 항목(오염된 파일·수동 편집 등)은 조용히 걸러낸다 —
+    이후 .get() 호출이 AttributeError로 크래시하는 것을 방지(L2 리뷰 반영).
+    """
     node = store.get(f"/{run_id}/review/revise/recommendations.json")
     if node is None or not node.content_text:
         return []
     try:
         recs = json.loads(node.content_text)
-        return recs if isinstance(recs, list) else []
+        return [r for r in recs if isinstance(r, dict)] if isinstance(recs, list) else []
     except Exception:
         return []
+
+
+def _rec_priority(r: dict) -> int | float:
+    """priority 정렬 키 — 비-숫자(예: 문자열) priority가 섞여도 크래시하지 않게 99로 폴백."""
+    p = r.get("priority", 99)
+    return p if isinstance(p, (int, float)) else 99
 
 
 class DesignHarness(Harness):
@@ -145,13 +155,17 @@ class DesignHarness(Harness):
         base = self._base(req.run_id)
         recs = _load_review_recs(store, req.run_id)
         if recs:
-            ordered = sorted(recs, key=lambda r: r.get("priority", 99))
+            ordered = sorted(recs, key=_rec_priority)
+            # 힌트에 실제 주입되는 상위 6건 — applied_recs(출처증빙)도 이 슬라이스를 공유해
+            # "반영했다"고 보고하는 것과 실제 프롬프트에 들어간 것을 일치시킨다(L2 리뷰 반영).
+            top = ordered[:6]
             lines = [f"- ({r.get('rec_id', '')}) [{r.get('lang') or '전체'}] "
-                     f"{str(r.get('instruction', ''))[:200]}" for r in ordered[:6]]
+                     f"{str(r.get('instruction', ''))[:200]}" for r in top]
             hinted = ((req.user_prompt or "") +
                       "\n[리뷰 권장수정을 반영해 카피를 교정하세요]\n" + "\n".join(lines))
         else:
             ordered = []
+            top = []
             hinted = (req.user_prompt or "") + "\n[리뷰 지적을 반영해 카피를 교정하세요]"
         ctx = StepContext(req=replace(req, user_prompt=hinted), provider=provider,
                           store=store, state=state, base=base)
@@ -195,10 +209,17 @@ class DesignHarness(Harness):
                 pass
         self._save_state(store, req.run_id, state)   # step=done 유지
         if ordered:
+            # applied는 힌트에 실제 주입된 top(ordered[:6])과 동일한 항목만 보고한다 —
+            # 전체 ordered를 보고하면 6건 초과 시 "반영했다"는 항목이 실제 프롬프트에
+            # 들어가지 않은 것까지 포함해 부정확했다(L2 리뷰 반영).
             applied = [{"rec_id": r.get("rec_id", ""), "lang": r.get("lang"),
-                        "instruction": str(r.get("instruction", ""))[:120]} for r in ordered]
+                        "instruction": str(r.get("instruction", ""))[:120]} for r in top]
             summary = " · ".join(f"{a['rec_id']}({a['lang'] or '전체'})" for a in applied[:4])
-            text = (f"리뷰 권장수정 {len(applied)}건을 반영해 카피·고지를 교정했습니다: {summary}. "
+            if len(ordered) > len(top):
+                count_desc = f"{len(ordered)}건 중 상위 {len(top)}건을 우선"
+            else:
+                count_desc = f"{len(applied)}건을"
+            text = (f"리뷰 권장수정 {count_desc} 반영해 카피·고지를 교정했습니다: {summary}. "
                     "캔버스를 갱신했어요 — 검토(review)를 다시 실행하면 반영 여부를 재검증합니다.")
             meta = {"source": "marker", "step": DONE, "remediated": True,
                     "applied_recs": applied}
