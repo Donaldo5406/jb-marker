@@ -4,11 +4,12 @@ import * as React from "react";
 
 import { api } from "@/lib/api";
 
-export type HighlightFrameProps = { runId: string; image: string };
+export type HighlightFrameProps = { runId: string; image: string; className?: string };
 
 /** 리뷰 포스터 하이라이트 프레임 — 백엔드 self-contained HTML을 iframe srcdoc에 주입.
- *  srcdoc은 JWT 미탑재라 이미지가 base64 인라인(PreviewFrame과 동일 제약). CSS-only 애니메이션. */
-export function HighlightFrame({ runId, image }: HighlightFrameProps) {
+ *  srcdoc은 JWT 미탑재라 이미지가 base64 인라인(PreviewFrame과 동일 제약). CSS-only 애니메이션.
+ *  className: 높이 오버라이드(기본 h-[30rem]) — 좌열 전체를 쓰는 시각근거 레이아웃(GAP7). */
+export function HighlightFrame({ runId, image, className }: HighlightFrameProps) {
   const [html, setHtml] = React.useState<string | null>(null);
   const [error, setError] = React.useState(false);
 
@@ -46,7 +47,7 @@ export function HighlightFrame({ runId, image }: HighlightFrameProps) {
       title="review-highlight"
       srcDoc={html}
       sandbox="allow-same-origin"
-      className="h-[30rem] w-full rounded-xl border border-outline-variant bg-[#0b0f14]"
+      className={`${className ?? "h-[30rem]"} w-full rounded-xl border border-outline-variant bg-[#0b0f14]`}
     />
   );
 }

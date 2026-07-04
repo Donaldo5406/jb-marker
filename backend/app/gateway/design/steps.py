@@ -96,8 +96,12 @@ def _write_preview(ctx, spec, visual_png: bytes | None = None) -> None:
         plan = ctx.store.get(f"/{ctx.req.run_id}/brainstorming/plan.md")
         facts = _facts_from_factsheet(
             _frontmatter(plan.content_text if plan else "").get("factsheet") or {})
+        # 브랜드 단계(S2c) 후에는 로고 자산이 존재 — 프리뷰 logo 슬롯에 실제 로고를
+        # 인라인한다(2026-07-05 GAP4: '브랜드를 지났는데 로고가 안 박혀 보임').
+        logo = ctx.store.get(f"{base}/design-system/components/logo/v1.png")
         html = build_layout_mock_html(
-            spec if isinstance(spec, dict) else {}, tokens, facts, visual_png)
+            spec if isinstance(spec, dict) else {}, tokens, facts, visual_png,
+            logo_png=logo.blob if logo and getattr(logo, "blob", None) else None)
         ctx.store.put(f"{base}/rough/preview.html", html,
                       source="marker", mime="text/html")
     except Exception:
@@ -758,6 +762,11 @@ class S2cBrand(PipelineStep):
         ctx.store.put(f"{base}/rough/layout.spec.json",
                       json.dumps(spec, ensure_ascii=False), source="marker",
                       mime="application/json")
+        # 로고·고지 배치 직후 프리뷰 갱신 — 안 하면 비주얼 단계의 프리뷰가 남아
+        # '브랜드를 지났는데 로고가 안 박힘'으로 보인다(2026-07-05 GAP4 실측).
+        _vnode = ctx.store.get(f"{base}/design-system/components/visual/v1.png")
+        _write_preview(ctx, spec,
+                       _vnode.blob if _vnode and getattr(_vnode, "blob", None) else None)
         return HarnessResult(text="브랜드·고지 요소를 배치했습니다.",
             output_path=f"{base}/design-system/components/disclosure",
             meta={"source": "marker", "step": self.name},

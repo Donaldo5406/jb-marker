@@ -92,6 +92,7 @@ export type CockpitContextValue = {
   // ---- review state (M5 spec §8.3) ----
   reviewStage: ReviewStage | null;          // R0..done 진행 — gateway response.meta.step에서 복원
   reviewGate: ReviewGate | null;            // 통합 reconciler 산정 결과(critical/warning 수)
+  reviewGateStale: boolean;                 // 리뷰 후 디자인이 바뀜 — 판정이 현행 아님(재검토 필요)
   reviewAcknowledged: boolean;              // WARN ack 클릭 시 true — deploy 게이트 해제 조건
   // ---- deploy state (M6 T19) ----
   deployState: DeployStateLike | null;
@@ -214,6 +215,9 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   // M5: 검토 진행 단계·게이트·ack 플래그(메모리 상). 새 run 마다 R0/null/false로 리셋.
   const [reviewStage, setReviewStage] = useState<ReviewStage | null>(null);
   const [reviewGate, setReviewGate] = useState<ReviewGate | null>(null);
+  // 리뷰 판정 후 디자인 산출물이 바뀌면(교정·재생성) 판정은 더 이상 현행이 아니다 —
+  // BLOCKED 배지가 그대로 남아 '새 포스터인데 왜 차단?'을 만들던 GAP8(2026-07-05).
+  const [reviewGateStale, setReviewGateStale] = useState(false);
   const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
   // M6 T19: deploy state — runId 전환 시 리셋(openRun/startRun).
   const [deployState, setDeployState] = useState<DeployStateLike | null>(null);
@@ -523,7 +527,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         applyGate(res.gate);
         // 디자인 챗 턴(게이트 내 카피 교정 등)은 preview.html을 재생성할 수 있다 —
         // 시안 프리뷰 재fetch nonce. design 한정: 타 스튜디오 챗의 불필요 재fetch 방지.
-        if (activeStudio === "design") setDesignRev((v) => v + 1);
+        if (activeStudio === "design") {
+          setDesignRev((v) => v + 1);
+          setReviewGateStale(true);   // 디자인 변경 → 기존 심의 판정은 현행 아님(GAP8)
+        }
         // 디자인 챗 교정(remediated): 백엔드가 layout.spec copy를 정제 갱신 → main.scene 재조립
         // (리뷰 지적 반영 → 재검토 통과). design 스튜디오 done 상태에서만 발생.
         if (activeStudio === "design" && (res.meta as { remediated?: boolean } | undefined)?.remediated) {
@@ -598,6 +605,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     // 이 턴에서 백엔드가 preview.html을 재생성했을 수 있다(게이트 내 regenerate 포함 —
     // 이때 meta.step·gate는 불변) → nonce 증가로 시안 프리뷰 재fetch를 강제.
     setDesignRev((v) => v + 1);
+    setReviewGateStale(true);   // 디자인 파이프라인 턴 → 기존 심의 판정은 현행 아님(GAP8)
     // S3→done: 백엔드 layout.spec 완성 → plan 전체 언어 scene 일괄 조립(R2 4언어 비교) +
     // 현재 언어 자동 open(C1). 언어는 design/_state.json(=plan frontmatter languages)이 정본.
     if (st === "done") {
@@ -753,6 +761,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     }
     // 4) 게이트·manifest 반영 — 마지막 status 봉투를 단일 적용점(applyGate)으로.
     if (gate) applyGate(gate);
+    setReviewGateStale(false);   // 방금 완주한 판정 = 현행(GAP8 stale 해제)
     await loadManifest(id);
     return { text: lastText };
   }, [refreshTree, loadManifest, applyGate]);
@@ -779,6 +788,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     });
     setReviewStage("R0");
     setReviewGate(null);
+    setReviewGateStale(false);
     setReviewAcknowledged(false);
     await Promise.all([refreshTree(), loadManifest(id)]);
   }, [refreshTree, loadManifest]);
@@ -1115,6 +1125,7 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
     regenConfirm,
     reviewStage,
     reviewGate,
+    reviewGateStale,
     reviewAcknowledged,
     deployState,
     eligibility,

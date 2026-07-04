@@ -81,9 +81,9 @@ export function ReviewStudio() {
   // 위반·경고 0으로 종료 = 깔끔한 통과. 보고서 빈 섹션 대신 '없음' 카드를 보여준다.
   const clean = stage === "done" && !!c.reviewGate && c.reviewGate.critical === 0 && c.reviewGate.warning === 0;
 
-  // 배치 C: 좌열 상단 sticky 하이라이트 포스터(bbox 있는 첫 이미지) + 카드/시각 뷰 토글.
-  // bbox verdict가 없으면 hlImages가 비어 패널이 렌더되지 않는다(현행 카드 전용 레이아웃으로 축퇴).
-  const [view, setView] = React.useState<"visual" | "cards">("visual");
+  // 배치 D(2026-07-05 GAP7): 좌열 = 시각 근거 전용(대형 하이라이트 포스터), 우열 = 판정
+  // 패널 + 위반 카드 스크롤. 이전 배치 C(좌열 sticky 포스터 위로 카드가 스크롤)는 카드와
+  // 이미지가 겹쳐 보였고 프레임(30rem 고정)이 포스터를 다 담지 못했다.
   const hlImages = highlightImages(verdicts);
   const primaryImage = hlImages[0] ?? null;
   const pins = primaryImage ? numberedForImage(verdicts, primaryImage) : new Map<string, number>();
@@ -94,9 +94,9 @@ export function ReviewStudio() {
         <StepProgress steps={STEPS} currentId={stage} />
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1.7fr_1fr] gap-4 overflow-auto p-6">
-        {/* 좌: 근거 본문 */}
-        <div className="space-y-4">
+      <div className="grid min-h-0 flex-1 grid-cols-[1.6fr_1fr] gap-4 overflow-hidden p-6">
+        {/* 좌: 시각 근거(대형) — 카드와 분리된 자체 열이라 겹침 없음 */}
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
           {busy && (
             <div
               className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
@@ -123,20 +123,34 @@ export function ReviewStudio() {
               <p className="text-body-sm font-medium text-severity-ok-fg">검토 완료 — 위반·권장 사항이 없습니다</p>
               <p className="max-w-xs text-caption text-severity-ok-fg">모든 법률·동등성 항목을 통과했습니다. Deploy로 진행할 수 있습니다.</p>
             </div>
+          ) : c.runId && primaryImage ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <h3 className="mb-2 text-caption uppercase tracking-wide text-on-surface-variant">시각 근거</h3>
+              <HighlightFrame runId={c.runId} image={primaryImage} className="min-h-[28rem] flex-1" />
+            </div>
           ) : (
+            <ReconcilerSummary report={report} />
+          )}
+        </div>
+
+        {/* 우: 심의 판정 + 위반 카드(자체 스크롤) */}
+        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+          <VerdictPanel
+            status={status}
+            gate={c.reviewGate ? { critical: c.reviewGate.critical, warning: c.reviewGate.warning } : null}
+            actions={c.reviewGate?.actions ?? []}
+            acknowledged={c.reviewAcknowledged}
+            stage={stage}
+            busy={busy}
+            stale={c.reviewGateStale}
+            onRun={run}
+            onAck={ack}
+            onRestart={restart}
+            onBackToDesign={() => void c.remediateFromReview()}
+            onProceedDeploy={() => c.setStudio("deploy")}
+          />
+          {!empty && !clean && (
             <>
-              {c.runId && primaryImage && view === "visual" && (
-                <div className="sticky top-0 z-10 -mx-1 mb-2 bg-surface pb-2">
-                  <div className="mb-2 flex items-center justify-between">
-                    <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">시각 근거</h3>
-                    <button onClick={() => setView("cards")} className="text-caption text-primary underline">카드 뷰</button>
-                  </div>
-                  <HighlightFrame runId={c.runId} image={primaryImage} />
-                </div>
-              )}
-              {primaryImage && view === "cards" && (
-                <button onClick={() => setView("visual")} className="mb-1 self-start text-caption text-primary underline">← 시각 뷰</button>
-              )}
               {legal.length > 0 && (
                 <section className="space-y-2" aria-label="법률 검토">
                   <h3 className="text-caption uppercase tracking-wide text-on-surface-variant">법률 검토 (R1)</h3>
@@ -155,26 +169,9 @@ export function ReviewStudio() {
                   {controversy.map((v, i) => <ControversyCard key={v.verdict_id ?? i} v={v} />)}
                 </section>
               )}
-              <ReconcilerSummary report={report} />
+              {primaryImage && <ReconcilerSummary report={report} />}
             </>
           )}
-        </div>
-
-        {/* 우: 심의 판정 */}
-        <div>
-          <VerdictPanel
-            status={status}
-            gate={c.reviewGate ? { critical: c.reviewGate.critical, warning: c.reviewGate.warning } : null}
-            actions={c.reviewGate?.actions ?? []}
-            acknowledged={c.reviewAcknowledged}
-            stage={stage}
-            busy={busy}
-            onRun={run}
-            onAck={ack}
-            onRestart={restart}
-            onBackToDesign={() => void c.remediateFromReview()}
-            onProceedDeploy={() => c.setStudio("deploy")}
-          />
         </div>
       </div>
     </div>

@@ -175,3 +175,55 @@ def test_vector_chrome_keeps_text_slots_with_visual():
     spec["render_mode"] = "vector_chrome"
     out = build_layout_mock_html(spec, _tokens(), _facts(), visual_png=_png_bytes())
     assert "헤드라인" in out
+
+
+# --- 2026-07-05 GAP: 캘리그래피 헤드라인 스타일 + 로고 자산 인라인 ---
+
+def test_calligraphy_headline_renders_calli_class():
+    """slot.font_style=calligraphy → 헤드라인 텍스트에 calli 클래스(이탤릭·짙은 배경) 적용."""
+    spec = {"aspect": "4:5",
+            "slots": [{"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200},
+                       "copy_key": "headline", "font_px": 88, "color": "#FFD166",
+                       "font_style": "calligraphy"}],
+            "copy": {"ko": {"headline": "연 3.5% JB 정기예금"}}}
+    out = build_layout_mock_html(spec, {}, {})
+    assert ".txt.calli" in out          # CSS 규칙 존재
+    assert "txt calli" in out           # 헤드라인에 클래스 부여
+
+
+def test_plain_headline_has_no_calli_class():
+    spec = {"aspect": "4:5",
+            "slots": [{"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200},
+                       "copy_key": "headline", "font_px": 72, "color": "#0B1324"}],
+            "copy": {"ko": {"headline": "연 3.5% JB 정기예금"}}}
+    out = build_layout_mock_html(spec, {}, {})
+    assert "txt calli" not in out
+
+
+def test_logo_slot_renders_inline_logo_asset():
+    """logo_png 전달 시 로고 슬롯이 점선 빈 박스가 아니라 실제 로고 이미지를 그린다."""
+    spec = {"aspect": "4:5",
+            "slots": [{"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}}],
+            "copy": {}}
+    out = build_layout_mock_html(spec, {}, {}, logo_png=_png_bytes(160, 56))
+    assert out.count("data:image/") >= 1 and "class='logo-img'" in out
+
+
+def test_logo_slot_without_asset_keeps_zone_box():
+    """logo_png 없으면(브랜드 단계 전) 기존 존 박스 폴백 — 회귀 없음."""
+    spec = {"aspect": "4:5",
+            "slots": [{"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}}],
+            "copy": {}}
+    out = build_layout_mock_html(spec, {}, {})
+    assert "class='logo-img'" not in out
+
+
+def test_calligraphy_without_copy_has_no_backdrop_stripe():
+    """카피가 비어 있으면 calli 배경을 그리지 않는다 — rough 단계 '작대기' 방지."""
+    spec = {"aspect": "4:5",
+            "slots": [{"role": "headline", "bbox": {"x": 80, "y": 160, "w": 920, "h": 200},
+                       "copy_key": "headline", "font_px": 88, "color": "#FFD166",
+                       "font_style": "calligraphy"}],
+            "copy": {}}
+    out = build_layout_mock_html(spec, {}, {})
+    assert "txt calli" not in out

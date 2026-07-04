@@ -6,13 +6,22 @@ import { cn } from "@/lib/utils";
 import { useCockpit } from "./CockpitProvider";
 import { ModelSelector, MODELS, type ModelChoice } from "./ModelSelector";
 
+// 마지막 선택 모델 — 스튜디오 전환으로 ChatPane이 재마운트돼도 유지(모듈 수명).
+// 기본값 = Marker(Pro): 데모 본선 피드백(2026-07-05) — 매 뷰 전환마다 Claude로
+// 리셋되면 발표자가 재선택을 잊어 일반 어시스턴트로 빠지는 함정이 있었다.
+let lastModel: ModelChoice = MODELS[0];
+
 /** 우측 패널: 챗 메시지 목록 + 입력 도크.
  *  대화는 Provider(c.messages)가 소유·복원. 전송 → sendChat({prompt, provider, isMarker}).
  *  402/업셀은 Provider가 처리(null 반환 + upsell). Stage 배지는 c.brainStage로 표시. */
 export function ChatPane() {
   const c = useCockpit();
   const [input, setInput] = React.useState("");
-  const [model, setModel] = React.useState<ModelChoice>(MODELS[1]); // 기본 Claude(무료)
+  const [model, setModelState] = React.useState<ModelChoice>(lastModel);
+  const setModel = React.useCallback((m: ModelChoice) => {
+    lastModel = m;
+    setModelState(m);
+  }, []);
   const [loading, setLoading] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);

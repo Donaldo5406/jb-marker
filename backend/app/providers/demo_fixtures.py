@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import struct
 import zlib
@@ -162,6 +163,9 @@ LAYOUT_SPEC_V2["visual_concept"] = (
 for _s in LAYOUT_SPEC_V2["slots"]:
     if _s["role"] == "headline":
         _s["font_px"], _s["color"] = 88, "#FFD166"
+        # 프리뷰 렌더러(layout_preview)의 캘리그래피 근사 신호(2026-07-05 GAP1) —
+        # 이탤릭+짙은 배경 처리로 '붓펜 골드' 디렉션이 시안에서 즉시 보이게 한다.
+        _s["font_style"] = "calligraphy"
 del _s
 
 # 모든 수치(3.5 / 12 / 100)는 FACTSHEET에 존재 → grounding 통과.
@@ -172,6 +176,12 @@ COPY = {
     "vi": {"headline": "JB Tiết kiệm 3.5%", "body": "Kỳ hạn 12 tháng, từ 100 vạn won.", "cta": "Mở ngay"},
     "zh": {"headline": "JB定期存款 3.5%", "body": "12个月期限，100万韩元起。", "cta": "立即开户"},
 }
+
+# 티키타카 직후(카피 스테이징 전) 시안 프리뷰에 캘리 헤드라인 견본이 즉시 보이게
+# 프리스테이지(2026-07-05 발표자 피드백: '카피로 넘어가기 전에 캘리그래피가 보여야').
+# S2b가 spec.copy[lang].update(...)로 실제(위반 스테이징) 카피로 대체하므로 이후 단계
+# 산출물·2×2 상태 매칭에는 영향 없다.
+LAYOUT_SPEC_V2["copy"] = {"ko": {"headline": COPY["ko"]["headline"]}}
 
 # 시연 핵심 — Design 1차 산출에 의도적으로 끼우는 위반 카피(ko만).
 #   headline = 과장광고(업계 최고/최고 금리, 객관적 근거 없는 최상급) → 표시광고법 §3
@@ -452,6 +462,26 @@ def load_poster_fixture(state: str, lang: str = "ko") -> bytes | None:
         return None
 
 
+# ko fixture 바이트 해시 → 상태 패밀리(지연 초기화 캐시). 언어 변형 베이크의 입력
+# 이미지(주 언어 산출물)로 위반/교정 단계를 물려받는 데 쓴다(2026-07-05 GAP2) —
+# 비ko 카피는 위반·교정 양쪽에서 clean(설계)이라 카피만으론 단계를 못 가른다.
+_POSTER_HASHES: dict[str, str] | None = None
+
+
+def poster_family_of(image: bytes | None) -> str | None:
+    """입력 이미지가 ko fixture와 바이트 일치하는 상태 패밀리(violating_gold 등). 없으면 None."""
+    global _POSTER_HASHES
+    if not image:
+        return None
+    if _POSTER_HASHES is None:
+        _POSTER_HASHES = {}
+        for st in POSTER_STATES:
+            b = load_poster_fixture(st, "ko")
+            if b:
+                _POSTER_HASHES[hashlib.sha256(b).hexdigest()] = st
+    return _POSTER_HASHES.get(hashlib.sha256(image).hexdigest())
+
+
 # 실 Veo 생성 광고 footage(텍스트-free 시네마틱) — 시연/Mock용 결정론 영상.
 # Veo 크레딧 없이도 demo가 진짜 광고영상을 렌더하도록 V2aFootage가 이 바이트를 클립으로 사용.
 # ⚠️ base64 텍스트로 보관(.txt) — HF Space는 *.mp4를 LFS로 추적하는데 신규 LFS 객체가
@@ -475,7 +505,9 @@ _VEO_DEMO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAABfYdXVpZNj+w9YbDkg
 # 값은 poster_violating_gold.png 기준 초기 근사 → Task 8 정렬 검증에서 보정.
 HIGHLIGHT_BBOX_FIXTURES = {
     ("design/design-system/components/visual/v1.png", "headline", "ko"): {
-        "x": 0.03, "y": 0.085, "w": 0.66, "h": 0.145,   # "업계 최고 금리"(실측 poster_violating_gold 1856x2304)
+        # "업계 최고 금리" 첫 줄 구절-tight — poster_violating_gold(1856×2304) 재실측
+        # (2026-07-05 GAP7: 이전 근사값이 위로 ~0.04 치우쳐 브러시 획 위 여백을 잡았다).
+        "x": 0.055, "y": 0.125, "w": 0.665, "h": 0.105,
     },
 }
 

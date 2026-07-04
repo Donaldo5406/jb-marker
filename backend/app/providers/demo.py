@@ -527,15 +527,26 @@ class DemoProvider(Provider):
            라이브 수정으로 카피가 바뀌어도 mock은 반드시 완주한다(회귀 보험).
         """
         base_ms = _latency_base_ms()
-        if base_ms > 0:   # 베이크 즉답의 부자연 제거 — 텍스트보다 살짝 긴 고정 지연.
+        if base_ms > 0 and image is None:
+            # 베이크 즉답의 부자연 제거 — 텍스트보다 살짝 긴 고정 지연(신규 생성만).
             # 2026-07-04(2차): 포스터 베이크마다 최대 3s는 발표에서 과했다(발표자 피드백).
             # 배율 3→1.5, 상한 3.0→1.6s로 축소 — 이미지 대기가 데모의 주 지연원이었다.
+            # 2026-07-05: image 입력(편집·언어 변형) 호출은 지연 생략 — 비주얼 스텝이
+            # 변형 3장 × 1.6s로 불필요하게 길어졌다(스텝 레이턴시 단축 피드백).
             time.sleep(min(base_ms * 1.5 / 1000, 1.6))
         copy = _copy_from_prompt(prompt)
         state = _poster_state(copy, prompt)
+        lang = _poster_lang(copy)
+        if state and lang != "ko" and image is not None:
+            # 언어 변형은 입력 이미지(주 언어 베이크 산출)의 fixture 패밀리로 단계를
+            # 물려받는다(2026-07-05 GAP2) — 비ko 카피는 위반·교정 양쪽 clean이라
+            # 카피만으로 v2(교정본)에 매칭돼 '교정 전인데 교정본 변형' 오노출이 났다.
+            fam = F.poster_family_of(image)
+            if fam:
+                state = fam
         if state:
             # 언어 변형(en/vi/zh)은 해당 언어 fixture — 없는 조합은 None → PIL 폴백.
-            fixture = F.load_poster_fixture(state, _poster_lang(copy))
+            fixture = F.load_poster_fixture(state, lang)
             if fixture:
                 return fixture
         bg = F.load_poster_bg()

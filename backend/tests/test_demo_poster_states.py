@@ -208,6 +208,60 @@ def test_poster_fixture_files_are_valid():
         assert abs(im.width / im.height - 0.8) < 0.03, f"{name} 비율 {im.width}x{im.height} ≠ 4:5"
 
 
+# --- 언어 변형 단계 상속(2026-07-05 GAP): 입력 이미지 패밀리로 위반/교정 단계를 가른다 ---
+
+def test_poster_family_of_matches_ko_fixture_bytes(tmp_path, monkeypatch):
+    """입력 이미지가 ko fixture와 바이트 일치하면 그 상태 패밀리를 돌려준다."""
+    _seed_fixture_dir(tmp_path, monkeypatch, states=("violating_gold",))
+    monkeypatch.setattr(F, "_POSTER_HASHES", None)   # 해시 캐시 리셋
+    vg = F.load_poster_fixture("violating_gold")
+    assert F.poster_family_of(vg) == "violating_gold"
+    assert F.poster_family_of(b"not-a-fixture") is None
+    assert F.poster_family_of(None) is None
+
+
+def test_lang_variant_inherits_family_from_input_image(tmp_path, monkeypatch):
+    """교정 전(위반 골드) 주 언어 포스터로 만드는 비ko 변형이 v2(교정본) fixture로
+    새면 안 된다 — 비ko 카피는 위반·교정 양쪽 clean이라 카피만으론 단계를 못 가른다."""
+    from app.providers.demo import DemoProvider
+    (tmp_path / "poster_violating_gold.png").write_bytes(F.placeholder_png(64, 80))
+    (tmp_path / "poster_v2_vi.png").write_bytes(F.placeholder_png(96, 120))
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))
+    monkeypatch.setattr(F, "_POSTER_HASHES", None)
+    vg = F.load_poster_fixture("violating_gold")
+    prompt = _directed_prompt(F.COPY["vi"], headline_color="#FFD166",
+                              headline_px=88, lang="vi")
+    out = DemoProvider().generate_image(prompt, aspect="4:5", image=vg)
+    assert out != F.load_poster_fixture("v2", "vi")   # 교정본 오노출 금지
+    # violating_gold_{lang} fixture가 생기면 그것을 사용(로더 네이밍 규약).
+    (tmp_path / "poster_violating_gold_vi.png").write_bytes(F.placeholder_png(48, 60))
+    out2 = DemoProvider().generate_image(prompt, aspect="4:5", image=vg)
+    assert out2 == F.load_poster_fixture("violating_gold", "vi")
+
+
+def test_lang_variant_post_fix_keeps_v2_fixture(tmp_path, monkeypatch):
+    """교정 후(v2) 주 언어 포스터 기반 변형은 현행대로 v2_{lang} fixture."""
+    from app.providers.demo import DemoProvider
+    (tmp_path / "poster_v2.png").write_bytes(F.placeholder_png(64, 80))
+    (tmp_path / "poster_v2_vi.png").write_bytes(F.placeholder_png(96, 120))
+    monkeypatch.setattr(F, "_POSTER_DIR", str(tmp_path))
+    monkeypatch.setattr(F, "_POSTER_HASHES", None)
+    v2 = F.load_poster_fixture("v2")
+    prompt = _directed_prompt(F.COPY["vi"], headline_color="#FFD166",
+                              headline_px=88, lang="vi")
+    out = DemoProvider().generate_image(prompt, aspect="4:5", image=v2)
+    assert out == F.load_poster_fixture("v2", "vi")
+
+
+def test_layout_spec_v2_headline_is_calligraphy():
+    """티키타카 spec의 헤드라인은 캘리그래피 스타일 힌트를 갖는다(프리뷰 렌더 신호)."""
+    hl = next(s for s in F.LAYOUT_SPEC_V2["slots"] if s["role"] == "headline")
+    assert hl.get("font_style") == "calligraphy"
+    # V1은 스타일 힌트 없음(오염 가드)
+    hl1 = next(s for s in F.LAYOUT_SPEC["slots"] if s["role"] == "headline")
+    assert "font_style" not in hl1
+
+
 # --- Stage A 디자인 디렉션 제안 턴(spec D4): image 매체 4턴 구조·video 3턴 불변 ---
 
 def _stage_a_msgs(n_user_turns: int):
@@ -264,3 +318,10 @@ def test_plan_md_frontmatter_palette_has_no_gold():
     S0 tokens에 스며들면 directed 프롬프트에 골드가 상존해 2×2 골드 축이 오염된다."""
     fm_block = F.PLAN_MD.split("---")[1]
     assert "FFD166" not in fm_block
+
+
+def test_layout_spec_v2_prestages_calli_headline_sample():
+    """티키타카 spec은 캘리 헤드라인 견본(ko)을 프리스테이지 — 카피 전 프리뷰에 즉시 표시.
+    V1 spec의 copy는 비어 있어야 한다(프리스테이지는 티키타카 전용)."""
+    assert F.LAYOUT_SPEC_V2["copy"] == {"ko": {"headline": F.COPY["ko"]["headline"]}}
+    assert F.LAYOUT_SPEC["copy"] == {}

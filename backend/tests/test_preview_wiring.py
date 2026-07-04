@@ -114,3 +114,22 @@ def test_remediate_updates_preview(tmp_path, monkeypatch):
     assert node is not None and node.mime == "text/html"
     # baked 모드 재베이크가 새 v1.png를 프리뷰에 인라인한다(교정 후 갱신 확인).
     assert "data:image" in node.content_text
+
+
+def test_s2c_brand_rewrites_preview_with_logo(tmp_path):
+    """S2c(브랜드) 직후 preview.html에 로고 자산이 인라인된다(2026-07-05 GAP4).
+
+    비주얼 단계 프리뷰가 브랜드 단계까지 남아 '로고가 안 박힘'으로 보이던 회귀 방지.
+    """
+    from app.gateway.design.steps import S2cBrand, StepContext
+    s = _store(tmp_path)
+    spec = {"aspect": "4:5", "visual_concept": "블루",
+            "slots": [{"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3}],
+            "copy": {"ko": {}}}
+    s.put(SPEC, json.dumps(spec, ensure_ascii=False), source="marker",
+          mime="application/json")
+    ctx = StepContext(req=_req(), provider=FakeProvider(), store=s,
+                      state={"languages": ["ko"]}, base="/r1/design")
+    S2cBrand().run(ctx)
+    html = s.get(PREVIEW).content_text
+    assert html and "class='logo-img'" in html   # 로고 자산 인라인 확인

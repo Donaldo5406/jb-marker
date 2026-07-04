@@ -10,6 +10,8 @@ export type VerdictPanelProps = {
   acknowledged: boolean;
   stage: string; // R0..done
   busy?: boolean;
+  /** 판정 후 디자인이 바뀜(교정·재생성) — 판정이 현행이 아님을 표시(GAP8 2026-07-05). */
+  stale?: boolean;
   onRun: () => void;
   onAck: () => void;
   onRestart: () => void;
@@ -20,11 +22,13 @@ export type VerdictPanelProps = {
 const LEVEL: Record<string, SeverityLevel> = { PASS: "ok", WARN: "warning", BLOCKED: "critical" };
 
 /** 우측 심의 판정 패널 — 게이트 배지·카운트 + stage 버튼(검토 시작/계속) + actions 기반 동적 버튼. */
-export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy, onRun, onAck, onRestart, onBackToDesign, onProceedDeploy }: VerdictPanelProps) {
+export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy, stale, onRun, onAck, onRestart, onBackToDesign, onProceedDeploy }: VerdictPanelProps) {
   // 게이트 카운트가 0/0이면 시각상 PASS로 — 백엔드 flag(vision_skipped 등)로 WARN이 떠도
   // critical·warning 0인데 WARN 배지·'경고 확인' 액션이 뜨는 모킹 혼란을 제거한다.
   const clean = !!gate && gate.critical === 0 && gate.warning === 0;
-  const effStatus = clean ? "PASS" : status;
+  // stale: 교정/재생성 이후엔 BLOCKED/WARN을 그대로 두지 않는다 — '새 포스터인데 왜
+  // 아직 차단?' 혼란(GAP8). 배지를 '재검토 필요'로 바꾸고 배포/확인 액션을 숨긴다.
+  const effStatus = stale && gate ? "STALE" : clean ? "PASS" : status;
   const level: SeverityLevel = (effStatus && LEVEL[effStatus]) || "info";
   // 액션 식별자 → review 컨텍스트 핸들러/라벨/스타일. regenerate=디자인으로 복귀해 재생성.
   const ACTION: Record<string, { label: string; on: () => void; primary?: boolean }> = {
@@ -38,11 +42,18 @@ export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy,
     <div className="space-y-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
       <h3 className="text-body-sm font-medium text-on-surface">심의 판정</h3>
       <div className="flex items-center gap-2">
-        <SeverityBadge level={level}>{effStatus ?? "대기"}</SeverityBadge>
-        {gate && (
+        <SeverityBadge level={effStatus === "STALE" ? "warning" : level}>
+          {effStatus === "STALE" ? "재검토 필요" : effStatus ?? "대기"}
+        </SeverityBadge>
+        {gate && effStatus !== "STALE" && (
           <span className="text-caption text-on-surface-variant">critical {gate.critical} · warning {gate.warning}</span>
         )}
       </div>
+      {effStatus === "STALE" && (
+        <p className="text-caption text-severity-warning-fg" data-testid="verdict-stale-note">
+          디자인이 교정·변경되었습니다 — 재검토를 실행해 새 산출물을 다시 심의하세요.
+        </p>
+      )}
 
       {(stage === "R0") && (
         <button type="button" data-testid="run-review" onClick={onRun} disabled={busy}
@@ -68,6 +79,13 @@ export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy,
         <button type="button" data-testid="gate-action-deploy" onClick={onProceedDeploy}
           className="w-full rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container">
           Deploy로 이동 →
+        </button>
+      )}
+      {/* stale인데 백엔드 actions에 restart가 없어도 재검토 경로는 항상 열어둔다(GAP8). */}
+      {effStatus === "STALE" && !acts.includes("restart") && (
+        <button type="button" data-testid="gate-action-restart-stale" onClick={onRestart} disabled={busy}
+          className="w-full rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container disabled:opacity-40">
+          {busy ? "검토 중…" : "재검토"}
         </button>
       )}
       {/* 백엔드 actions 어휘 기반 동적 버튼 */}

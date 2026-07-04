@@ -44,7 +44,7 @@ export function EntitlementPanel() {
 
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center gap-2">
-                <h2 className="text-body-lg font-medium text-on-surface">Marker 엔타이틀먼트 (Pro · ₩100,000)</h2>
+                <h2 className="text-body-lg font-medium text-on-surface">Marker 엔타이틀먼트 (Pro)</h2>
                 <span
                   data-testid="entitlement-badge"
                   className={cn(
@@ -98,7 +98,7 @@ export function EntitlementPanel() {
         <Card className="p-7">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex-1 space-y-1">
-              <h2 className="text-body-lg font-medium text-on-surface">Deploy 엔타이틀먼트 (Pro+ · ₩150,000)</h2>
+              <h2 className="text-body-lg font-medium text-on-surface">Deploy 엔타이틀먼트 (Pro+)</h2>
               <p className="text-body-sm text-on-surface-variant">
                 ON이면 Deploy 스튜디오(채널 발송 · §50 적법성 · 발송 어드바이저)를 사용할 수 있습니다. 데모 플래그(실 PG 청구 없음).
               </p>

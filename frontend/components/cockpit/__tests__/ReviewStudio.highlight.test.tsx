@@ -59,22 +59,17 @@ vi.mock("@/lib/reviewArtifacts", async (importOriginal) => {
   };
 });
 
-describe("ReviewStudio 하이라이트 패널·뷰 토글 (Task 7 render path)", () => {
-  it("bbox verdict가 로드되면 시각 패널이 마운트되고, 카드/시각 뷰 토글이 실제로 패널을 여닫는다", async () => {
+describe("ReviewStudio 시각근거·카드 동시 배치 (2026-07-05 GAP7 배치 D)", () => {
+  it("bbox verdict가 로드되면 좌열 시각 패널과 우열 위반 카드가 동시에 렌더된다(토글 없음)", async () => {
     render(<ReviewStudio />);
 
     // 산출물 로더는 비동기(useEffect) — verdicts 반영을 기다려야 primaryImage가 채워진다.
     expect(await screen.findByTestId("hl-frame")).toBeInTheDocument();
+    // 배치 C의 토글은 제거 — 카드가 우열에 상시 노출되므로 여닫을 필요가 없다.
+    expect(screen.queryByText("카드 뷰")).not.toBeInTheDocument();
     expect(screen.queryByText("← 시각 뷰")).not.toBeInTheDocument();
-
-    // "카드 뷰" 클릭 → 시각 패널이 사라지고 되돌아가기 버튼이 노출된다.
-    fireEvent.click(screen.getByText("카드 뷰"));
-    expect(screen.queryByTestId("hl-frame")).not.toBeInTheDocument();
-    expect(screen.getByText("← 시각 뷰")).toBeInTheDocument();
-
-    // "← 시각 뷰" 클릭 → 패널이 다시 마운트된다.
-    fireEvent.click(screen.getByText("← 시각 뷰"));
-    expect(screen.getByTestId("hl-frame")).toBeInTheDocument();
-    expect(screen.queryByText("← 시각 뷰")).not.toBeInTheDocument();
+    // 위반 카드(법률 섹션)가 시각 패널과 '동시에' 보인다 — 겹침 없는 2열 배치의 계약.
+    expect(screen.getByLabelText("법률 검토")).toBeInTheDocument();
+    expect(screen.getByText("하이라이트 대상 문구")).toBeInTheDocument();
   });
 });
