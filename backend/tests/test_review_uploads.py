@@ -107,3 +107,48 @@ def test_no_uploads_regression_single_vision_call(tmp_path, make_scripted):
                    for c in vision.calls_review_image)          # 업로드 심의 호출 없음
     report = store.get("/r1/review/report.md").content_text
     assert "## 업로드 소재 심의" not in report
+
+
+def test_upload_audit_rising_sun_returns_controversy_finding():
+    """욱일기 트리거 파일명 → other_sensitive·critical 논란 finding(카테고리 포함, clause 없음)."""
+    from app.providers.demo import _upload_audit_findings
+
+    out = _upload_audit_findings("[uploaded-audit] file=2026-신년-해돋이-적금.png\n심의")
+    f = json.loads(out)["findings"][0]
+    assert f["category"] == "other_sensitive"     # → controversy 노드 라우팅 신호
+    assert f["id"] == "symbol_rising_sun"          # verdict_id 유일성(identity)
+    assert f["severity"] == "critical"
+    assert "욱일기" in f["evidence"]
+    assert "clause" not in f                        # 법률 아님 — 법령 화이트리스트 비대상
+
+
+def test_rising_sun_upload_routes_to_controversy_and_blocks(tmp_path, make_scripted):
+    """욱일기 포스터 업로드 → controversy 노드 영속 + 게이트 BLOCKED + 리포트 RC 섹션.
+
+    DemoProvider를 비전으로 써 '해돋이' 파일명 트리거로 mock 결정론 적발을 재현한다
+    (라이브 비전은 파일명 무관 실도안 탐지). 법률 화이트리스트에 걸려 드롭되지 않고
+    controversy로 라우팅되는지가 핵심."""
+    from app.providers.demo import DemoProvider
+
+    store = make_local_store(tmp_path)
+    _setup_run(store)
+    store.put("/r1/review/uploads/2026-신년-해돋이-적금.png", b"\x89PNG\x00sun",
+              source="frontend", mime="image/png")
+    text = make_scripted(complete_responses=[_EMPTY] * 6)
+    h = ReviewHarness(vision_provider=DemoProvider())
+    for _ in range(5):                                          # R0→R1→R2→RC→R3
+        h.handle_turn(_req(), provider=text, store=store)
+    # controversy 노드에 업로드 욱일기 verdict(법률 화이트리스트에 드롭 안 됨)
+    cx = [json.loads(n.content_text) for n in store.list("/r1/review/controversy/")
+          if n.path.endswith("verdict.json")]
+    rising = [v for v in cx if v.get("kind") == "other_sensitive"
+              and str(v.get("location", {}).get("slot", "")).startswith("uploaded")]
+    assert len(rising) == 1
+    assert rising[0]["severity"] == "critical"
+    assert rising[0]["asset_id"] == "review/uploads/2026-신년-해돋이-적금.png"
+    assert "clause" not in rising[0]                            # 논란 봉투(법률 아님)
+    # critical → 게이트 BLOCKED + 리포트 RC 섹션에 근거 표면화
+    assert store.get_manifest("r1").step_status["review"] == "BLOCKED"
+    report = store.get("/r1/review/report.md").content_text
+    assert "## RC 논란 검토" in report
+    assert "욱일기" in report

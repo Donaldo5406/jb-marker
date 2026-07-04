@@ -411,6 +411,12 @@ def _controversy_findings_json(messages) -> str:
 
 _UPLOAD_AUDIT_TRIGGERS = ("violation", "논란", "controversy", "tank", "탱크", "위반")
 
+# 욱일기(전범기)·군국주의 도안 포스터 트리거 — RC 논란(other_sensitive) 시연.
+# 실제 브랜드가 '일출/햇살(해돋이)' 디자인에 무심코 욱일기 방사선을 넣어 논란 난
+# 패턴을 재현한다. 라이브 비전은 파일명과 무관하게 실제 도안을 탐지 — mock은 그
+# 경로의 결정론 재현(파일명 트리거). 데모 소재: docs/finals/demo-assets/2026-신년-해돋이-적금.png
+_RISING_SUN_TRIGGERS = ("욱일", "전범", "일장", "해돋이", "rising", "sunburst")
+
 
 def _upload_audit_findings(prompt: str) -> str | None:
     """[uploaded-audit] 프롬프트에 한해 파일명 트리거 기반 결정론 적발(데모).
@@ -418,11 +424,24 @@ def _upload_audit_findings(prompt: str) -> str | None:
     실 vision 없이도 mock 시연에서 '업로드 소재 적발'을 재현한다. 트리거 미포함
     파일명은 빈 findings — 거짓 BLOCK 방지(FakeProvider spec §7.3과 동일 원칙).
     비-audit 프롬프트는 None을 반환해 현행 경로(빈 findings)를 그대로 탄다.
+
+    욱일기 트리거는 RC 논란(other_sensitive·category 포함) finding을 반환해 하네스가
+    controversy 노드로 라우팅(→ ControversyCard)하게 한다. 일반 트리거는 종전대로
+    표시광고법 §3 법률 finding(clause).
     """
     if not prompt.startswith("[uploaded-audit]"):
         return None
     first = prompt.splitlines()[0]
     fname = first.split("file=", 1)[1].strip().lower() if "file=" in first else ""
+    if any(t in fname for t in _RISING_SUN_TRIGGERS):
+        return json.dumps({"findings": [{
+            "location": {"slot": "uploaded", "lang": None},
+            "category": "other_sensitive",
+            "id": "symbol_rising_sun",
+            "severity": "critical",
+            "evidence": ("방사형 햇살(16선) 욱일기·전범기 문양 감지 — 일본 군국주의 상징 연상. "
+                         "'일출/햇살' 디자인이 의도와 무관하게 반일 정서·불매를 부른 선례 다수."),
+        }]}, ensure_ascii=False)
     is_fixture = fname in F.UPLOAD_HIGHLIGHT_BBOX   # 지정 데모 소재(상단 F=demo_fixtures)
     if any(t in fname for t in _UPLOAD_AUDIT_TRIGGERS) or is_fixture:
         location = {"slot": "uploaded", "lang": None}
