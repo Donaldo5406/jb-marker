@@ -65,7 +65,7 @@ function ReviewGuideCard() {
             </ul>
           )}
           <p className="mt-1.5 text-caption text-severity-warning-fg">
-            우측 챗에 <span className="font-semibold">“리뷰 결과대로 카피 수정해줘”</span>라고 입력하면 카피가 자동 교정되고 캔버스가 갱신됩니다.
+            우측 챗에 <span className="font-semibold">“리뷰 결과대로 카피 교정해줘”</span>라고 입력하면 카피가 자동 교정되고 캔버스가 갱신됩니다.
           </p>
         </div>
         <button type="button" onClick={() => setDismissed(true)} aria-label="가이드 닫기"
