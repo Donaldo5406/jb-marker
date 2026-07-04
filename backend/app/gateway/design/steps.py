@@ -41,6 +41,33 @@ S2A_VISION_CACHE = "s2a_vision"
 
 MAX_BAKE_ATTEMPTS = 2   # 베이크 텍스트 정확성 재생성 상한(내부 루프). 외부 게이트 재생성과 합성.
 
+
+def _image_fail_reason(exc: Exception) -> str:
+    """이미지 생성 예외 → 분류 태그. 키 관련이면 'key', 그 외엔 '<ExcType>: <메시지>'.
+
+    'key'는 **실제로 API 키가 없거나 무효/미인증**일 때만(키-특정 토큰만 매칭). 배포환경에서
+    키는 설정돼 있는데 모델 미허용·쿼터·네트워크로 실패한 것을 '키 부재'로 오진하지 않기 위함 —
+    bare except가 모든 실패를 GOOGLE_API_KEY 문제로 뭉뚱그리던 오도(誤導)를 끊는다. 403
+    PERMISSION_DENIED/404 NOT_FOUND(모델 접근)는 키 문제가 아니므로 매칭 토큰에서 제외한다."""
+    detail = f"{type(exc).__name__}: {exc}"
+    low = detail.lower()
+    key_tokens = ("api key", "api_key", "apikey", "no key was provided",
+                  "unauthenticated", "authentication credential",
+                  "api_key_invalid", "missing key", "invalid api")
+    return "key" if any(t in low for t in key_tokens) else detail
+
+
+def _image_fallback_text(reason: str | None) -> str:
+    """이미지 폴백 사유 → 사용자 메시지. 키 문제와 그 외(모델·쿼터·네트워크)를 구분한다.
+
+    reason=='key'(또는 미상)면 종전대로 GOOGLE_API_KEY 설정을 안내하고, 그 외 사유는 실제
+    예외를 노출해 원인 오진을 막는다(진단성)."""
+    head = "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
+    if reason == "key" or not reason:
+        return head + "실 이미지는 GOOGLE_API_KEY 설정이 필요합니다."
+    return head + (f"(사유: {reason[:180]}) 키는 설정돼 있을 수 있으니 "
+                   "모델 접근 권한·쿼터·네트워크를 확인하세요.")
+
 # 금리 카드 그라운딩: factsheet에서 카드에 넣을 금융 수치를 결정론적으로 뽑는다. S2b 카피가
 # 런별로 숫자를 누락해도(실측 변동성) 여기서 진실 원천을 고정 — 베이크 지시·비전 검증·정적
 # 저장(rate_card 노드)에 공통 사용해 금융수치 환각(예: 3.5%→5.0%)을 입력 그라운딩+검증으로 차단.
@@ -341,7 +368,7 @@ class S2aVisual(PipelineStep):
             base_prompt = self._bake_prompt(concept, copy, spec.get("slots"), facts_line,
                                             _benefit_chips(facts))
             bake_size = None
-        png, findings, vision_failed, fallback = self._bake_with_retry(
+        png, findings, vision_failed, fallback, fail_reason = self._bake_with_retry(
             base_prompt, aspect, copy, facts_line, image_size=bake_size)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
@@ -352,9 +379,8 @@ class S2aVisual(PipelineStep):
                       source="marker", mime="application/json")
         _write_preview(ctx, spec, png)   # 시안 프리뷰(visual 인라인) — 비차단
         ctx.cache[S2A_VISION_CACHE] = findings
-        text = ("비주얼을 생성했습니다." if not fallback else
-                "실 이미지 생성에 실패해 대체 비주얼(그라데이션)을 사용했습니다. "
-                "실 이미지는 GOOGLE_API_KEY 설정이 필요합니다.")
+        text = ("비주얼을 생성했습니다." if not fallback
+                else _image_fallback_text(fail_reason))
         return HarnessResult(text=text, output_path=path,
             meta={"source": "gemini", "step": self.name,
                   "image_fallback": fallback, "vision_failed": vision_failed},
@@ -427,7 +453,7 @@ class S2aVisual(PipelineStep):
         if tokens.get("visual_mood"):
             mood_hint = str(tokens["visual_mood"])
         hero_prompt = build_hero_prompt(spec.get("visual_concept", "금융 브랜드 배경"), mood_hint)
-        png, findings, vision_failed, fallback = self._hero_with_retry(hero_prompt, aspect)
+        png, findings, vision_failed, fallback, fail_reason = self._hero_with_retry(hero_prompt, aspect)
         path = f"{base}/design-system/components/visual/v1.png"
         ctx.store.put(path, png, source="gemini", mime="image/png",
                       meta={"render_mode": "vector_chrome", "image_fallback": fallback})
@@ -456,8 +482,8 @@ class S2aVisual(PipelineStep):
                       source="marker", mime="application/json")
         _write_preview(ctx, spec, png)   # 시안 프리뷰(히어로 인라인) — 비차단
         ctx.cache[S2A_VISION_CACHE] = findings
-        text = ("히어로와 벡터 레이아웃을 생성했습니다." if not fallback else
-                "실 이미지 생성에 실패해 대체 비주얼을 사용했습니다.")
+        text = ("히어로와 벡터 레이아웃을 생성했습니다." if not fallback
+                else _image_fallback_text(fail_reason))
         return HarnessResult(text=text, output_path=path,
             meta={"source": "gemini", "step": self.name, "render_mode": "vector_chrome",
                   "image_fallback": fallback, "vision_failed": vision_failed},
@@ -466,25 +492,25 @@ class S2aVisual(PipelineStep):
     def _hero_with_retry(self, hero_prompt, aspect):
         """텍스트프리 히어로 생성 + 텍스트누출 게이트(critical→재생성, MAX_BAKE_ATTEMPTS)."""
         feedback = ""
-        png, findings, vision_failed, fallback = None, [], False, False
+        png, findings, vision_failed, fallback, reason = None, [], False, False, None
         for _ in range(MAX_BAKE_ATTEMPTS):
             prompt = hero_prompt + (f"\n[교정] {feedback}" if feedback else "")
             try:
                 png = self._image_provider.generate_image(prompt, aspect=aspect)
-            except Exception:
+            except Exception as e:
                 from ...core.placeholder_image import placeholder_png
-                return placeholder_png(aspect), [], False, True
+                return placeholder_png(aspect), [], False, True, _image_fail_reason(e)
             try:
                 resp = self._image_provider.review_image(png, TEXTFREE_VISION_INSTR, mime="image/png")
                 findings = parse_json_block(resp.text).get("findings") or []
             except Exception:
                 vision_failed = True   # fail-open(기존 게이트 정책과 동일)
-                return png, [], vision_failed, fallback
+                return png, [], vision_failed, fallback, reason
             crit = [f for f in findings if f.get("severity") == "critical"]
             if not crit:
-                return png, findings, vision_failed, fallback
+                return png, findings, vision_failed, fallback, reason
             feedback = "; ".join(f.get("evidence", "") for f in crit)
-        return png, findings, vision_failed, fallback
+        return png, findings, vision_failed, fallback, reason
 
     def _semantic_layout(self, png):
         """vision 의미 레이아웃(스키마 검증→1회 재시도→DEFAULT_SEMANTIC 폴백)."""
@@ -599,24 +625,25 @@ class S2aVisual(PipelineStep):
 
     def _bake_with_retry(self, base_prompt, aspect, copy, facts="", image_size=None):
         feedback = ""
-        png, findings, vision_failed, fallback = None, [], False, False
+        png, findings, vision_failed, fallback, reason = None, [], False, False, None
         for attempt in range(MAX_BAKE_ATTEMPTS):
             prompt = base_prompt if not feedback else f"{base_prompt}\n이전 시도 교정: {feedback}"
             try:
                 png = self._image_provider.generate_image(prompt, aspect=aspect,
                                                           image_size=image_size)
                 fallback = False
-            except Exception:
+            except Exception as e:
                 from ...core.placeholder_image import placeholder_png
                 png = placeholder_png(aspect); fallback = True
                 findings, vision_failed = [], True
+                reason = _image_fail_reason(e)   # 실패 원인 분류(키 vs 그 외) — 오도 메시지 차단
                 break
             findings, vision_failed = self._vision_check(png, copy, facts)
             criticals = [f for f in findings if f.get("severity") == "critical"]
             if not criticals:
                 break
             feedback = "; ".join(f.get("evidence", "") for f in criticals)
-        return png, findings, vision_failed, fallback
+        return png, findings, vision_failed, fallback, reason
 
     def _vision_check(self, png: bytes, copy: dict, facts: str = "") -> tuple[list, bool]:
         """review_image로 비전 점검 → (findings, vision_failed). 미지원/실패는 ([], True).

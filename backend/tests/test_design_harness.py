@@ -601,6 +601,35 @@ def test_s2a_fallback_is_visible_placeholder_not_blank(tmp_path):
     assert "GOOGLE_API_KEY" in res.text
 
 
+def test_s2a_fallback_message_reflects_non_key_failure(tmp_path):
+    """이미지 생성이 키와 무관한 사유(모델 미허용·쿼터·네트워크)로 실패하면, 폴백
+    메시지가 GOOGLE_API_KEY를 오해 유발로 지목하지 않고 실제 사유를 드러낸다.
+
+    (배포환경에서 키는 설정돼 있는데 모델 접근·쿼터로 실패해도 'GOOGLE_API_KEY 설정
+    필요'로만 표시돼 원인 오진을 유발하던 문제 — bare except가 모든 실패를 키 부재로
+    뭉뚱그림.)"""
+    s = _store(tmp_path)
+
+    class ModelDeniedProvider(FakeProvider):
+        def generate_image(self, prompt, *, aspect="1:1", image=None, image_size=None):
+            raise RuntimeError("404 NOT_FOUND: model gemini-3-pro-image is not available")
+
+    s.put("/r1/design/_state.json", json.dumps(
+        {"step": "S2a", "confirmed": {"S0": True, "S1": True}, "bypass": {},
+         "languages": ["ko"], "pending_ask": None}),
+        source="marker", mime="application/json")
+    s.put("/r1/design/rough/layout.spec.json",
+          json.dumps({"visual_concept": "블루", "aspect": "4:5"}),
+          source="marker", mime="application/json")
+    h = DesignHarness(image_provider=ModelDeniedProvider())
+    res = h.handle_turn(_req(action="advance"), provider=FakeProvider(), store=s)
+    assert res.meta.get("image_fallback") is True
+    # 키 무관 실패인데 "GOOGLE_API_KEY 설정 필요"라고 오진하면 안 된다.
+    assert "GOOGLE_API_KEY 설정" not in res.text
+    # 실제 사유(모델/NOT_FOUND)가 메시지에 드러나야 한다.
+    assert "NOT_FOUND" in res.text
+
+
 # --- T1-P3 T4: S1·S2b·critic 호출부 PromptSpec 전환 (D6 system 보존 + meta 신호) ---
 
 
