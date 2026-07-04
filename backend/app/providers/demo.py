@@ -12,13 +12,35 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
 
 from ..core.severity import EXAGGERATION_TOKENS
 from . import demo_fixtures as F
 from .base import Message, Provider, ProviderResponse
 
 logger = logging.getLogger(__name__)
+
+
+def _latency_base_ms() -> int:
+    """DEMO_LATENCY_MS(기본 0=끔) — 데모 체감용 자연 레이턴시 기저값(ms).
+
+    mock 즉답은 라이브 데모에서 인위적으로 보인다(2026-07-04 사용자 지적). 기본 0이라
+    테스트·CI는 무영향, 데모 서버만 env로 켠다.
+    """
+    try:
+        return int(os.getenv("DEMO_LATENCY_MS", "0") or "0")
+    except ValueError:
+        return 0
+
+
+def _pace(resp: ProviderResponse) -> ProviderResponse:
+    """응답 길이에 비례한 지연(기저 + len/4000초, 상한 2.5s) 후 그대로 반환."""
+    base_ms = _latency_base_ms()
+    if base_ms > 0:
+        time.sleep(min(base_ms / 1000 + len(resp.text or "") / 4000, 2.5))
+    return resp
 
 # JB 정기예금 캠페인 마스터 금리(grounding 진실값). 이와 다른 금리 표기는 허위표시 위반.
 _CORRECT_RATE = "3.5%"
@@ -355,6 +377,11 @@ class DemoProvider(Provider):
     def complete(self, messages: list[Message], *, model: str | None = None,
                  system: str | None = None, tools: list[dict] | None = None,
                  meta: dict | None = None, **kwargs) -> ProviderResponse:
+        """라우팅(_route) 결과를 자연 레이턴시(_pace, 기본 끔)로 페이싱해 반환."""
+        return _pace(self._route(messages, system=system, meta=meta))
+
+    def _route(self, messages: list[Message], *, system: str | None = None,
+               meta: dict | None = None) -> ProviderResponse:
         """meta{studio,step} 명시 신호로 단계 라우팅(spec §5.2) — system 문구 비의존.
 
         system은 단계 감지에 쓰지 않고, stage_b가 '[현재 plan.md]' 컨텍스트 블록의
@@ -405,6 +432,9 @@ class DemoProvider(Provider):
         2) 미매칭(미지 카피·비ko 언어 변형)·파일 부재는 현행 PIL 베이크 폴백 — 내일
            라이브 수정으로 카피가 바뀌어도 mock은 반드시 완주한다(회귀 보험).
         """
+        base_ms = _latency_base_ms()
+        if base_ms > 0:   # 베이크 즉답의 부자연 제거(스펙 D3) — 텍스트보다 긴 고정 지연.
+            time.sleep(min(base_ms * 3 / 1000, 3.0))
         copy = _copy_from_prompt(prompt)
         state = _poster_state(copy, prompt)
         if state:

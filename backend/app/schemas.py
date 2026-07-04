@@ -204,15 +204,10 @@ class DispatchOut(BaseModel):
         description="채널×언어 셀 결과 — {channel,lang,status,message,recipients_count} 또는 skipped 셀 {channel,lang,status,reason}")
 
 
-class DemoPaymentOut(BaseModel):
-    dev_pass: bool
-
-
 class DeployStateOut(BaseModel):
     step_status: str
     selected_providers: list[str]
     matrix: list[MatrixCellOut]
-    dev_pass: bool
 
 
 # ── gateway ──

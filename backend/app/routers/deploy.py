@@ -1,4 +1,8 @@
-"""[deploy] M6 DeployStudio — setup·eligibility·packages·advisor·dispatch·demo-payment·_state (spec §8.1)."""
+"""[deploy] M6 DeployStudio — setup·eligibility·packages·advisor·dispatch·_state (spec §8.1).
+
+결제 표면(demo-payment·dev_pass)은 2026-07-04 폐기 — 제품 목적(내부 준법 코파일럿)에
+소비자 결제 서사가 불일치. entitlement 402 게이트는 유지(ENTITLEMENT_OVERRIDE 운영).
+"""
 from __future__ import annotations
 
 import json
@@ -21,7 +25,6 @@ from ..schemas import (
     OWNER_RESPONSES,
     AdvisorErrorOut,
     AdvisorOkOut,
-    DemoPaymentOut,
     DeploySetupOut,
     DeployStateOut,
     DispatchOut,
@@ -351,16 +354,6 @@ def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
     return {"step_status": "PASS", "simulation": simulation}
 
 
-@router.post("/runs/{run_id}/deploy/demo-payment", response_model=DemoPaymentOut,
-             summary="데모 결제 — dev_pass 부여",
-             responses=OWNER_RESPONSES)
-def deploy_demo_payment(run_id: str, request: Request,
-                        user_id: str = Depends(get_user_id)) -> dict:
-    require_owner(request, run_id, user_id)
-    entitlement.set_dev_pass(user_id)
-    return {"dev_pass": True}
-
-
 @router.get("/runs/{run_id}/deploy/_state", response_model=DeployStateOut,
             summary="배포 스튜디오 상태 스냅샷",
             responses=OWNER_RESPONSES)
@@ -375,5 +368,4 @@ def deploy_state(run_id: str, request: Request,
         "matrix": json.loads(
             request.app.state.store.get_text(f"/{run_id}/deploy/inputs/matrix.json") or "[]"
         ),
-        "dev_pass": entitlement.is_entitled(user_id),
     }
