@@ -50,7 +50,7 @@ export function VerdictPanel({ status, gate, actions, acknowledged, stage, busy,
           {busy ? "검토 중…" : "검토 시작"}
         </button>
       )}
-      {(stage === "R1" || stage === "R2" || stage === "R3") && (
+      {(stage === "R1" || stage === "R2" || stage === "RC" || stage === "R3") && (
         <button type="button" data-testid="continue-review" onClick={onRun} disabled={busy}
           className="w-full rounded-lg bg-primary px-3 py-2 text-body-sm font-medium text-on-primary hover:bg-primary-container disabled:opacity-40">
           {busy ? "검토 중…" : "검토 계속"}

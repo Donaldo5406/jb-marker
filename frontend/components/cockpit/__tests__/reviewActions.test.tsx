@@ -22,7 +22,8 @@ class NoopWS {
 function installFetch() {
   const gatewayCalls: any[] = [];
   // review 자동 루프: 무액션 review 호출이 백엔드 1단계 전진을 시뮬(meta.step=방금 실행한 단계).
-  const REVIEW_STEPS = ["R0", "R1", "R2", "R3"];
+  // 백엔드 상태머신은 R0→R1→R2→RC(논란)→R3 5단계 — RC 포함해 미러.
+  const REVIEW_STEPS = ["R0", "R1", "R2", "RC", "R3"];
   let reviewStep = 0;
   const fetchMock = vi.fn(async (input: any, init?: any) => {
     const url = String(input);
@@ -105,9 +106,9 @@ describe("CockpitProvider review actions (M5 §8.3)", () => {
     expect(runId).toBe("r1");
     expect(Object.keys(scenes).sort()).toEqual(["en", "ko"]);
 
-    // 무액션 review gateway 호출이 4회(R0·R1·R2·R3) — 한 클릭으로 끝까지 구동
+    // 무액션 review gateway 호출이 5회(R0·R1·R2·RC·R3) — 한 클릭으로 끝까지 구동
     const reviewCalls = gatewayCalls.filter((c) => c.studio === "review" && !c.action);
-    expect(reviewCalls.length).toBe(4);
+    expect(reviewCalls.length).toBe(5);
     expect(reviewCalls[0].is_marker).toBe(true);
     expect(reviewCalls[0].provider).toBe("anthropic");
 

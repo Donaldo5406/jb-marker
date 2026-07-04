@@ -2,7 +2,7 @@ import { api, type VfsNode } from "@/lib/api";
 
 export type ReviewVerdict = {
   verdict_id?: string;
-  node: "legal" | "i18n";
+  node: "legal" | "i18n" | "controversy";
   asset_id?: string;
   lang?: string | null;
   severity: "critical" | "warning";
@@ -24,7 +24,7 @@ function restOf(runId: string, path: string): string {
 
 /** review/legal·i18n 하위의 verdict.json을 모두 fetch·파싱(파싱 실패는 graceful skip). */
 export async function loadReviewVerdicts(runId: string, nodes: VfsNode[]): Promise<ReviewVerdict[]> {
-  const targets = nodes.filter((n) => /\/review\/(legal|i18n)\/[^/]+\/verdict\.json$/.test(n.path));
+  const targets = nodes.filter((n) => /\/review\/(legal|i18n|controversy)\/[^/]+\/verdict\.json$/.test(n.path));
   const out: ReviewVerdict[] = [];
   for (const n of targets) {
     try {

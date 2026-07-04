@@ -51,7 +51,7 @@ def _actions_for(status: str) -> list[str]:
     return []
 
 
-STEPS = ("R0", "R1", "R2", "R3", "done")
+STEPS = ("R0", "R1", "R2", "RC", "R3", "done")
 
 PERSONA_A = (
     "당신은 한국 금융 마케팅 분야의 전문 법률 검토관입니다. "
@@ -70,6 +70,16 @@ PERSONA_C = (
     'JSON 한 개만: {"recommendations":[{"asset_id":"...","lang":"ko|null","target":"image|text|video",'
     '"instruction":"...","priority":1,"related_verdict_ids":["..."]}, ...],'
     '"conflicts_resolved":[{"summary":"..."}, ...]}'
+)
+PERSONA_RC = (
+    "당신은 한국 시장의 브랜드 평판·사회 논란 리스크 검토관입니다. "
+    "주어진 마케팅 카피·맥락이 사회적 물의·논란을 부를 수 있는지, 제공된 블랙리스트 카테고리에 "
+    "근거해 판정합니다. 정치적 옳고 그름을 판단하지 말고, '이 요소가 특정 논란과 연관되어 "
+    "의도와 무관하게 오해·물의를 부를 수 있다'는 평판 리스크만 중립적으로, 근거와 함께 표면화하세요. "
+    "특히 단독으로는 무해하나 결합 시 위험한 조합(예: 참사 날짜 × 경솔한 모티프)에 주의하세요. "
+    'JSON 한 개만: {"findings":[{"location":{"slot":"controversy","lang":"ko|null"},'
+    '"category":"...","severity":"critical|warning","evidence":"...","source":"..."}, ...]} '
+    "논란 소지 없으면 findings=[]를 반환하세요."
 )
 
 
@@ -120,6 +130,8 @@ class ReviewHarness(Harness):
             return self._r1_legal(req, provider, store, state)
         if step == "R2":
             return self._r2_i18n(req, provider, store, state)
+        if step == "RC":
+            return self._rc_controversy(req, provider, store, state)
         if step == "R3":
             return self._r3_reconcile(req, provider, store, state)
         raise NotImplementedError(f"{step} 미구현 (알 수 없는 step)")
@@ -131,7 +143,8 @@ class ReviewHarness(Harness):
         legal/·i18n/·revise/·report.md 삭제. _render/·_state.json 보존.
         """
         base = self._base(run_id)
-        for prefix in (f"{base}/legal/", f"{base}/i18n/", f"{base}/revise/"):
+        for prefix in (f"{base}/legal/", f"{base}/i18n/",
+                       f"{base}/controversy/", f"{base}/revise/"):
             nodes = store.list(prefix)
             for n in nodes:
                 store.delete(n.path)
@@ -188,14 +201,21 @@ class ReviewHarness(Harness):
                           evidence: str, clause: str | None = None,
                           official_source_url: str | None = None,
                           kind: str | None = None,
-                          disclosure: str | None = None) -> str:
+                          disclosure: str | None = None,
+                          identity: str | None = None) -> str:
         """verdict 봉투 영속 → verdict_id 반환.
 
-        R1(legal)·R2(i18n) 공용. envelope 필수 필드: verdict_id·node·asset_id·
-        lang·severity·location·evidence·audit_trace_id·created_at.
+        R1(legal)·R2(i18n)·RC(controversy) 공용. envelope 필수 필드: verdict_id·node·
+        asset_id·lang·severity·location·evidence·audit_trace_id·created_at.
         선택: clause·official_source_url·kind·disclosure.
+
+        identity: verdict_id 유도용 명시 키(RC 논란 전용). controversy는 clause가 없고
+        slot이 상수 "controversy"라 (category, lang)만으로는 같은 카테고리·언어의 서로 다른
+        finding이 동일 verdict 경로로 충돌해 나중 것이 앞 것을 덮어쓴다(critical 강등). 블랙리스트
+        entry의 고유 id를 identity로 넘겨 finding별 고유 경로를 보장한다. 미전달(legal/i18n)이면
+        기존 clause/kind 유도라 동작 byte-identical.
         """
-        key = clause if clause else (kind or "")
+        key = identity or clause or (kind or "")
         slot = location.get("slot", "")
         # 하이라이트 좌표 부착(비파괴) — layout.spec + authored fixture로 image·bbox 해결.
         _ls = store.get(f"/{run_id}/design/rough/layout.spec.json")
@@ -223,8 +243,10 @@ class ReviewHarness(Harness):
             envelope["kind"] = kind
         if disclosure is not None:
             envelope["disclosure"] = disclosure
-        folder = "legal" if node == "legal" else "i18n"
-        prefix = "law_" if node == "legal" else "reason_"
+        folder = {"legal": "legal", "i18n": "i18n",
+                  "controversy": "controversy"}.get(node, "i18n")
+        prefix = {"legal": "law_", "i18n": "reason_",
+                  "controversy": "risk_"}.get(node, "reason_")
         path = f"{self._base(run_id)}/{folder}/{prefix}{vid.split('_', 1)[1]}/verdict.json"
         store.put(path, json.dumps(envelope, ensure_ascii=False),
                   source="marker", mime="application/json")
@@ -446,7 +468,7 @@ class ReviewHarness(Harness):
         # mono-lingual 스킵
         if len(languages) <= 1 or "ko" not in languages:
             state["r2_skipped"] = "mono-lingual"
-            state["step"] = "R3"
+            state["step"] = "RC"
             self._save_state(store, req.run_id, state)
             return HarnessResult(
                 text="R2 스킵(모노링구얼).",
@@ -473,7 +495,7 @@ class ReviewHarness(Harness):
                                      meta=pspec.meta)
         except Exception:
             state["live_unavailable"] = True
-            state["step"] = "R3"
+            state["step"] = "RC"
             self._save_state(store, req.run_id, state)
             return HarnessResult(
                 text="R2 LLM 실패(graceful).",
@@ -526,7 +548,7 @@ class ReviewHarness(Harness):
                     kind="missing_disclosure",
                     disclosure=disc)
 
-        state["step"] = "R3"
+        state["step"] = "RC"
         self._save_state(store, req.run_id, state)
         return HarnessResult(
             text=f"R2 동등성 검토 완료 (LLM {len(llm_findings)}건 + 안전망).",
@@ -534,10 +556,104 @@ class ReviewHarness(Harness):
             meta={"source": "marker", "step": "R2"},
             events=[{"type": "artifact", "path": f"{base}/i18n/"}])
 
+    def _rc_controversy(self, req: HarnessRequest, provider, store, state: dict
+                         ) -> HarnessResult:
+        """RC 논란 검토 — 3경로(결정론 안전망 / LLM 맥락 / 라이브 비전)로 controversy verdict 발행."""
+        from ..core.controversy_rules import (
+            evaluate as _cx_evaluate, load_blacklist, load_visual_symbols,
+        )
+        base = self._base(req.run_id)
+        languages = state["languages"]
+        scene_copy = self._collect_scene_copy(store, req.run_id, languages)
+
+        # 경로 1: 결정론 안전망(블랙리스트) — provider 불요 → mock 결정론의 뼈대.
+        for f in _cx_evaluate(scene_copy):
+            loc = f["location"]
+            self._persist_verdict(
+                store, req.run_id, node="controversy",
+                asset_id=f"design/final/{loc.get('lang') or ''}/main.scene",
+                lang=loc.get("lang"), severity=f.get("severity", "warning"),
+                location=loc, evidence=f.get("evidence", ""),
+                official_source_url=f.get("official_source_url") or None,
+                kind=f.get("category"), identity=f.get("id"))
+
+        # 경로 2: LLM 맥락 판정 — 블랙리스트 카테고리 grounding. mock=DemoProvider 콘텐츠 기반.
+        categories = sorted({e.get("category", "") for e in load_blacklist() if e.get("category")})
+        payload = {"scene_copy": scene_copy, "blacklist_categories": categories}
+        messages = [Message("user", json.dumps(payload, ensure_ascii=False))]
+        pspec = PromptSpec(persona=PERSONA_RC, studio="review", step="RC")
+        try:
+            resp = provider.complete(messages, system=pspec.assemble(), meta=pspec.meta)
+            data = _parse_json(resp.text)
+        except Exception:
+            state["live_unavailable"] = True
+            data = {}
+        if not data:
+            state["parse_failed"] = True
+            data = {}
+        for f in (data.get("findings") or []):
+            loc = f.get("location") or {"slot": "controversy", "lang": None}
+            self._persist_verdict(
+                store, req.run_id, node="controversy",
+                asset_id=f"design/final/{loc.get('lang') or ''}/main.scene",
+                lang=loc.get("lang"), severity=f.get("severity", "warning"),
+                location=loc, evidence=f.get("evidence", ""),
+                official_source_url=f.get("source") or f.get("official_source_url"),
+                kind=f.get("category"), identity=f.get("id"))
+
+        # 경로 3: 라이브 비전 — v1.png에서 시각 심볼(도안·제스처) + 박힌 텍스트(OCR 역할)
+        # + 그림/손동작(OCR·텍스트로는 못 잡는 영역) 대조. mock/fake=빈(FakeProvider.review_image
+        # 는 프롬프트와 무관하게 항상 findings=[]) — 라이브 전용, best-effort.
+        v1 = store.get(f"/{req.run_id}/design/design-system/components/visual/v1.png")
+        if v1 is None:
+            state["vision_skipped"].append("controversy/visual/v1.png")
+        else:
+            visual_symbols = load_visual_symbols()
+            symbols_desc = "; ".join(
+                f"{s.get('name', '')}({s.get('description', '')})" for s in visual_symbols
+                if s.get("name"))
+            vprompt = (
+                "이 이미지는 금융 마케팅 비주얼입니다. 다음 블랙리스트 카테고리에 근거해 "
+                f"사회 논란·평판 리스크를 판정하세요: {categories}. "
+                "이미지에 박힌 텍스트(은어·숫자·문구)도 읽어 대조하세요. "
+                f"이미지에 다음 시각 심볼·제스처(글자 아님, 도안·손동작)가 있는지도 판정하세요: "
+                f"{symbols_desc}. 명확한 전범·극단주의 도안(욱일기·나치)은 severity=critical, "
+                "주관적 커뮤니티 제스처(집게손·일베 손가락)는 warning. 정상적 손동작·유사 문양을 "
+                "과잉 판정하지 말 것(확실치 않으면 무시하거나 warning). 정치 판단이 아니라 "
+                "'이 요소가 논란과 연관돼 오해·물의를 부를 수 있다'는 평판 리스크만 근거와 함께. "
+                'JSON: {"findings":[{"location":{"slot":"visual","lang":null},'
+                '"category":"...","severity":"critical|warning","evidence":"...","source":"..."}, ...]}'
+            )
+            try:
+                img_bytes = v1.blob if v1.blob else (v1.content_text or "").encode("utf-8")
+                vresp = self._vision_provider.review_image(img_bytes, vprompt, mime="image/png")
+                for f in (_parse_json(vresp.text).get("findings") or []):
+                    self._persist_verdict(
+                        store, req.run_id, node="controversy",
+                        asset_id="design/design-system/components/visual/v1.png",
+                        lang=None, severity=f.get("severity", "warning"),
+                        location={"slot": "visual", "lang": None},
+                        evidence=f.get("evidence", ""),
+                        official_source_url=f.get("source") or f.get("official_source_url"),
+                        kind=f.get("category"))
+            except Exception:
+                state["vision_failed"] = True
+                state["vision_skipped"].append("controversy/visual/v1.png")
+
+        state["step"] = "R3"
+        self._save_state(store, req.run_id, state)
+        return HarnessResult(
+            text="RC 논란 검토 완료.",
+            output_path=f"{base}/controversy/",
+            meta={"source": "marker", "step": "RC"},
+            events=[{"type": "artifact", "path": f"{base}/controversy/"}])
+
     def _load_all_verdicts(self, store, run_id: str) -> list[dict]:
         """legal/·i18n/ 하위의 모든 verdict.json을 로드해서 dict 리스트 반환."""
         out: list[dict] = []
-        for prefix in (f"{self._base(run_id)}/legal/", f"{self._base(run_id)}/i18n/"):
+        for prefix in (f"{self._base(run_id)}/legal/",
+                       f"{self._base(run_id)}/i18n/",
+                       f"{self._base(run_id)}/controversy/"):
             for n in store.list(prefix):
                 if n.path.endswith("verdict.json"):
                     try:
@@ -638,6 +754,11 @@ class ReviewHarness(Harness):
             report_lines.append(
                 f"- [{v.get('severity')}] {v.get('lang','-')} · "
                 f"{v.get('kind','-')} — {v.get('evidence','')[:80]}")
+        report_lines += ["", "## RC 논란 검토 (요약)"]
+        for v in [x for x in verdicts if x.get("node") == "controversy"]:
+            report_lines.append(
+                f"- [{v.get('severity')}] {v.get('kind','-')} · "
+                f"{v.get('lang') or '-'} — {v.get('evidence','')[:80]}")
         report_lines += ["", "## 권장 수정 (우선순위 순)"]
         for rec in sorted(recommendations, key=lambda r: r.get("priority", 99)):
             report_lines.append(

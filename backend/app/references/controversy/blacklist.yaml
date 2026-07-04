@@ -1,0 +1,241 @@
+# 한국 사회 논란·평판 리스크 블랙리스트 (2티어) — Review Studio RC 노드 시드.
+#
+# ── 티어링 규칙 (국립국어원 표준국어대사전 존재 여부 기준) ─────────────────────
+#   Tier 1 = Critical : 사전에 없는 은어·비속어(coined slur) 또는 사전이 '낮잡는 말'로
+#            명시한 비속어 — 정상적 사용처가 없다. 매칭 즉시 critical.
+#   Tier 2 = Warning  : 전라도·홍어·탱크처럼 평소엔 정상적으로 쓰이나(사전 표제어)
+#            맥락에 따라 비하·논란이 되는 명사 — signals + co_signals 결합 시에만 warning.
+#
+# ── 중립성 (잠금) ────────────────────────────────────────────────────────────
+#   정치적 옳고 그름 판단 아님. "이 요소가 특정 논란과 연관되어 의도와 무관하게
+#   오해·물의를 부를 수 있다"는 평판 리스크만 표면화한다.
+#   ⚠ 중립 정체성어(전라도·경상도·무슬림·이슬람·동성애·게이·트랜스젠더·교회·목사·
+#      중국인·난민·흑인 등)는 블랙리스트에서 **의도적으로 제외** — 정상 카피 감시는 그 자체가 논란.
+#      비하 파생형(절라도·개슬람·개독·똥꼬충 등)만 트리거로 둔다.
+#   ⚠ 정치 조롱어는 진영 무관하게 양측을 함께 넣어 균형을 맞춘다(대깨문·좌빨 ↔ 쥐박이·굥).
+#
+# ── 오탐 방지 ────────────────────────────────────────────────────────────────
+#   '총' 단독 미등록(총액·총자산) → 무기 복합어(총기·총격)만. '한남'(한남동)·'급식'(무료급식)·
+#   '통구이'(통닭)·'암컷'(동물) Tier-1 제외 → 슬러 확정형만.
+#
+# ── 출처/라이선스 ────────────────────────────────────────────────────────────
+#   슬러 렉시콘은 공개 상식(나무위키·뉴스)에 널린 '단어 사실'을 큐레이션. 카테고리 택소노미는
+#   Korean UnSmile(Smilegate, CC-BY-NC-ND) 분류를 아이디어로만 참고했고 코퍼스 본문은 미포함.
+#   TODO(자동화): Tier는 국립국어원 '표준국어대사전(stdict.korean.go.kr)' 또는
+#   '우리말샘(opendict.korean.go.kr)' OpenAPI로 사전 존재 여부를 질의해 자동 분류 가능.
+#   ⚠ 서비스별 키 등록 필요 — 2026-07-04 실측: 보유 키는 '온용어(kli/term, 전문용어)' 전용이라
+#   일반어·은어가 조회되지 않아 부적합(전라도·짱깨 모두 '없음' → 구분 불가). stdict/opendict 키 발급 후 연동.
+#   현재 시드는 사전 지식 기반 수동 분류(흔한 단어라 신뢰도 높음).
+entries:
+
+  # ═══════════ Tier 1 (Critical) — 사전에 없는 은어·비속어 ═══════════
+
+  - id: slur_misogyny
+    category: community_signal
+    tier: 1
+    signals: ["김치녀", "김치년", "맘충", "맘충년", "꼴페미", "페미년", "한녀", "된장녀", "돼지년", "썅년", "보지년", "피싸개", "보슬아치", "메갈"]
+    co_signals: []
+    why_risky: "여성 집단 조롱·비하 은어(사전 미등재 신조어) — 브랜드 사용 시 젠더 논란"
+    severity_default: critical
+    source: "온라인 젠더 갈등 은어(공개 상식)"
+  - id: slur_misandry
+    category: community_signal
+    tier: 1
+    signals: ["한남충", "냄져", "냄저", "남동충", "창놈", "좆놈", "자댕이", "숨쉴한남"]
+    co_signals: []
+    why_risky: "남성 집단 조롱·비하 은어(사전 미등재 신조어) — 브랜드 사용 시 젠더 논란"
+    severity_default: critical
+    source: "온라인 젠더 갈등 은어(공개 상식)"
+  - id: slur_lgbt
+    category: other_sensitive
+    tier: 1
+    signals: ["똥꼬충", "젠신병자", "변태성욕자", "게이새끼"]
+    co_signals: []
+    why_risky: "성소수자 비하 은어(사전 미등재) — 브랜드 사용 시 혐오 논란"
+    severity_default: critical
+    source: "성소수자 비하 은어(공개 상식)"
+  - id: slur_race
+    category: other_sensitive
+    tier: 1
+    signals: ["짱깨", "짱개", "개슬람", "똥남아", "똥송", "외노자", "불체자", "좆족", "탈북자새끼", "파퀴벌레", "중국넘", "토착왜구"]
+    co_signals: []
+    why_risky: "인종·국적 비하 은어(사전 미등재) — 브랜드 사용 시 차별 논란"
+    severity_default: critical
+    source: "인종·국적 비하 은어(공개 상식)"
+  - id: slur_age
+    category: community_lingo
+    tier: 1
+    signals: ["틀딱", "틀무새", "뜰딱충", "급식충", "좆중고딩"]
+    co_signals: []
+    why_risky: "세대·연령 비하 은어(사전 미등재) — 노인·청소년 조롱 논란"
+    severity_default: critical
+    source: "세대 비하 은어(공개 상식)"
+  - id: slur_region
+    category: other_sensitive
+    tier: 1
+    signals: ["절라도", "전라디언", "개쌍도", "쌍도", "멍청도", "머구촌", "똥푸산", "홍통일체"]
+    co_signals: []
+    why_risky: "특정 지역 비하 은어(사전 미등재) — 지역감정 조장(전북 기반 브랜드 특히 민감)"
+    severity_default: critical
+    source: "지역 비하 은어(공개 상식)"
+  - id: slur_religion
+    category: community_lingo
+    tier: 1
+    signals: ["개독", "개독교", "개슬람", "먹사", "사막잡신", "예수쟁이"]
+    co_signals: []
+    why_risky: "특정 종교 비하 은어(사전 미등재) — 종교 갈등 논란"
+    severity_default: critical
+    source: "종교 비하 은어(공개 상식)"
+  - id: slur_politics
+    category: community_signal
+    tier: 1
+    signals: ["대깨문", "달창", "좌빨", "좌좀", "수구꼴통", "쥐박이", "닭근혜", "닭그네", "굥", "국짐", "김정은애완견"]
+    co_signals: []
+    why_risky: "특정 정치 진영·인물 조롱 은어(사전 미등재, 진영 무관) — 브랜드가 정치적으로 읽혀 논란"
+    severity_default: critical
+    source: "정치 조롱 밈(공개 상식, 양 진영 균형)"
+  - id: slur_profession
+    category: community_lingo
+    tier: 1
+    signals: ["기레기", "지잡대", "폰팔이"]
+    co_signals: []
+    why_risky: "직업·집단 비하 은어(사전 미등재) — 브랜드 사용 시 논란"
+    severity_default: critical
+    source: "직업 비하 은어(공개 상식)"
+  - id: profanity_hard
+    category: community_lingo
+    tier: 1
+    signals: ["씨발", "병신", "개새끼", "좆같", "지랄"]
+    co_signals: []
+    why_risky: "금융 마케팅에 부적격한 강한 비속어 — 브랜드 품위 훼손"
+    severity_default: critical
+    source: "표준국어대사전 '낮잡는/속된 말' 표제(비속어)"
+
+  # ═══════════ Tier 1 (Critical) — 논란 상징·코드 (사전 규칙 예외: 항상 논란) ═══════════
+
+  - id: symbol_rising_sun
+    category: other_sensitive
+    tier: 1
+    signals: ["욱일기", "욱일승천기", "전범기", "rising sun flag"]
+    co_signals: []
+    why_risky: "일본 군국주의·전범 상징 — 강한 반일 정서·불매 유발"
+    severity_default: critical
+    source: "욱일기 디자인 기업 불매·사과 다수 선례"
+  - id: code_1488
+    category: community_lingo
+    tier: 1
+    signals: ["1488", "14/88", "88 heil"]
+    co_signals: []
+    why_risky: "국제 백인우월주의·나치 극단주의 코드(14 words + Heil Hitler)"
+    severity_default: critical
+    source: "ADL 혐오상징 데이터베이스"
+
+  # ═══════════ Tier 1 (Critical) — 금융광고 부적격 무기·폭력 명사 ═══════════
+
+  - id: weapon_unambiguous
+    category: weapon_violence
+    tier: 1
+    signals: ["총기", "총격", "총살", "권총", "소총", "기관총", "엽총", "수류탄", "미사일", "포탄", "흉기", "학살", "처형", "참수", "교수형", "유혈"]
+    co_signals: []
+    why_risky: "금융 마케팅에 나타날 이유가 없는 무기·폭력·참사 도상(사전엔 있으나 무해 용례 없음) — 폭력 미화 논란"
+    severity_default: critical
+    source: "금융광고 부적격 명사(무기·폭력)"
+
+  # ═══════════ Tier 2 (Warning) — 사전 표제어이나 맥락 의존 ═══════════
+
+  - id: ctx_region_hongeo
+    category: other_sensitive
+    tier: 2
+    signals: ["홍어"]
+    co_signals: ["전라", "광주", "라도", "지역", "종자", "홍어새끼", "통구이"]
+    why_risky: "'홍어'는 음식(사전 표제어)이나 지역 맥락 결합 시 전라도 비하로 읽힘(전북 기반 브랜드 민감). 음식 맥락(무침·초밥)은 무탐."
+    severity_default: warning
+    source: "지역 비하 맥락(공개 상식)"
+  - id: ctx_gender_pinch
+    category: community_signal
+    tier: 2
+    signals: ["집게손", "집게 손", "엄지와 검지"]
+    co_signals: ["작게", "축소", "남성", "비하", "메갈", "손 모양", "손가락"]
+    why_risky: "손 제스처 자체는 무해하나 특정 커뮤니티 남성 비하로 읽혀 논란(다수 브랜드 실제 피해)"
+    severity_default: warning
+    source: "게임·유통업계 집게손 논란(2023~)"
+  - id: ctx_race_joseonjok
+    category: other_sensitive
+    tier: 2
+    signals: ["조선족"]
+    co_signals: ["범죄", "새끼", "칼", "혐오", "쫓아", "추방"]
+    why_risky: "'조선족'은 재중동포 지칭 중립어일 수 있으나, 비하 맥락 결합 시 차별 논란"
+    severity_default: warning
+    source: "재중동포 비하 맥락(공개 상식)"
+  - id: ctx_weapon_tank
+    category: weapon_violence
+    tier: 2
+    signals: ["탱크", "전차"]
+    co_signals: ["군용", "전쟁", "포신", "궤도", "캐터필러", "5·18", "5.18", "광주", "군사", "무력"]
+    why_risky: "'탱크'는 물탱크 등 무해 용례가 있으나 군사·참사 맥락 결합 시 폭력·참사 연상(스타벅스 선례)"
+    severity_default: warning
+    source: "금융광고 부적격 명사(맥락형)"
+  - id: ctx_violence_general
+    category: weapon_violence
+    tier: 2
+    signals: ["폭탄", "폭발", "시체", "자살", "테러"]
+    co_signals: ["겨누", "쏘", "찌르", "터뜨", "죽음", "사망", "살해", "시신", "협박"]
+    why_risky: "폭탄(폭탄세일)·자살 등 관용·무해 용례가 있어 폭력 맥락 결합 시에만 부적격 신호. '총'(총액)·'관'(기관)은 substring 오탐이라 미등록"
+    severity_default: warning
+    source: "금융광고 부적격 명사(맥락형, 오탐 방지)"
+
+  # ═══════════ Tier 2 (Warning) — 참사·사상자 사건 (날짜·모티프 결합 시) ═══════════
+
+  - id: disaster_518
+    category: disaster_memorial
+    tier: 2
+    signals: ["5.18", "5·18", "5/18", "오일팔", "광주민주화", "광주 5월"]
+    co_signals: ["탱크", "군용", "헬기", "폭동", "데이", "기념 이벤트", "통구이"]
+    why_risky: "5·18 광주민주화운동을 조롱·경시하는 것으로 읽힐 수 있음(스타벅스 탱크데이 선례)"
+    severity_default: critical
+    source: "스타벅스코리아 '탱크데이' 5·18 마케팅 논란(2023)"
+  - id: disaster_sewol
+    category: disaster_memorial
+    tier: 2
+    signals: ["세월호", "0416", "4·16", "4.16", "4/16"]
+    co_signals: ["침몰", "노란리본", "이벤트", "할인", "데이", "축하", "가만히"]
+    why_risky: "세월호 참사를 경시·상업적으로 소비하는 것으로 읽힐 수 있음"
+    severity_default: warning
+    source: "세월호 관련 마케팅 논란 다수 선례"
+  - id: disaster_itaewon
+    category: disaster_memorial
+    tier: 2
+    signals: ["이태원", "10·29", "10.29", "10/29"]
+    co_signals: ["압사", "핼러윈", "할인", "이벤트", "축하", "참사"]
+    why_risky: "이태원 참사를 연상시켜 유가족·대중 반감을 부를 수 있음"
+    severity_default: warning
+    source: "이태원 참사 관련 마케팅 자제 선례"
+
+# ── 시각 심볼·제스처 (라이브 비전 전용) ───────────────────────────────────────
+#   entries의 signals는 텍스트 문자열 매칭(OCR·카피)이라 그림·손동작을 못 잡는다.
+#   visual_symbols는 문자열이 아니라 "도안·제스처"를 vision LLM(RC 경로3, v1.png)이
+#   판별하도록 name+description을 프롬프트에 주입하는 참조 목록 — 결정론 매칭 대상이
+#   아니다. mock/테스트는 FakeProvider.review_image가 항상 빈 findings를 반환하므로
+#   이 목록은 라이브 비전에서만 영향을 준다(best-effort, 과잉 판정 방지 위해
+#   제스처류는 severity_hint=warning).
+visual_symbols:
+  - name: 욱일기 도안
+    description: 붉은 태양에서 방사형 햇살이 뻗는 일본 군국주의 욱일승천기 문양(글자 아님, 그림/깃발).
+    category: other_sensitive
+    severity_hint: critical
+  - name: 전범기·군국주의 도안
+    description: 욱일기 변형이나 일본 제국 군기 등 군국주의 상징 도안.
+    category: other_sensitive
+    severity_hint: critical
+  - name: 나치·네오나치 상징
+    description: 하켄크로이츠(스와스티카)·SS 룬·나치 독수리 등 나치 시각 상징.
+    category: community_lingo
+    severity_hint: critical
+  - name: 집게손 제스처
+    description: 엄지와 검지로 아주 작은 것을 집는 손 모양. 특정 커뮤니티(메갈 연관) 남성 비하 제스처로 읽혀 논란(다수 브랜드 실제 피해). 정상적 손동작과 혼동 주의 — 확실치 않으면 warning.
+    category: community_signal
+    severity_hint: warning
+  - name: 일베 손가락 제스처
+    description: 일간베스트 연관 손동작·손표식. 주관적 신호라 과잉 판정 금지 — 확실치 않으면 warning.
+    category: community_signal
+    severity_hint: warning

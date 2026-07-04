@@ -62,19 +62,20 @@ def test_r1_reviews_upload_and_gate_blocks(tmp_path, make_scripted):
     _setup_run(store)   # languages=["ko","en"], v1.png 존재, _render 없음
     store.put("/r1/review/uploads/violation-poster.png", b"\x89PNG\x00up",
               source="frontend", mime="image/png")
-    # 비전 큐: 호출2(v1.png)=empty → 호출4(upload)=critical. (_render 없음 → 호출3 skip)
+    # 비전 큐: 호출2(v1.png)=empty → 호출4(upload)=critical → RC v1.png=empty. (_render 없음 → 호출3 skip)
     vision = make_scripted(review_image_responses=[
         _EMPTY, ProviderResponse(
             text=json.dumps({"findings": [_upload_finding()]}, ensure_ascii=False),
-            model="x")])
-    # 텍스트 큐: R1/R2/R3의 complete 호출 수에 무관하게 유효 JSON이 나가도록 여유분.
+            model="x"), _EMPTY])   # 끝 _EMPTY = RC 단계 v1.png 비전
+    # 텍스트 큐: R1/R2/RC/R3의 complete 호출 수에 무관하게 유효 JSON이 나가도록 여유분.
     # '{"findings":[]}'는 R3 reconcile 파서에도 유효(recommendations 부재→[])라 안전.
     text = make_scripted(complete_responses=[_EMPTY] * 6)
     h = ReviewHarness(vision_provider=vision)
-    for _ in range(4):                                          # R0→R1→R2→R3
+    for _ in range(5):                                          # R0→R1→R2→RC→R3
         h.handle_turn(_req(), provider=text, store=store)
-    # 호출4 프롬프트 계약(mock 스텁 의존점)
-    up_call = vision.calls_review_image[-1]
+    # 호출4 프롬프트 계약(mock 스텁 의존점) — RC 비전이 뒤에 붙으므로 upload-audit 호출을 특정
+    up_call = next(c for c in vision.calls_review_image
+                   if c["prompt"].startswith("[uploaded-audit]"))
     assert up_call["prompt"].startswith("[uploaded-audit] file=violation-poster.png")
     # verdict 영속 + 게이트 합류
     verdicts = [json.loads(n.content_text) for n in store.list("/r1/review/legal/")
@@ -91,14 +92,18 @@ def test_r1_reviews_upload_and_gate_blocks(tmp_path, make_scripted):
 
 
 def test_no_uploads_regression_single_vision_call(tmp_path, make_scripted):
-    """업로드 없으면 비전 호출 수·게이트 산정이 현행과 동일(가산적 계약)."""
+    """업로드 없으면 업로드 심의(upload-audit) 비전 호출·리포트 섹션이 없다(가산적 계약).
+
+    RC 단계가 v1.png 비전을 1회 더 호출하므로 총 비전 호출 수 대신 'upload-audit 호출 부재'로
+    무업로드 회귀를 검증한다(파이프라인 단계 변화에 견고)."""
     store = make_local_store(tmp_path)
     _setup_run(store)
-    vision = make_scripted(review_image_responses=[_EMPTY])
+    vision = make_scripted(review_image_responses=[_EMPTY, _EMPTY])
     text = make_scripted(complete_responses=[_EMPTY] * 6)
     h = ReviewHarness(vision_provider=vision)
-    for _ in range(4):
+    for _ in range(5):                                          # R0→R1→R2→RC→R3
         h.handle_turn(_req(), provider=text, store=store)
-    assert len(vision.calls_review_image) == 1                  # v1.png 1회뿐
+    assert not any(c["prompt"].startswith("[uploaded-audit]")
+                   for c in vision.calls_review_image)          # 업로드 심의 호출 없음
     report = store.get("/r1/review/report.md").content_text
     assert "## 업로드 소재 심의" not in report
