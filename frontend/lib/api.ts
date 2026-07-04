@@ -125,6 +125,11 @@ export const api = {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.text();
   },
+  async getReviewHighlightHtml(runId: string, image: string): Promise<string> {
+    const r = await authedFetch(`${BASE}/runs/${runId}/review-highlight?image=${encodeURIComponent(image)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  },
   async sessionHeartbeat(runId: string, studio: string): Promise<SessionHeartbeat> {
     return j(await authedFetch(`${BASE}/runs/${runId}/session/${studio}`));
   },
