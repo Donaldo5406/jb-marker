@@ -1,9 +1,11 @@
 # JB Marker — Claude 세션 지침 (본선 모드)
 
-JB금융 Fin:AI Challenge **본선(2026-07-04~05) 고도화 작업 중**. 발표 5분 + QA 2분.
+JB금융 Fin:AI Challenge **본선(2026-07-04~05) 고도화 작업 중**. 발표 5분 + QA 2분 (상위 5팀은 최종 발표 15분 + 5분).
+🔴 **제출 마감 7/5(일) 10:30** — 기능명세서·발표자료·GitHub 링크. 마감 후 수정 불가.
 본선 원칙: 예선 MVP의 **순수 최적화 우선**, 기능 추가(CUD)는 기능명세 제출 대상이므로 신중히.
 
 ## 지금 읽어야 할 문서
+- **본선 공식 규정·일정·제출물 요건: `docs/finals/finals-rules.md`** ← 본선 판단 기준
 - 본선 계획: `docs/plans/2026-06-30-finals-optimization-plan.md`
 - 변경 보고서(제출용): `docs/finals/optimization-report.md`
 - QA 대비: `docs/finals/qa-sheet.md`
