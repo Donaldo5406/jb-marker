@@ -169,6 +169,21 @@ def test_visual_png_hides_baked_text_slots_keeps_overlays():
     assert "헤드라인" in out_pre
 
 
+def test_baked_overlays_policy_hides_logo_and_disclosure_zones():
+    """logo_policy='baked'(poc_E): 로고·고지가 포스터에 이미 구워짐 → 프리뷰에 오버레이
+    존을 얹지 않는다(프론트 sceneAssembler와 동일 — 이중 오버레이 방지)."""
+    spec = dict(_spec())
+    spec["logo_policy"] = "baked"
+    spec["slots"] = list(spec["slots"]) + [
+        {"role": "logo", "bbox": {"x": 80, "y": 48, "w": 160, "h": 56}, "z": 3},
+        {"role": "disclosure", "bbox": {"x": 80, "y": 1276, "w": 920, "h": 58},
+         "z": 3, "copy_key": "disclosure", "font_px": 26, "color": "#3A3A3A"},
+    ]
+    out = build_layout_mock_html(spec, _tokens(), _facts(), visual_png=_png_bytes())
+    # baked면 로고·고지 존 라벨 모두 미표시(포스터에 구워짐)
+    assert "로고" not in out and "고지" not in out
+
+
 def test_vector_chrome_keeps_text_slots_with_visual():
     """vector_chrome은 텍스트가 벡터 오버레이(미베이크) — visual이 있어도 전 슬롯 유지."""
     spec = dict(_spec())
