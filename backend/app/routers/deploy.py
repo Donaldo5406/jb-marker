@@ -238,10 +238,17 @@ def deploy_dispatch(run_id: str, body: DispatchBody, request: Request,
     m = require_owner(request, run_id, user_id)
     if not body.confirmed:
         raise HTTPException(400, "user confirm required")
-    # 내부통제 게이트(폐루프 D3): 심의(PASS 또는 ack된 WARN)를 통과해야만 발송.
-    # UI 버튼 숨김뿐이던 게이팅을 백엔드가 강제 — mock 시연 경로에도 동일 적용(내부통제 서사).
+    # 내부통제 게이트(폐루프 D3): 심의를 통과해야만 발송.
+    #  - 실사용(mock=false): PASS 또는 **ack된 WARN**만 발송(경고 확인 = 사람 판단 남김).
+    #  - mock 시연(mock=true): **PASS/WARN 모두 발송 허용**(ack 불요). WARN이 로컬 데모에선
+    #    합성 렌더 부재(vision_skipped) 등 목·인프라 아티팩트로 자주 떠 발송이 막히던 마찰을
+    #    없앤다. 단 **BLOCKED/미실행은 mock에서도 차단** — '위반 있으면 발송 못 한다' 서사 유지.
     review_status = m.step_status.get("review")
-    if review_status == "WARN":
+    if body.mock:
+        if review_status not in ("PASS", "WARN"):
+            raise HTTPException(
+                409, f"review gate: {review_status or 'not_run'} — 위반을 해소한 뒤 발송할 수 있습니다")
+    elif review_status == "WARN":
         raw = request.app.state.store.get_text(f"/{run_id}/review/_state.json") or "{}"
         try:
             acked = bool(json.loads(raw).get("acknowledged"))

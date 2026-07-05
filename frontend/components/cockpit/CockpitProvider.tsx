@@ -184,7 +184,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
   // 파일 내용 캐시(path→OpenFile). 재클릭/재방문 시 네트워크 왕복 생략(#3 딜레이 해소).
   // 무효화: 저장 시 해당 path 갱신, artifact 이벤트(백엔드 재생성) 시 해당 path/전체 제거.
   const fileCacheRef = useRef<Map<string, OpenFile>>(new Map());
-  const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false, deploy: false });
+  // deploy: 항상 true — Deploy Pro+ 게이트 폐기(2026-07-05). marker만 Free/Pro 토글 유지.
+  const [entitlement, setEntitlement] = useState<Entitlement>({ marker: false, deploy: true });
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingGate, setPendingGate] = useState<GateEnvelope | null>(null);
@@ -1088,8 +1089,8 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
         else if (process.env.NEXT_PUBLIC_DEFAULT_MOCK === "1") setMockModeState(true);
         const fromUrl = new URL(window.location.href).searchParams.get("run");
         if (fromUrl) void openRun(fromUrl);
-        const dep = window.localStorage.getItem("jbm_deploy_entitlement") === "1";
-        setEntitlement((e) => ({ ...e, deploy: dep }));
+        // Deploy는 별도 엔타이틀먼트 없이 항상 이용 가능(2026-07-05 Pro+ 게이트 폐기) —
+        // localStorage 기반 잠금 복원 제거. deploy는 초기값(true) 유지.
       }
       void api
         .getEntitlement()
