@@ -11,6 +11,21 @@ const SPEC = {
   copy: { ko: { disclosure: "예금자보호 5천만원" }, en: { disclosure: "Protected" } },
 };
 
+describe("assembleScene — logo_policy baked(poc_E): 고지 오버레이 미방출", () => {
+  it("logo_policy='baked'면 disclosure 오버레이(textbox·scrim)를 얹지 않는다(이중 오버레이 방지)", () => {
+    const baked = { ...SPEC, logo_policy: "baked" };
+    const scene = assembleScene(baked as any, "ko", (r) => `/vfs/r1/${r}`);
+    // 배경(baked 포스터)만 남고 disclosure 오버레이·스크림은 없어야 한다.
+    expect(scene.objects.some((o: any) => o.role === "disclosure")).toBe(false);
+    expect(scene.objects.some((o: any) => o.role === "scrim")).toBe(false);
+    expect(scene.objects.find((o: any) => o.role === "background").type).toBe("image");
+  });
+  it("logo_policy 미설정(기본)이면 종전대로 disclosure 오버레이를 방출한다(회귀 가드)", () => {
+    const scene = assembleScene(SPEC as any, "ko", (r) => `/vfs/r1/${r}`);
+    expect(scene.objects.some((o: any) => o.role === "disclosure" && o.type === "textbox")).toBe(true);
+  });
+});
+
 describe("assembleScene", () => {
   it("배경 슬롯은 image, 텍스트(disclosure) 슬롯은 textbox 객체로", () => {
     const scene = assembleScene(SPEC as any, "ko", (r) => `/vfs/r1/${r}`);

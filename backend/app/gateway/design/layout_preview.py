@@ -172,11 +172,16 @@ def build_layout_mock_html(
     # 오버레이(미베이크)라 전 슬롯 유지.
     overlay_only = bool(visual_png) and (
         str(spec.get("render_mode") or "baked") != "vector_chrome")
+    # logo_policy="baked"(poc_E): 로고·고지·CTA가 포스터에 이미 구워짐 → 오버레이 존을
+    # 시안에 겹쳐 그리지 않는다(프론트 sceneAssembler와 동일 정책 — 이중 오버레이 방지).
+    baked_overlays = str(spec.get("logo_policy") or "").strip().lower() == "baked"
 
     boxes = []
     for (s, x, y, w, h) in valid:
         role = str(s.get("role") or "")
         if overlay_only and role not in ("logo", "disclosure"):
+            continue
+        if baked_overlays and role in ("logo", "disclosure"):
             continue
         label = _ROLE_LABELS.get(role, role or "슬롯")
         key = s.get("copy_key") or role

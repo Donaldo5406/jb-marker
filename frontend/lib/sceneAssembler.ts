@@ -29,6 +29,10 @@ export type LayoutSpec = {
   // 언어별 베이크 배경(풀 포스터) asset_ref 맵. 예: { ko: "...v1.png", en: "...v1.en.png" }.
   visual_by_lang?: Record<string, string>;
   render_mode?: "baked" | "vector_chrome";
+  // "baked"면 로고·고지·CTA가 포스터에 이미 구워짐(poc_E 자산) → 결정론 오버레이를
+  // 얹지 않는다(이중 오버레이 방지). 로고는 slots에서 제외되고, 고지는 아래 assembleScene이
+  // 오버레이 렌더를 건너뛴다.
+  logo_policy?: "baked" | string;
   slots: Slot[];
   copy?: Record<string, Record<string, string>>;
 };
@@ -109,6 +113,10 @@ export function assembleScene(
       }
       // 헤드라인/바디/CTA는 baked 모드에서 배경에 구워짐 → 미방출. disclosure만 오버레이.
       if (s.role === "disclosure") {
+        // logo_policy="baked"(poc_E): 고지도 로고·CTA와 함께 포스터에 이미 구워져 있어
+        // 오버레이 텍스트+스크림을 얹으면 이중이 된다 → disclosure 오버레이 건너뜀.
+        // (레이아웃 spec의 disclosure 슬롯은 유지 — 시각 적법성 룰이 존재·비율을 읽는다.)
+        if (spec.logo_policy === "baked") return [];
         const key = s.copy_key ?? s.role;
         const color = s.color ?? "#0b1324";
         const textbox: any = { ...common, type: "textbox", lang,
