@@ -57,5 +57,7 @@ done
 echo "▶ 프런트 준비(:$FRONTEND_PORT)…"
 cd "$ROOT/frontend"
 npm install --no-audit --no-fund
-echo "▶ 준비 완료 → http://localhost:$FRONTEND_PORT/cockpit (Mock 모드 ON 후 시연)"
-NEXT_PUBLIC_API_BASE="http://localhost:$BACKEND_PORT" npm run dev -- -p "$FRONTEND_PORT"
+echo "▶ 준비 완료 → http://localhost:$FRONTEND_PORT/cockpit (Mock 기본 ON — 키 없이 완주)"
+# NEXT_PUBLIC_DEFAULT_MOCK=1: 로컬은 Mock을 기본 ON으로(키 없어 실 API 호출 시 500·무응답 방지).
+NEXT_PUBLIC_API_BASE="http://localhost:$BACKEND_PORT" NEXT_PUBLIC_DEFAULT_MOCK=1 \
+  npm run dev -- -p "$FRONTEND_PORT"
