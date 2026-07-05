@@ -569,6 +569,20 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       } catch (e) {
         const status = (e as { status?: number }).status;
         if (status === 402) { setUpsellOpen(true); return null; }
+        // 죽은 run 복구: 로컬 VFS는 인메모리 인덱스라 백엔드 재시작 시 run이 사라진다.
+        // 캐시된 run id(URL ?run=)로 챗을 보내면 404 "run not found"가 나고 답변이 안 온다.
+        // 이때 안내 메시지를 챗에 남기고 run/URL을 비워 새 run 생성을 유도한다(무한 무응답 방지).
+        if (status === 404) {
+          if (typeof window !== "undefined") {
+            const u = new URL(window.location.href);
+            u.searchParams.delete("run");
+            window.history.replaceState(null, "", u.pathname + u.search);
+          }
+          setRunId(null);
+          setMessages((m) => [...m, { role: "assistant",
+            content: "이 작업(run)이 만료됐어요(로컬 서버 재시작 시 초기화). 상단 Workspace에서 ‘Use Marker’로 새로 시작해 주세요." }]);
+          return null;
+        }
         throw e;
       } finally {
         setChatPending(false);
@@ -1068,7 +1082,10 @@ export function CockpitProvider({ children, runId: initialRunId }: { children: R
       if (cancelled) return;
       if (typeof window !== "undefined") {
         const mm = window.localStorage.getItem("jbm_mock_mode");
+        // 저장값 우선. 없으면(fresh 브라우저) NEXT_PUBLIC_DEFAULT_MOCK=1일 때 Mock 기본 ON —
+        // 로컬 데모(키 없음)에서 Mock을 안 켜 실 API가 호출돼 500 나던 '답변 안옴' 방지.
         if (mm !== null) setMockModeState(mm === "1");
+        else if (process.env.NEXT_PUBLIC_DEFAULT_MOCK === "1") setMockModeState(true);
         const fromUrl = new URL(window.location.href).searchParams.get("run");
         if (fromUrl) void openRun(fromUrl);
         const dep = window.localStorage.getItem("jbm_deploy_entitlement") === "1";

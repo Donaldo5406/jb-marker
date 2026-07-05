@@ -55,7 +55,9 @@ Write-Host "▶ 프런트 준비(:$FrontendPort)…"
 Set-Location (Join-Path $root "frontend")
 npm install --no-audit --no-fund
 $env:NEXT_PUBLIC_API_BASE = "http://localhost:$BackendPort"
-Write-Host "▶ 준비 완료 → http://localhost:$FrontendPort/cockpit (Mock 모드 ON 후 시연)"
+# NEXT_PUBLIC_DEFAULT_MOCK=1: 로컬은 Mock을 기본 ON으로(키 없어 실 API 호출 시 500·무응답 방지).
+$env:NEXT_PUBLIC_DEFAULT_MOCK = "1"
+Write-Host "▶ 준비 완료 → http://localhost:$FrontendPort/cockpit (Mock 기본 ON — 키 없이 완주)"
 try {
   npm run dev -- -p $FrontendPort
 } finally {
