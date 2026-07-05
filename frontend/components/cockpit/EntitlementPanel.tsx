@@ -94,31 +94,7 @@ export function EntitlementPanel() {
               : "Marker/Advisor 선택 시 업셀 안내가 표시됩니다."}
           </p>
         </Card>
-
-        <Card className="p-7">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-1">
-              <h2 className="text-body-lg font-medium text-on-surface">Deploy 엔타이틀먼트 (Pro+)</h2>
-              <p className="text-body-sm text-on-surface-variant">
-                ON이면 Deploy 스튜디오(채널 발송 · §50 적법성 · 발송 어드바이저)를 사용할 수 있습니다. 데모 플래그(실 PG 청구 없음).
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={c.entitlement.deploy}
-              aria-label="Deploy 엔타이틀먼트 토글"
-              data-testid="deploy-toggle"
-              onClick={c.toggleDeploy}
-              className={cn(
-                "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors",
-                c.entitlement.deploy ? "bg-primary" : "bg-outline-variant",
-              )}
-            >
-              <span className={cn("inline-block h-5 w-5 transform rounded-full bg-surface-container-lowest shadow-ambient transition-transform", c.entitlement.deploy ? "translate-x-6" : "translate-x-1")} />
-            </button>
-          </div>
-        </Card>
+        {/* Deploy 엔타이틀먼트(Pro+) 카드 제거(2026-07-05) — Deploy는 별도 게이트 없이 항상 이용 가능. */}
       </div>
     </div>
   );

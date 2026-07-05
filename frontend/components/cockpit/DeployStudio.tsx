@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Lock, X, CheckCircle2, AlertTriangle, FileText, Loader2 } from "lucide-react";
+import { X, CheckCircle2, AlertTriangle, FileText, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useCockpit } from "@/components/cockpit/CockpitProvider";
 import { StepProgress, type Step } from "@/components/cockpit/StepProgress";
@@ -107,22 +107,7 @@ export function DeployStudio() {
   const currentStep = !c.eligibility ? "D0" : Object.keys(c.packages).length === 0 ? "D1" : "D2";
   const designDone = c.manifest?.step_status?.design === "done" || c.designStep === "done";
 
-  // Pro+ 엔타이틀먼트 게이트 — 없으면 잠금 안내(결제 표면 폐기 2026-07-04, Setting 토글로 해제).
-  if (!c.entitlement.deploy) {
-    return (
-      <div className="col-span-2 flex min-h-0 flex-col items-center justify-center gap-4 bg-surface px-6 text-center" data-testid="deploy-locked">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-surface-container text-on-surface-variant">
-          <Lock className="h-5 w-5" aria-hidden />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-h3 text-on-surface">Deploy 스튜디오는 Pro+ 전용</h2>
-          <p className="max-w-sm text-body-sm text-on-surface-variant">채널 발송·§50 적법성·발송 어드바이저는 Pro+ 엔타이틀먼트에서 제공됩니다.</p>
-        </div>
-        <p className="text-caption text-on-surface-variant">데모: 콕핏 Setting에서 Deploy 엔타이틀먼트를 켜면 체험할 수 있습니다.</p>
-      </div>
-    );
-  }
-
+  // Deploy Pro+ 엔타이틀먼트 게이트 제거(2026-07-05) — 별도 잠금 없이 항상 이용 가능.
   return (
     <div className="col-span-2 flex min-h-0 flex-col overflow-hidden bg-surface" data-testid="deploy-studio">
       <div className="border-b border-outline-variant bg-surface-container-low px-6 py-3">

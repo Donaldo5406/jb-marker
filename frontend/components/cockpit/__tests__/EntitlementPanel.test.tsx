@@ -15,14 +15,15 @@ beforeEach(() => {
 });
 
 describe("EntitlementPanel", () => {
-  it("Marker·Deploy 토글 2개를 렌더", () => {
+  it("Marker 토글만 렌더(Deploy Pro+ 카드 폐기 2026-07-05)", () => {
     render(<EntitlementPanel />);
     expect(screen.getByTestId("entitlement-toggle")).toBeTruthy();
-    expect(screen.getByTestId("deploy-toggle")).toBeTruthy();
+    // Deploy 엔타이틀먼트 토글은 제거됨 — Deploy는 항상 이용 가능.
+    expect(screen.queryByTestId("deploy-toggle")).toBeNull();
   });
-  it("Deploy 토글 클릭 시 toggleDeploy 호출", () => {
+  it("Marker 토글 클릭 시 toggleEntitlement 호출", () => {
     render(<EntitlementPanel />);
-    fireEvent.click(screen.getByTestId("deploy-toggle"));
-    expect(toggleDeploy).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("entitlement-toggle"));
+    expect(toggleEntitlement).toHaveBeenCalled();
   });
 });

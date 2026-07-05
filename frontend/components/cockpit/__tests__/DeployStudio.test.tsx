@@ -34,15 +34,15 @@ beforeEach(() => {
 });
 
 describe("DeployStudio", () => {
-  it("deploy 엔타이틀먼트 없으면 잠금 화면을 보여준다", () => {
+  it("Pro+ 게이트 폐기(2026-07-05) — entitlement.deploy=false여도 잠금 없이 스튜디오 노출", () => {
     ctx = makeCtx({ entitlement: { marker: true, deploy: false } });
     render(<DeployStudio />);
-    expect(screen.getByTestId("deploy-locked")).toBeTruthy();
-    expect(screen.queryByTestId("deploy-studio")).toBeNull();
-    expect(screen.queryByTestId("provider-grid")).toBeNull();
+    expect(screen.queryByTestId("deploy-locked")).toBeNull();
+    expect(screen.getByTestId("deploy-studio")).toBeTruthy();
+    expect(screen.getByTestId("provider-grid")).toBeTruthy();
   });
 
-  it("deploy 엔타이틀먼트 있으면 D0 그리드를 노출한다", () => {
+  it("Deploy 스튜디오는 항상 D0 그리드를 노출한다", () => {
     render(<DeployStudio />);
     expect(screen.queryByTestId("deploy-locked")).toBeNull();
     expect(screen.getByTestId("deploy-studio")).toBeTruthy();
