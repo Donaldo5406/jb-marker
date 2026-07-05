@@ -100,6 +100,29 @@ jb-marker/
 
 ## 로컬 실행
 
+**원클릭(권장) — 원격 main 기준으로 FE+BE를 mock 모드로 한 번에** (API 키 불요)
+
+배포(HF Space `cpu-basic` + Supabase)가 느려 시연은 로컬이 빠르다. 저장소를 클론한 뒤:
+
+```bash
+# macOS / Linux / Windows Git-Bash
+bash scripts/dev-local.sh
+```
+```powershell
+# Windows PowerShell
+pwsh -File scripts/dev-local.ps1
+# 실행정책에 막히면:  powershell -ExecutionPolicy Bypass -File scripts\dev-local.ps1
+```
+
+- `origin/main`에 정확히 맞춘 뒤(로컬 변경 폐기) 백엔드(**:8000**)·프런트(**:3100**)를 띄운다 → `http://localhost:3100/cockpit`.
+- `VFS_BACKEND=local`·`ENTITLEMENT_OVERRIDE=1`·`DEMO_LATENCY_MS=0`을 **자동 설정** → API 키·Supabase·인증 전부 불요. UI 좌하단 Setting에서 **Mock 모드만 켜면** 전 구간 결정론 완주.
+- 사전조건: `git` · **Python 3.11+** · **Node 20+**. 프런트를 Ctrl+C로 끄면 백엔드도 함께 정리된다.
+- 최초 1회는 `gh repo clone Donaldo5406/jb-marker`(또는 `git clone`)로 받은 뒤 위 명령 실행. 이후엔 스크립트가 매번 `origin/main`으로 동기화한다.
+
+---
+
+**수동 실행**
+
 **백엔드** (FastAPI · `localhost:8000`)
 
 ```bash
